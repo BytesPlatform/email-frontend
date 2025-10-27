@@ -63,8 +63,7 @@ async function proxyRequest(
   }
 }
 
-// POST /api/auth/login
-export async function POST(request: NextRequest) {
-  return proxyRequest(request, '/auth/login', 'POST')
+// GET /api/auth/verify
+export async function GET(request: NextRequest) {
+  return proxyRequest(request, '/auth/verify', 'GET')
 }
-

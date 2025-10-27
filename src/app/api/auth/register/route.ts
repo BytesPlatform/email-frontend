@@ -19,10 +19,18 @@ async function proxyRequest(
       headers['Cookie'] = cookieHeader
     }
 
+    console.log('🔄 Proxying signup request to backend:', `${API_CONFIG.baseUrl}${endpoint}`)
+
     const response = await fetch(`${API_CONFIG.baseUrl}${endpoint}`, {
       method,
       headers,
       body,
+    })
+
+    console.log('📡 Backend signup response:', {
+      status: response.status,
+      statusText: response.statusText,
+      url: response.url
     })
 
     // Check if response is JSON
@@ -63,8 +71,8 @@ async function proxyRequest(
   }
 }
 
-// POST /api/auth/login
+// POST /api/auth/signup
 export async function POST(request: NextRequest) {
-  return proxyRequest(request, '/auth/login', 'POST')
+  console.log('🚀 Signup API route called')
+  return proxyRequest(request, '/auth/signup', 'POST')
 }
-

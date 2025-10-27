@@ -63,8 +63,7 @@ async function proxyRequest(
   }
 }
 
-// POST /api/auth/login
+// POST /api/auth/logout
 export async function POST(request: NextRequest) {
-  return proxyRequest(request, '/auth/login', 'POST')
+  return proxyRequest(request, '/auth/logout', 'POST')
 }
-

@@ -46,7 +46,7 @@ export function Card({
 }
 
 interface CardHeaderProps {
-  children: ReactNode
+  children?: ReactNode
   className?: string
   title?: string
   subtitle?: string

@@ -6,7 +6,7 @@ export const APP_CONFIG = {
 } as const
 
 export const API_CONFIG = {
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
+  baseUrl: 'http://localhost:3000', // Hardcoded to fix port issue
   timeout: 10000,
   retryAttempts: 3,
 } as const

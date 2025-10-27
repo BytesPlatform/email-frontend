@@ -1,11 +1,12 @@
-export interface User {
-  id: string
+export interface Client {
+  id: number
   email: string
   name: string
-  role: 'admin' | 'user'
+  phone?: string
+  city?: string
+  country?: string
+  address?: string
   createdAt: string
-  updatedAt: string
-  password?: string
 }
 
 export interface LoginCredentials {
@@ -17,18 +18,33 @@ export interface RegisterData {
   email: string
   password: string
   name: string
+  phone?: string
+  city?: string
+  country?: string
+  address?: string
 }
 
 export interface AuthResponse {
   success: boolean
-  user?: User
-  token?: string
+  client?: Client
+  message?: string
   error?: string
 }
 
 export interface AuthState {
-  user: User | null
+  client: Client | null
   isAuthenticated: boolean
   isLoading: boolean
   error: string | null
+}
+
+// Legacy User interface for backward compatibility
+export interface User {
+  id: string
+  email: string
+  name: string
+  role: 'admin' | 'user'
+  createdAt: string
+  updatedAt: string
+  password?: string
 }
