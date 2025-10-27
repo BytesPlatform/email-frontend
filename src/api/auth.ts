@@ -1,6 +1,5 @@
+import { apiClient, ApiResponse } from './ApiClient'
 import { LoginCredentials, RegisterData, AuthResponse, Client } from '@/types/auth'
-import { apiClient } from './apiClient'
-import { STORAGE_KEYS } from '@/lib/constants'
 
 // Helper function to safely access localStorage
 const safeLocalStorage = {
@@ -30,11 +29,16 @@ const safeLocalStorage = {
   }
 }
 
-// Backend API-based authentication service with HTTP-only cookies
-export const authService = {
+const STORAGE_KEYS = {
+  currentUser: 'currentUser'
+}
+
+// Authentication API functions
+export const auth = {
+  // Login user
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     try {
-      const response = await apiClient.login(credentials)
+      const response = await apiClient.post('/auth/login', credentials)
       
       if (response.success && response.data) {
         const data = response.data as { client?: Client; message?: string }
@@ -64,9 +68,10 @@ export const authService = {
     }
   },
 
-  async register(data: RegisterData): Promise<AuthResponse> {
+  // Register new user
+  async signup(data: RegisterData): Promise<AuthResponse> {
     try {
-      const response = await apiClient.signup(data)
+      const response = await apiClient.post('/auth/signup', data)
       
       if (response.success && response.data) {
         const client = response.data as Client
@@ -94,10 +99,11 @@ export const authService = {
     }
   },
 
+  // Logout user
   async logout(): Promise<void> {
     try {
       // Call backend logout endpoint
-      await apiClient.logout()
+      await apiClient.post('/auth/logout')
     } catch (error) {
       // Even if backend call fails, clear local storage
       console.warn('Logout API call failed:', error)
@@ -107,31 +113,71 @@ export const authService = {
     }
   },
 
-  async getCurrentUser(): Promise<Client | null> {
+  // Verify authentication token
+  async verifyToken(): Promise<ApiResponse<{ valid: boolean }>> {
     try {
-      // For now, just get from localStorage since we removed getProfile API
+      const response = await apiClient.get<{ valid: boolean }>('/auth/verify')
+      return response
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Token verification failed'
+      }
+    }
+  },
+
+  // Forgot password
+  async forgotPassword(email: string): Promise<ApiResponse> {
+    try {
+      const response = await apiClient.post('/auth/forgot-password', { email })
+      return response
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Forgot password request failed'
+      }
+    }
+  },
+
+  // Reset password
+  async resetPassword(token: string, newPassword: string): Promise<ApiResponse> {
+    try {
+      const response = await apiClient.post('/auth/reset-password', { 
+        token, 
+        password: newPassword 
+      })
+      return response
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Password reset failed'
+      }
+    }
+  },
+
+  // Get current user from localStorage
+  getCurrentUser(): Client | null {
+    try {
       const clientStr = safeLocalStorage.getItem(STORAGE_KEYS.currentUser)
       if (clientStr) {
         return JSON.parse(clientStr)
       }
       return null
     } catch {
-      // If parsing fails, return null
       return null
     }
   },
 
+  // Check if user is authenticated
   isAuthenticated(): boolean {
-    // Since we're using HTTP-only cookies, we need to check if we have client data
-    // The actual authentication is handled by the backend via cookies
     const clientStr = safeLocalStorage.getItem(STORAGE_KEYS.currentUser)
     return !!clientStr
   },
 
-  // Helper method to verify authentication with backend
+  // Verify authentication with backend
   async verifyAuthentication(): Promise<boolean> {
     try {
-      const response = await apiClient.verifyToken()
+      const response = await this.verifyToken()
       return response.success && (response.data as { valid?: boolean })?.valid === true
     } catch {
       return false

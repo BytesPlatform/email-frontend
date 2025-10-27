@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Client, AuthState } from '@/types/auth'
-import { authService } from '@/services/authService'
+import { auth } from '@/api/auth'
 
 export function useAuth(): AuthState & {
   user: Client | null
@@ -21,7 +21,7 @@ export function useAuth(): AuthState & {
       try {
         // Only check auth on client side
         if (typeof window !== 'undefined') {
-          const currentClient = await authService.getCurrentUser()
+          const currentClient = await auth.getCurrentUser()
           setClient(currentClient)
         }
       } catch {
@@ -40,7 +40,7 @@ export function useAuth(): AuthState & {
     setError(null)
 
     try {
-      const result = await authService.login({ email, password })
+      const result = await auth.login({ email, password })
       
       if (result.success && result.client) {
         setClient(result.client)
@@ -70,7 +70,7 @@ export function useAuth(): AuthState & {
       if (country && country.trim()) registerData.country = country.trim()
       if (address && address.trim()) registerData.address = address.trim()
       
-      const result = await authService.register(registerData)
+      const result = await auth.signup(registerData)
       
       if (result.success && result.client) {
         setClient(result.client)
@@ -88,7 +88,7 @@ export function useAuth(): AuthState & {
   }
 
   const logout = () => {
-    authService.logout()
+    auth.logout()
     setClient(null)
     setError(null)
   }

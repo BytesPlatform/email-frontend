@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { isValidEmail } from '@/lib/utils'
+import { auth } from '@/api/auth'
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState('')
@@ -28,11 +29,18 @@ export function ForgotPasswordForm() {
 
     setIsLoading(true)
     
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const response = await auth.forgotPassword(email)
+      if (response.success) {
+        setIsSubmitted(true)
+      } else {
+        setErrors({ general: response.error || 'Failed to send reset email' })
+      }
+    } catch (error) {
+      setErrors({ general: 'An error occurred. Please try again.' })
+    } finally {
       setIsLoading(false)
-      setIsSubmitted(true)
-    }, 1000)
+    }
   }
 
   if (isSubmitted) {
@@ -80,6 +88,17 @@ export function ForgotPasswordForm() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
+          {errors.general && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-sm text-center p-3 rounded-lg">
+              <div className="flex items-center justify-center space-x-2">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <span>{errors.general}</span>
+              </div>
+            </div>
+          )}
+          
           <Input
             label="Email address"
             type="email"
