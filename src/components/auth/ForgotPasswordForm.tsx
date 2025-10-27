@@ -36,7 +36,7 @@ export function ForgotPasswordForm() {
       } else {
         setErrors({ general: response.error || 'Failed to send reset email' })
       }
-    } catch (error) {
+    } catch {
       setErrors({ general: 'An error occurred. Please try again.' })
     } finally {
       setIsLoading(false)

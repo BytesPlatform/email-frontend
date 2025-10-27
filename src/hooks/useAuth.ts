@@ -93,7 +93,7 @@ export function useAuth(): AuthState & {
     setError(null)
   }
 
-  const updateProfile = async (data: { name?: string; email?: string; currentPassword?: string; newPassword?: string }): Promise<boolean> => {
+  const updateProfile = async (): Promise<boolean> => {
     // Placeholder implementation - no backend API yet
     return false
   }

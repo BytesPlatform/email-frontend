@@ -38,7 +38,7 @@ export const dataApi = {
   },
 
   // Start scraping
-  async startScraping(config: any): Promise<ApiResponse> {
+  async startScraping(config: Record<string, unknown>): Promise<ApiResponse> {
     return apiClient.post('/data/scraping/start', config)
   }
 }
