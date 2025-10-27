@@ -4,17 +4,8 @@ import { useState } from 'react'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useData } from '@/contexts/DataContext'
+import { CSVRecord } from '@/types/ingestion'
 import Link from 'next/link'
-
-interface CSVRecord {
-  business_name?: string
-  zipcode?: string
-  state?: string
-  phone_number?: string
-  website?: string
-  email?: string
-  [key: string]: string | undefined
-}
 
 interface CSVPreviewProps {
   headers?: string[]

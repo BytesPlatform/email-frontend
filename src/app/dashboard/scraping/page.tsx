@@ -3,17 +3,8 @@
 import { useState } from 'react'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useData } from '@/contexts/DataContext'
+import { CSVRecord } from '@/types/ingestion'
 import Link from 'next/link'
-
-interface CSVRecord {
-  business_name?: string
-  zipcode?: string
-  state?: string
-  phone_number?: string
-  website?: string
-  email?: string
-  [key: string]: string | undefined
-}
 
 interface ScrapedRecord {
   business_name?: string
