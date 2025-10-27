@@ -3,22 +3,24 @@
 import { useState } from 'react'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { ingestionApi } from '@/api/ingestion'
+import { useAuthContext } from '@/contexts/AuthContext'
+import { CSVRecord } from '@/types/ingestion'
 
-interface CSVRecord {
-  business_name?: string
-  zipcode?: string
-  state?: string
-  phone_number?: string
-  website?: string
-  email?: string
-  [key: string]: string | undefined
+interface UploadMetadata {
+  uploadId: number
+  contacts: Array<Record<string, unknown>>
+  totalRecords: number
+  successfulRecords: number
 }
 
 interface CSVUploadFormProps {
   onFileProcessed?: (data: CSVRecord[], headers: string[]) => void
+  onUploadSuccess?: (metadata: UploadMetadata) => void
 }
 
-export function CSVUploadForm({ onFileProcessed }: CSVUploadFormProps) {
+export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFormProps) {
+  const { client } = useAuthContext()
   const [file, setFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -26,6 +28,8 @@ export function CSVUploadForm({ onFileProcessed }: CSVUploadFormProps) {
   const [parsedData, setParsedData] = useState<CSVRecord[]>([])
   const [, setHeaders] = useState<string[]>([])
   const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   // Standard 6-column format
   const requiredColumns = ['business_name', 'zipcode', 'state', 'phone_number', 'website', 'email']
@@ -201,20 +205,66 @@ export function CSVUploadForm({ onFileProcessed }: CSVUploadFormProps) {
   const handleUpload = async () => {
     if (!file) return
 
+    // Check if user is authenticated
+    if (!client) {
+      setUploadError('You must be logged in to upload CSV files')
+      return
+    }
+
     setIsUploading(true)
     setUploadProgress(0)
+    setUploadError(null)
+    setUploadSuccess(null)
 
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          setIsUploading(false)
-          return 100
+    try {
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval)
+            return 90
+          }
+          return prev + 10
+        })
+      }, 200)
+
+      // Call the API
+      const response = await ingestionApi.uploadCsv(file, client.id)
+
+      clearInterval(progressInterval)
+      setUploadProgress(100)
+
+      if (response.success && response.data) {
+        setUploadSuccess(
+          `Upload successful! Processed ${response.data.successfulRecords} of ${response.data.totalRecords} records. Validation in progress...`
+        )
+        
+        // Pass contact IDs and metadata to parent component
+        if (onUploadSuccess) {
+          onUploadSuccess({
+            uploadId: response.data.uploadId,
+            contacts: response.data.contacts || [],
+            totalRecords: response.data.totalRecords,
+            successfulRecords: response.data.successfulRecords
+          })
         }
-        return prev + 10
-      })
-    }, 200)
+        
+        // Reset form after successful upload
+        setTimeout(() => {
+          setFile(null)
+          setParsedData([])
+          setValidationErrors([])
+          setUploadSuccess(null)
+          setUploadProgress(0)
+        }, 3000)
+      } else {
+        setUploadError(response.error || 'Upload failed')
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Upload failed')
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   const uploadIcon = (
@@ -333,7 +383,7 @@ export function CSVUploadForm({ onFileProcessed }: CSVUploadFormProps) {
           )}
 
           {/* Success Message */}
-          {file && validationErrors.length === 0 && parsedData.length > 0 && (
+          {file && validationErrors.length === 0 && parsedData.length > 0 && !uploadSuccess && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <div className="flex items-center space-x-3">
                 <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -344,6 +394,36 @@ export function CSVUploadForm({ onFileProcessed }: CSVUploadFormProps) {
                   <p className="text-sm text-green-700">
                     {parsedData.length} records converted to standard format with 6 columns: business_name, zipcode, state, phone_number, website, email
                   </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Upload Success Message */}
+          {uploadSuccess && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <h4 className="text-sm font-medium text-green-800">Upload Successful</h4>
+                  <p className="text-sm text-green-700">{uploadSuccess}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Upload Error Message */}
+          {uploadError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <div>
+                  <h4 className="text-sm font-medium text-red-800">Upload Failed</h4>
+                  <p className="text-sm text-red-700">{uploadError}</p>
                 </div>
               </div>
             </div>
