@@ -1,27 +1,28 @@
 import { useState, useEffect } from 'react'
-import { User, AuthState } from '@/types/auth'
+import { Client, AuthState } from '@/types/auth'
 import { authService } from '@/services/authService'
 
 export function useAuth(): AuthState & {
+  user: Client | null
   login: (email: string, password: string) => Promise<boolean>
-  register: (email: string, password: string, name: string) => Promise<boolean>
-  updateProfile: (data: { name?: string; email?: string; currentPassword?: string; newPassword?: string }) => Promise<boolean>
+  register: (email: string, password: string, name: string, phone?: string, city?: string, country?: string, address?: string) => Promise<boolean>
   logout: () => void
+  updateProfile: (data: { name?: string; email?: string; currentPassword?: string; newPassword?: string }) => Promise<boolean>
 } {
-  const [user, setUser] = useState<User | null>(null)
+  const [client, setClient] = useState<Client | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
 
-  const isAuthenticated = !!user
+  const isAuthenticated = !!client
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
         // Only check auth on client side
         if (typeof window !== 'undefined') {
-          const currentUser = await authService.getCurrentUser()
-          setUser(currentUser)
+          const currentClient = await authService.getCurrentUser()
+          setClient(currentClient)
         }
       } catch {
         setError('Failed to check authentication')
@@ -41,8 +42,8 @@ export function useAuth(): AuthState & {
     try {
       const result = await authService.login({ email, password })
       
-      if (result.success && result.user) {
-        setUser(result.user)
+      if (result.success && result.client) {
+        setClient(result.client)
         return true
       } else {
         setError(result.error || 'Login failed')
@@ -56,15 +57,23 @@ export function useAuth(): AuthState & {
     }
   }
 
-  const register = async (email: string, password: string, name: string): Promise<boolean> => {
+  const register = async (email: string, password: string, name: string, phone?: string, city?: string, country?: string, address?: string): Promise<boolean> => {
     setIsLoading(true)
     setError(null)
 
     try {
-      const result = await authService.register({ email, password, name })
+      // Filter out undefined or empty values to avoid sending them to backend
+      const registerData: { email: string; password: string; name: string; phone?: string; city?: string; country?: string; address?: string } = { email, password, name }
       
-      if (result.success && result.user) {
-        setUser(result.user)
+      if (phone && phone.trim()) registerData.phone = phone.trim()
+      if (city && city.trim()) registerData.city = city.trim()
+      if (country && country.trim()) registerData.country = country.trim()
+      if (address && address.trim()) registerData.address = address.trim()
+      
+      const result = await authService.register(registerData)
+      
+      if (result.success && result.client) {
+        setClient(result.client)
         return true
       } else {
         setError(result.error || 'Registration failed')
@@ -78,42 +87,26 @@ export function useAuth(): AuthState & {
     }
   }
 
-  const updateProfile = async (data: { name?: string; email?: string; currentPassword?: string; newPassword?: string }): Promise<boolean> => {
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      const result = await authService.updateProfile(data)
-      
-      if (result.success && result.user) {
-        setUser(result.user)
-        return true
-      } else {
-        setError(result.error || 'Profile update failed')
-        return false
-      }
-    } catch {
-      setError('Profile update failed')
-      return false
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const logout = () => {
     authService.logout()
-    setUser(null)
+    setClient(null)
     setError(null)
+  }
+
+  const updateProfile = async (data: { name?: string; email?: string; currentPassword?: string; newPassword?: string }): Promise<boolean> => {
+    // Placeholder implementation - no backend API yet
+    return false
   }
 
   return {
-    user,
+    client,
+    user: client, // Alias for backward compatibility
     isAuthenticated,
     isLoading: isLoading || !isInitialized,
     error,
     login,
     register,
-    updateProfile,
-    logout
+    logout,
+    updateProfile
   }
 }

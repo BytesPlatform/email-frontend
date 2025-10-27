@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
-import { authService } from '@/services/authService'
 
 export default function Home() {
   const { isAuthenticated, isLoading } = useAuth()
@@ -12,9 +11,8 @@ export default function Home() {
   const [isInitialized, setIsInitialized] = useState(false)
 
   useEffect(() => {
-    // Only initialize on client side
+    // Initialize on client side
     if (typeof window !== 'undefined') {
-      authService.initializeDemoData()
       setIsInitialized(true)
     }
   }, [])

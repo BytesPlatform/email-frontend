@@ -162,9 +162,7 @@ export function ProfileForm() {
             title="Profile Information"
             subtitle="Update your personal information"
             icon={userIcon}
-          >
-            <div></div>
-          </CardHeader>
+          />
           <CardContent>
             <form onSubmit={handleProfileUpdate} className="space-y-4">
               {errors.general && (
@@ -221,9 +219,7 @@ export function ProfileForm() {
             title="Change Password"
             subtitle="Update your account password"
             icon={lockIcon}
-          >
-            <div></div>
-          </CardHeader>
+          />
           <CardContent>
             <form onSubmit={handlePasswordUpdate} className="space-y-4">
               {errors.general && (

@@ -12,6 +12,10 @@ export function RegisterForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [phone, setPhone] = useState('')
+  const [city, setCity] = useState('')
+  const [country, setCountry] = useState('')
+  const [address, setAddress] = useState('')
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
   const { register, isLoading } = useAuth()
   const router = useRouter()
@@ -54,7 +58,7 @@ export function RegisterForm() {
       return
     }
 
-    const success = await register(email, password, name)
+    const success = await register(email, password, name, phone, city, country, address)
     if (success) {
       router.push('/dashboard')
     } else {
@@ -127,6 +131,42 @@ export function RegisterForm() {
               error={errors.confirmPassword}
               required
               placeholder="Confirm your password"
+            />
+            
+            <Input
+              label="Phone number"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              error={errors.phone}
+              placeholder="Enter your phone number"
+            />
+            
+            <Input
+              label="Address"
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              error={errors.address}
+              placeholder="Enter your address"
+            />
+            
+            <Input
+              label="City"
+              type="text"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              error={errors.city}
+              placeholder="Enter your city"
+            />
+            
+            <Input
+              label="Country"
+              type="text"
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              error={errors.country}
+              placeholder="Enter your country"
             />
           </div>
           

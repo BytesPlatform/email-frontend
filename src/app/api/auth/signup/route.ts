@@ -5,10 +5,10 @@ import { API_CONFIG } from '@/lib/constants'
 async function proxyRequest(
   request: NextRequest,
   endpoint: string,
-  method: string = 'POST'
+  method: string = 'POST',
+  body?: string
 ) {
   try {
-    const body = method !== 'GET' ? await request.text() : undefined
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     }
@@ -19,10 +19,18 @@ async function proxyRequest(
       headers['Cookie'] = cookieHeader
     }
 
+    console.log('🔄 Proxying signup request to backend:', `${API_CONFIG.baseUrl}${endpoint}`)
+
     const response = await fetch(`${API_CONFIG.baseUrl}${endpoint}`, {
       method,
       headers,
       body,
+    })
+
+    console.log('📡 Backend signup response:', {
+      status: response.status,
+      statusText: response.statusText,
+      url: response.url
     })
 
     // Check if response is JSON
@@ -63,8 +71,13 @@ async function proxyRequest(
   }
 }
 
-// POST /api/auth/login
+// POST /api/auth/signup
 export async function POST(request: NextRequest) {
-  return proxyRequest(request, '/auth/login', 'POST')
+  console.log('🚀 Signup API route called')
+  
+  // Read the request body once
+  const body = await request.text()
+  console.log('📦 Signup request body:', body)
+  
+  return proxyRequest(request, '/auth/signup', 'POST', body)
 }
-

@@ -6,7 +6,7 @@ import { AuthState } from '@/types/auth'
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<boolean>
-  register: (email: string, password: string, name: string) => Promise<boolean>
+  register: (email: string, password: string, name: string, phone?: string, city?: string, country?: string, address?: string) => Promise<boolean>
   logout: () => void
 }
 
