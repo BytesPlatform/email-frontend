@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useData } from '@/contexts/DataContext'
+import { scrapingApi } from '@/api/scraping'
 
 // Use the ScrapedRecord type from DataContext
 interface ScrapedRecord {
@@ -52,6 +53,11 @@ export function ScrapingOptions() {
   const [maxPages, setMaxPages] = useState(10)
   const [delay, setDelay] = useState(2)
   const [respectRobots, setRespectRobots] = useState(true)
+
+  // Backend single-contact scrape controls
+  const [contactIdInput, setContactIdInput] = useState<string>('')
+  const [isSingleScraping, setIsSingleScraping] = useState(false)
+  const [singleError, setSingleError] = useState<string | null>(null)
 
   const isGeneralEmailDomain = (domain: string) => {
     const generalDomains = [
@@ -118,6 +124,29 @@ export function ScrapingOptions() {
     await scrapeUrl(urlInfo)
   }
 
+  // ===== Backend: Single Contact Scrape by contactId =====
+  const handleSingleScrape = async () => {
+    const parsed = Number(contactIdInput)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      alert('Enter a valid contactId (number)')
+      return
+    }
+    setIsSingleScraping(true)
+    setSingleError(null)
+    const res = await scrapingApi.scrapeSingle(parsed)
+    if (res.success && res.data) {
+      console.log('[SCRAPING] Single contact result:', {
+        contactId: res.data.contactId,
+        success: res.data.success,
+        message: res.data.message
+      })
+    } else {
+      setSingleError(res.error || 'Scrape failed')
+      console.log('[SCRAPING] Single contact scrape failed:', res.error)
+    }
+    setIsSingleScraping(false)
+  }
+
   const scrapeUrl = async (urlInfo: { url: string; method: string; confidence: string }) => {
     setIsRunning(true)
     
@@ -170,6 +199,29 @@ export function ScrapingOptions() {
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
+          {/* Backend Single Scrape */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <Input
+              label="Contact ID"
+              type="number"
+              value={contactIdInput}
+              onChange={(e) => setContactIdInput(e.target.value)}
+              placeholder="Enter contactId to scrape"
+              size="md"
+            />
+            <Button
+              onClick={handleSingleScrape}
+              disabled={isSingleScraping || !contactIdInput}
+              isLoading={isSingleScraping}
+              className="sm:col-span-2"
+            >
+              {isSingleScraping ? 'Scraping...' : 'Scrape Contact (Backend)'}
+            </Button>
+          </div>
+          {singleError && (
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">{singleError}</div>
+          )}
+
           {/* Target Input */}
           <Input
             label="Target URL, Email, or Business Name"

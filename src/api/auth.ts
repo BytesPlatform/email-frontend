@@ -1,5 +1,5 @@
 import { apiClient, ApiResponse } from './ApiClient'
-import { LoginCredentials, RegisterData, AuthResponse, Client } from '@/types/auth'
+import { LoginCredentials, RegisterData, AuthResponse, Client, ProfileResponse, UpdateProfileDto, UpdateProfileResponse } from '@/types/auth'
 
 // Helper function to safely access localStorage
 const safeLocalStorage = {
@@ -181,6 +181,32 @@ export const auth = {
       return response.success && (response.data as { valid?: boolean })?.valid === true
     } catch {
       return false
+    }
+  },
+
+  // Get user profile
+  async getProfile(): Promise<ApiResponse<ProfileResponse>> {
+    try {
+      const response = await apiClient.get<{ message: string; profile: Client }>('/auth/profile')
+      return response
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get profile'
+      }
+    }
+  },
+
+  // Update user profile
+  async updateProfile(updateData: UpdateProfileDto): Promise<ApiResponse<UpdateProfileResponse>> {
+    try {
+      const response = await apiClient.put<{ message: string; profile: Client }>('/auth/profile', updateData)
+      return response
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update profile'
+      }
     }
   }
 }

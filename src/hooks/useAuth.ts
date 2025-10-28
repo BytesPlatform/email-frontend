@@ -91,6 +91,11 @@ export function useAuth(): AuthState & {
     auth.logout()
     setClient(null)
     setError(null)
+    // Clear lastUploadId from localStorage on logout to prevent cross-account data leak
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('lastUploadId')
+      console.log('[AUTH] Cleared lastUploadId on logout')
+    }
   }
 
   const updateProfile = async (): Promise<boolean> => {

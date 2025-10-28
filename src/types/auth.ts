@@ -7,6 +7,25 @@ export interface Client {
   country?: string
   address?: string
   createdAt: string
+  updatedAt?: string
+}
+
+export interface ProfileResponse {
+  message: string
+  profile: Client
+}
+
+export interface UpdateProfileDto {
+  name?: string
+  phone?: string
+  city?: string
+  country?: string
+  address?: string
+}
+
+export interface UpdateProfileResponse {
+  message: string
+  profile: Client
 }
 
 export interface LoginCredentials {
