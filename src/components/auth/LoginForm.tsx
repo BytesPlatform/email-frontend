@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthContext } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { isValidEmail } from '@/lib/utils'
@@ -11,7 +11,7 @@ export function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
-  const { login, isLoading } = useAuth()
+  const { login, isLoading } = useAuthContext()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {

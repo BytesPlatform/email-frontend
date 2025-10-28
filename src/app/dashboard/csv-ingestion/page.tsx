@@ -28,7 +28,12 @@ export default function CSVIngestionPage() {
   const handleUploadSuccess = (metadata: UploadMetadata) => {
     setUploadMetadata(metadata)
     
-    // No need for localStorage - scraping page will fetch from API
+    // Store uploadId and contacts for scraping page
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('lastUploadId', String(metadata.uploadId))
+      localStorage.setItem('lastUploadContacts', JSON.stringify(metadata.contacts))
+    }
+    
     console.log('Upload successful! Contact IDs:', metadata.contacts.map(c => c.id))
     console.log('Upload ID:', metadata.uploadId)
   }
