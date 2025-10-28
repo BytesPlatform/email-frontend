@@ -44,7 +44,7 @@ export const ingestionApi = {
    */
   async getClientUploads(clientId: number): Promise<ApiResponse<CsvUpload[]>> {
     try {
-      const response = await apiClient.get<CsvUpload[]>(`/ingestion/uploads/${clientId}`)
+      const response = await apiClient.get<CsvUpload[]>(`/ingestion/upload/${clientId}`)
       return response
     } catch (error) {
       return {
