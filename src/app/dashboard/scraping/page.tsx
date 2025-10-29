@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { AuthGuard } from '@/components/auth/AuthGuard'
-import { useData } from '@/contexts/DataContext'
-import { CSVRecord } from '@/types/ingestion'
+ 
 import Link from 'next/link'
 import { ScrapeStatusBrowser } from '@/components/scraping/ScrapeStatusBrowser'
 import { scrapingApi } from '@/api/scraping'
@@ -11,38 +10,16 @@ import { ingestionApi } from '@/api/ingestion'
 import { useAuthContext } from '@/contexts/AuthContext'
 import type { ReadyContact, StatsResponse, ScrapeSingleResponseData } from '@/types/scraping'
 
-interface ScrapedRecord {
-  business_name?: string
-  zipcode?: string
-  state?: string
-  phone_number?: string
-  website?: string
-  email?: string
-  source: string
-  scraped_at: string
-  original_record_index?: number
-  target_url?: string
-  extraction_method?: string
-  confidence?: string
-  scraped_website?: string
-  scraped_contacts?: Array<{ type: string; value: string }>
-  scraped_social_media?: Array<{ platform: string; url: string }>
-  [key: string]: string | number | Array<{ type: string; value: string }> | Array<{ platform: string; url: string }> | undefined
-}
+ 
 
 export default function ScrapingPage() {
-  const { csvData, scrapedData, combinedData } = useData()
   const { client } = useAuthContext()
-  const [selectedRecords, setSelectedRecords] = useState<number[]>([])
-  const [isScraping, setIsScraping] = useState(false)
+  
 
   // Backend scraping controls
-  const [uploadIdInput, setUploadIdInput] = useState<string>('')
   const [currentUploadId, setCurrentUploadId] = useState<number | null>(null)
   const [stats, setStats] = useState<StatsResponse['stats'] | null>(null)
   const [readyContacts, setReadyContacts] = useState<ReadyContact[]>([])
-  const [isLoadingStats, setIsLoadingStats] = useState(false)
-  const [isLoadingReady, setIsLoadingReady] = useState(false)
   const [isLoadingCombined, setIsLoadingCombined] = useState(false)
   const [hasFetchedReadyAndStats, setHasFetchedReadyAndStats] = useState(false)
   const [isBatching, setIsBatching] = useState(false)
@@ -64,7 +41,6 @@ export default function ScrapingPage() {
     if (typeof window !== 'undefined') {
       const lastUploadId = localStorage.getItem('lastUploadId')
       if (lastUploadId) {
-        setUploadIdInput(lastUploadId)
         setCurrentUploadId(Number(lastUploadId))
         console.log('[SCRAPING] Tentative uploadId from localStorage:', lastUploadId)
       }
@@ -86,7 +62,6 @@ export default function ScrapingPage() {
         if (currentUploadId && !allowedIds.has(currentUploadId)) {
           console.warn('[SCRAPING] Clearing uploadId from another account:', currentUploadId)
           setCurrentUploadId(null)
-          setUploadIdInput('')
           if (typeof window !== 'undefined') {
             localStorage.removeItem('lastUploadId')
           }
@@ -95,7 +70,6 @@ export default function ScrapingPage() {
         if ((!currentUploadId || !allowedIds.has(currentUploadId)) && uploads.length > 0) {
           const latest = uploads[0]
           setCurrentUploadId(latest.id)
-          setUploadIdInput(String(latest.id))
           if (typeof window !== 'undefined') {
             localStorage.setItem('lastUploadId', String(latest.id))
           }
@@ -110,21 +84,7 @@ export default function ScrapingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client?.id])
 
-  const handleRecordSelect = (index: number) => {
-    setSelectedRecords(prev => 
-      prev.includes(index) 
-        ? prev.filter(i => i !== index)
-        : [...prev, index]
-    )
-  }
-
-  const handleSelectAll = () => {
-    setSelectedRecords(csvData.map((_, index) => index))
-  }
-
-  const handleClearAll = () => {
-    setSelectedRecords([])
-  }
+  
 
   const handleContactSelect = (contactId: number) => {
     setSelectedContactIds(prev => 
@@ -146,116 +106,13 @@ export default function ScrapingPage() {
     setSelectedContactIds([])
   }
 
-  const isGeneralEmailDomain = (domain: string) => {
-    const generalDomains = [
-      'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com',
-      'icloud.com', 'protonmail.com', 'yandex.com', 'mail.com', 'zoho.com',
-      'live.com', 'msn.com', 'comcast.net', 'verizon.net', 'att.net'
-    ]
-    return generalDomains.includes(domain.toLowerCase())
-  }
-
-  const extractUrlFromRecord = (record: CSVRecord) => {
-    // Priority 1: Direct website URL
-    if (record.website) {
-      return {
-        url: record.website,
-        method: 'direct_website',
-        confidence: 'high'
-      }
-    }
-    
-    // Priority 2: Email domain (only if it's a custom domain, not general)
-    if (record.email && record.email.includes('@')) {
-      const domain = record.email.split('@')[1]
-      
-      // Skip general email domains (gmail, yahoo, etc.) - they're useless for finding business websites
-      if (isGeneralEmailDomain(domain)) {
-        // Fall through to Google search
-      } else {
-        return {
-          url: `https://www.${domain}`,
-          method: 'email_domain',
-          confidence: 'medium'
-        }
-      }
-    }
-    
-    // Priority 3: Google search with business name + location
-    const searchTerms = [record.business_name || record.company_name || record.name]
-    if (record.state) searchTerms.push(record.state)
-    if (record.zip_code || record.zip) searchTerms.push(record.zip_code || record.zip)
-    
-    return {
-      url: `https://www.google.com/search?q=${encodeURIComponent(searchTerms.join(' '))}`,
-      method: 'google_search',
-      confidence: 'low'
-    }
-  }
-
-  const [scrapingResults, setScrapingResults] = useState<ScrapedRecord[]>([])
-  const [showResults, setShowResults] = useState(false)
-
-  const handleStartScraping = async () => {
-    if (selectedRecords.length === 0) {
-      return
-    }
-
-    setIsScraping(true)
-    setShowResults(false)
-    
-    // Simulate scraping process
-    setTimeout(() => {
-      const scrapedData = selectedRecords.map(index => {
-        const record = csvData[index]
-        const urlInfo = extractUrlFromRecord(record)
-        
-        return {
-          ...record,
-          source: 'scraped',
-          scraped_at: new Date().toISOString(),
-          original_record_index: index,
-          target_url: urlInfo.url,
-          extraction_method: urlInfo.method,
-          confidence: urlInfo.confidence,
-          // Simulated scraped data
-          scraped_website: urlInfo.url,
-          scraped_contacts: [
-            { type: 'email', value: record.email || 'contact@example.com' },
-            { type: 'phone', value: record.phone_number || '(555) 123-4567' }
-          ],
-          scraped_social_media: [
-            { platform: 'LinkedIn', url: 'https://linkedin.com/company/example' },
-            { platform: 'Facebook', url: 'https://facebook.com/example' }
-          ]
-        }
-      })
-      
-      // Add scraped data to global context
-      // This would be handled by the data context
-      setScrapingResults(scrapedData)
-      setIsScraping(false)
-      setShowResults(true)
-      setSelectedRecords([])
-    }, 3000)
-  }
+  
 
   // ===== Backend API integration (batch, stats, ready) =====
-  const applyUploadId = () => {
-    const parsed = Number(uploadIdInput)
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      alert('Enter a valid uploadId (number)')
-      return
-    }
-    setCurrentUploadId(parsed)
-    setStats(null)
-    setReadyContacts([])
-    setApiError(null)
-  }
+  
 
   const fetchStats = async () => {
     if (!currentUploadId) return
-    setIsLoadingStats(true)
     setApiError(null)
     const res = await scrapingApi.getStats(currentUploadId)
     if (res.success && res.data) {
@@ -265,12 +122,11 @@ export default function ScrapingPage() {
       setApiError(res.error || 'Failed to fetch stats')
       console.log('[SCRAPING] Stats fetch failed:', res.error)
     }
-    setIsLoadingStats(false)
+    
   }
 
   const fetchReadyContacts = async (limit?: number) => {
     if (!currentUploadId) return
-    setIsLoadingReady(true)
     setApiError(null)
     const res = await scrapingApi.getReadyContacts(currentUploadId, limit)
     if (res.success && res.data) {
@@ -283,7 +139,7 @@ export default function ScrapingPage() {
       setApiError(res.error || 'Failed to fetch ready contacts')
       console.log('[SCRAPING] Ready contacts fetch failed:', res.error)
     }
-    setIsLoadingReady(false)
+    
   }
 
   // Fetch stats and selected upload's contacts together, then reveal records and actions
@@ -294,17 +150,14 @@ export default function ScrapingPage() {
     try {
       await Promise.all([
         (async () => {
-          setIsLoadingStats(true)
           const res = await scrapingApi.getStats(currentUploadId)
           if (res.success && res.data) {
             setStats(res.data.stats)
           } else {
             setApiError(res.error || 'Failed to fetch stats')
           }
-          setIsLoadingStats(false)
         })(),
         (async () => {
-          setIsLoadingReady(true)
           const res = await ingestionApi.getUploadDetails(currentUploadId)
           if (res.success && res.data) {
             type UnknownContact = Record<string, unknown>
@@ -323,7 +176,6 @@ export default function ScrapingPage() {
           } else {
             setApiError(res.error || 'Failed to fetch upload contacts')
           }
-          setIsLoadingReady(false)
         })()
       ])
       setHasFetchedReadyAndStats(true)
@@ -504,7 +356,6 @@ export default function ScrapingPage() {
                       const val = Number(e.target.value)
                       if (!Number.isFinite(val)) return
                       setCurrentUploadId(val)
-                      setUploadIdInput(String(val))
                       if (typeof window !== 'undefined') {
                         localStorage.setItem('lastUploadId', String(val))
                       }
@@ -765,167 +616,7 @@ export default function ScrapingPage() {
               </div>
             )}
 
-            {/* Scraping Loader */}
-            {isScraping && (
-              <div className="bg-white rounded-lg shadow-lg border border-gray-100 p-12 text-center">
-                <div className="flex flex-col items-center space-y-4">
-                  <div className="h-16 w-16 rounded-full bg-slate-200 animate-pulse"></div>
-                  <div className="text-xl font-bold text-gray-900">Scraping in Progress...</div>
-                  <div className="text-base text-gray-600">Processing {selectedRecords.length} selected records</div>
-                </div>
-              </div>
-            )}
-
-            {/* Scraping Results */}
-            {showResults && scrapingResults.length > 0 && (
-              <div className="bg-white rounded-lg shadow-lg border border-gray-100">
-                <div className="bg-gradient-to-r from-green-500 to-emerald-600 p-6 rounded-t-lg text-white">
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <div>
-                      <h3 className="text-xl font-bold">Scraping Results</h3>
-                      <p className="text-green-100 text-sm mt-1">
-                    Successfully scraped {scrapingResults.length} record{scrapingResults.length > 1 ? 's' : ''}
-                  </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-6">
-                  {scrapingResults.length === 1 ? (
-                    // Single page result - detailed view
-                    <div className="space-y-6">
-                      <div className="bg-gray-50 rounded-lg p-6">
-                        <div className="flex items-center justify-between mb-4">
-                          <div>
-                            <h4 className="text-lg font-semibold text-gray-900">
-                              {String(scrapingResults[0].business_name || scrapingResults[0].company_name || scrapingResults[0].name || 'Scraped Business')}
-                            </h4>
-                            <div className="text-sm text-gray-500 mt-1">
-                              Method: {scrapingResults[0].extraction_method} • Confidence: {scrapingResults[0].confidence}
-                            </div>
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            Record #{scrapingResults[0].original_record_index ? scrapingResults[0].original_record_index + 1 : 'Unknown'}
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                          <div>
-                            <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-                              <svg className="w-4 h-4 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                              </svg>
-                              Contact Information
-                            </h5>
-                            <div className="space-y-2">
-                              {scrapingResults[0].scraped_contacts?.map((contact, i: number) => (
-                                <div key={i} className="flex items-center space-x-3 p-2 bg-white rounded border">
-                                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                  <span className="text-sm font-medium text-gray-700">{contact.type}:</span>
-                                  <span className="text-sm text-gray-600">{contact.value}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-                              <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                              </svg>
-                              Social Media Links
-                            </h5>
-                            <div className="space-y-2">
-                              {scrapingResults[0].scraped_social_media?.map((social, i: number) => (
-                                <div key={i} className="flex items-center space-x-3 p-2 bg-white rounded border">
-                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                                  <span className="text-sm font-medium text-gray-700">{social.platform}:</span>
-                                  <a href={social.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:text-blue-800">
-                                    {social.url}
-                                  </a>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    // Multiple pages result - summary view
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {scrapingResults.map((result, index) => (
-                          <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex-1">
-                              <div className="font-medium text-gray-900 text-sm truncate">
-                                {String(result.business_name || result.company_name || result.name || `Record ${index + 1}`)}
-                              </div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {result.extraction_method} • {result.confidence}
-                                </div>
-                              </div>
-                              <div className="text-xs text-gray-400 ml-2">
-                                #{result.original_record_index ? result.original_record_index + 1 : 'Unknown'}
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              <div className="text-xs text-gray-600">
-                                <span className="font-medium">Contacts:</span> {result.scraped_contacts?.length || 0}
-                              </div>
-                              <div className="text-xs text-gray-600">
-                                <span className="font-medium">Social:</span> {result.scraped_social_media?.length || 0}
-                              </div>
-                            </div>
-                            
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <button className="text-xs text-indigo-600 hover:text-indigo-800">
-                                View Details →
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm text-gray-600">
-                            <span className="font-medium">Total Records:</span> {scrapingResults.length}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            <span className="font-medium">Total Contacts:</span> {scrapingResults.reduce((sum, r) => sum + (r.scraped_contacts?.length || 0), 0)}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            <span className="font-medium">Total Social Links:</span> {scrapingResults.reduce((sum, r) => sum + (r.scraped_social_media?.length || 0), 0)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="mt-6 flex items-center justify-between">
-                    <button 
-                      onClick={() => setShowResults(false)}
-                      className="text-sm text-gray-600 hover:text-gray-800"
-                    >
-                      Hide Results
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setShowResults(false)
-                        setScrapingResults([])
-                      }}
-                      className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
-                    >
-                      Clear Results
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Demo loader/results removed in favor of modal-driven flow */}
           </div>
         </div>
       </div>
