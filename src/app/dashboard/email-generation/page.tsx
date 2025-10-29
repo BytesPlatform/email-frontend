@@ -21,7 +21,9 @@ export default function EmailGenerationPage() {
   const [state, setState] = useState<EmailGenerationState>({
     scrapedRecords: [],
     isLoadingRecords: false,
-    error: null
+    error: null,
+    currentPage: 1,
+    recordsPerPage: 8
   })
 
   // Load scraped records on component mount
@@ -91,7 +93,8 @@ export default function EmailGenerationPage() {
           setState(prev => ({ 
             ...prev, 
             scrapedRecords,
-            isLoadingRecords: false 
+            isLoadingRecords: false,
+            currentPage: 1 // Reset to first page when new data is loaded
           }))
         } else {
           console.log('History API Error:', historyRes.error)
@@ -218,6 +221,34 @@ export default function EmailGenerationPage() {
     // You could add a toast notification here
   }
 
+  // Pagination helpers
+  const getCurrentPageRecords = () => {
+    const startIndex = (state.currentPage - 1) * state.recordsPerPage
+    const endIndex = startIndex + state.recordsPerPage
+    return state.scrapedRecords.slice(startIndex, endIndex)
+  }
+
+  const getTotalPages = () => {
+    return Math.ceil(state.scrapedRecords.length / state.recordsPerPage)
+  }
+
+  const handlePageChange = (page: number) => {
+    setState(prev => ({ ...prev, currentPage: page }))
+  }
+
+  const handlePreviousPage = () => {
+    if (state.currentPage > 1) {
+      setState(prev => ({ ...prev, currentPage: prev.currentPage - 1 }))
+    }
+  }
+
+  const handleNextPage = () => {
+    const totalPages = getTotalPages()
+    if (state.currentPage < totalPages) {
+      setState(prev => ({ ...prev, currentPage: prev.currentPage + 1 }))
+    }
+  }
+
   return (
     <AuthGuard>
       <div className="bg-gray-50 min-h-screen">
@@ -305,8 +336,8 @@ export default function EmailGenerationPage() {
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {state.scrapedRecords.map((record) => (
+                       <tbody className="bg-white divide-y divide-gray-200">
+                         {getCurrentPageRecords().map((record) => (
                           <tr key={record.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center">
@@ -427,11 +458,59 @@ export default function EmailGenerationPage() {
                           </tr>
                         ))}
                       </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                     </table>
+                   </div>
+                 )}
+
+                 {/* Pagination Controls */}
+                 {state.scrapedRecords.length > 0 && (
+                   <div className="mt-6 flex items-center justify-between">
+                     <div className="flex items-center text-sm text-gray-700">
+                       <span>
+                         Showing {((state.currentPage - 1) * state.recordsPerPage) + 1} to{' '}
+                         {Math.min(state.currentPage * state.recordsPerPage, state.scrapedRecords.length)} of{' '}
+                         {state.scrapedRecords.length} results
+                       </span>
+                     </div>
+                     
+                     <div className="flex items-center space-x-2">
+                       <Button
+                         onClick={handlePreviousPage}
+                         disabled={state.currentPage === 1}
+                         variant="outline"
+                         size="sm"
+                       >
+                         Previous
+                       </Button>
+                       
+                       {/* Page Numbers */}
+                       <div className="flex space-x-1">
+                         {Array.from({ length: getTotalPages() }, (_, i) => i + 1).map((page) => (
+                           <Button
+                             key={page}
+                             onClick={() => handlePageChange(page)}
+                             variant={state.currentPage === page ? "primary" : "outline"}
+                             size="sm"
+                             className="w-8 h-8 p-0"
+                           >
+                             {page}
+                           </Button>
+                         ))}
+                       </div>
+                       
+                       <Button
+                         onClick={handleNextPage}
+                         disabled={state.currentPage === getTotalPages()}
+                         variant="outline"
+                         size="sm"
+                       >
+                         Next
+                       </Button>
+                     </div>
+                   </div>
+                 )}
+               </CardContent>
+             </Card>
 
             {/* Error Display */}
             {state.error && (

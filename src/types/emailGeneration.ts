@@ -81,4 +81,6 @@ export interface EmailGenerationState {
   scrapedRecords: ScrapedRecord[]
   isLoadingRecords: boolean
   error: string | null
+  currentPage: number
+  recordsPerPage: number
 }
