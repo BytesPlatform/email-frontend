@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { Skeleton, SkeletonText } from '@/components/common/Skeleton'
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -30,10 +31,16 @@ export function AuthGuard({ children }: AuthGuardProps) {
   // Show loading while checking authentication
   if (isLoading || isChecking) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
+          <div className="mb-8 flex items-center gap-3">
+            <Skeleton className="h-10 w-10 rounded-full" />
+            <div className="flex-1">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="mt-2 h-3 w-24" />
+            </div>
+          </div>
+          <SkeletonText lines={4} />
         </div>
       </div>
     )

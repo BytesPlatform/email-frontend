@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { Skeleton, SkeletonText } from '@/components/common/Skeleton'
 
 export default function Home() {
   const { isAuthenticated, isLoading } = useAuth()
@@ -25,22 +26,54 @@ export default function Home() {
 
   if (isLoading || !isInitialized) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-slate-600 font-medium">Loading...</p>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+        <main className="pt-20 pb-16">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center">
+              <Skeleton className="h-10 w-72 mx-auto mb-4" />
+              <Skeleton className="h-5 w-96 mx-auto mb-10" />
+              <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+                <Skeleton className="h-12 w-40" />
+                <Skeleton className="h-12 w-40" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <Skeleton className="h-56" />
+              <Skeleton className="h-56" />
+              <Skeleton className="h-56" />
+            </div>
+          </div>
+        </main>
+        <section className="py-20">
+          <div className="max-w-4xl mx-auto text-center px-4 sm:px-6 lg:px-8">
+            <Skeleton className="h-8 w-80 mx-auto mb-4" />
+            <SkeletonText lines={3} className="max-w-2xl mx-auto mb-8" />
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Skeleton className="h-12 w-40" />
+              <Skeleton className="h-12 w-40" />
+            </div>
+          </div>
+        </section>
       </div>
     )
   }
 
   if (isAuthenticated && isInitialized) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-slate-600 font-medium">Redirecting to dashboard...</p>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+        <main className="pt-20 pb-16">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center">
+              <Skeleton className="h-10 w-72 mx-auto mb-4" />
+              <SkeletonText lines={2} className="max-w-xl mx-auto mb-10" />
+              <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+                <Skeleton className="h-12 w-40" />
+                <Skeleton className="h-12 w-40" />
+              </div>
+              <p className="mt-2 text-slate-600">Redirecting to dashboard...</p>
+            </div>
+          </div>
+        </main>
       </div>
     )
   }

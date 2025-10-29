@@ -5,6 +5,7 @@ import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useData } from '@/contexts/DataContext'
 import { CSVRecord } from '@/types/ingestion'
 import Link from 'next/link'
+import { ScrapeStatusBrowser } from '@/components/scraping/ScrapeStatusBrowser'
 import { scrapingApi } from '@/api/scraping'
 import { ingestionApi } from '@/api/ingestion'
 import { useAuthContext } from '@/contexts/AuthContext'
@@ -42,6 +43,8 @@ export default function ScrapingPage() {
   const [readyContacts, setReadyContacts] = useState<ReadyContact[]>([])
   const [isLoadingStats, setIsLoadingStats] = useState(false)
   const [isLoadingReady, setIsLoadingReady] = useState(false)
+  const [isLoadingCombined, setIsLoadingCombined] = useState(false)
+  const [hasFetchedReadyAndStats, setHasFetchedReadyAndStats] = useState(false)
   const [isBatching, setIsBatching] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
   const [isLoadingUploads, setIsLoadingUploads] = useState(false)
@@ -49,6 +52,12 @@ export default function ScrapingPage() {
   const [selectedContactIds, setSelectedContactIds] = useState<number[]>([])
   const [scrapingStatus, setScrapingStatus] = useState<Record<number, 'scraping' | 'scraped' | 'failed' | null>>({})
   const [scrapedContactDetails, setScrapedContactDetails] = useState<Record<number, ScrapeSingleResponseData>>({})
+  // Pagination for ready contacts (client-side)
+  const [readyPage, setReadyPage] = useState(1)
+  const [readyPageSize, setReadyPageSize] = useState(20)
+  // Status modal
+  const [isStatusOpen, setIsStatusOpen] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'ready_to_scrape' | 'scraping' | 'scraped' | 'scrape_failed'>('all')
 
   // Tentatively read last uploadId (will be validated against the logged-in client's uploads)
   useEffect(() => {
@@ -67,7 +76,7 @@ export default function ScrapingPage() {
     const loadUploads = async () => {
       if (!client?.id) return
       setIsLoadingUploads(true)
-      const res = await ingestionApi.getClientUploads(client.id)
+      const res = await ingestionApi.getClientUploads()
       if (res.success && res.data) {
         const uploads = res.data
         // Store for optional UI selection later
@@ -126,7 +135,11 @@ export default function ScrapingPage() {
   }
 
   const handleSelectAllContacts = () => {
-    setSelectedContactIds(readyContacts.map(c => c.id))
+    // Select only the contacts visible on the current page
+    const start = (readyPage - 1) * readyPageSize
+    const end = readyPage * readyPageSize
+    const visibleIds = readyContacts.slice(start, end).map(c => c.id)
+    setSelectedContactIds(visibleIds)
   }
 
   const handleClearAllContacts = () => {
@@ -273,6 +286,55 @@ export default function ScrapingPage() {
     setIsLoadingReady(false)
   }
 
+  // Fetch stats and selected upload's contacts together, then reveal records and actions
+  const fetchStatsAndShowRecords = async (limit: number = 20) => {
+    if (!currentUploadId) return
+    setIsLoadingCombined(true)
+    setApiError(null)
+    try {
+      await Promise.all([
+        (async () => {
+          setIsLoadingStats(true)
+          const res = await scrapingApi.getStats(currentUploadId)
+          if (res.success && res.data) {
+            setStats(res.data.stats)
+          } else {
+            setApiError(res.error || 'Failed to fetch stats')
+          }
+          setIsLoadingStats(false)
+        })(),
+        (async () => {
+          setIsLoadingReady(true)
+          const res = await ingestionApi.getUploadDetails(currentUploadId)
+          if (res.success && res.data) {
+            type UnknownContact = Record<string, unknown>
+            const upload = res.data as { contacts?: UnknownContact[] }
+            const mapped = (upload.contacts || []).map((c): ReadyContact => ({
+              id: Number(c.id as number),
+              csvUploadId: currentUploadId!,
+              businessName: (c.businessName as string) || undefined,
+              website: (c.website as string) || undefined,
+              email: (c.email as string) || undefined,
+              state: (c.state as string) || undefined,
+              zipCode: (c.zipCode as string) || undefined,
+              status: ((c.status as string | undefined) || 'ready_to_scrape') as ReadyContact['status'],
+            }))
+            setReadyContacts(mapped)
+          } else {
+            setApiError(res.error || 'Failed to fetch upload contacts')
+          }
+          setIsLoadingReady(false)
+        })()
+      ])
+      setHasFetchedReadyAndStats(true)
+      // Auto-open modal to manage records inside component
+      setStatusFilter('all')
+      setIsStatusOpen(true)
+    } finally {
+      setIsLoadingCombined(false)
+    }
+  }
+
   const startBatchScraping = async (limit: number = 20) => {
     if (!currentUploadId) return
     setIsBatching(true)
@@ -380,6 +442,14 @@ export default function ScrapingPage() {
     }
   }
 
+  // Start scraping from modal selection
+  const handleStartScrapeSelected = async (ids: number[]) => {
+    if (ids.length === 0) return
+    setIsStatusOpen(false)
+    setSelectedContactIds(ids)
+    await startBatchScraping(ids.length)
+  }
+
   return (
     <AuthGuard>
       <div className="bg-gray-50 min-h-screen">
@@ -418,63 +488,55 @@ export default function ScrapingPage() {
                 </div>
                 <h3 className="text-xl font-bold text-gray-900">Backend Scraping</h3>
               </div>
-              {currentUploadId ? (
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm text-gray-700">
-                    Active uploadId: <span className="font-medium">{currentUploadId}</span>
-                  </div>
-                  <div className="hidden md:block text-xs text-gray-500">
-                    {isLoadingUploads ? 'Loading uploads…' : 'Auto-selected from your DB uploads'}
-                  </div>
+              <div className="space-y-3">
+                <div className="text-sm text-gray-700">
+                  {currentUploadId ? (
+                    <>Active upload: <span className="font-medium">{currentUploadId}</span></>
+                  ) : (
+                    <span>Select an upload to enable actions</span>
+                  )}
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Upload ID</label>
-                    <input
-                      type="number"
-                      value={uploadIdInput}
-                      onChange={(e) => setUploadIdInput(e.target.value)}
-                      placeholder="Enter uploadId"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                    />
-                  </div>
-                  <div>
-                    <button
-                      onClick={applyUploadId}
-                      className="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
-                    >
-                      Use Upload ID
-                    </button>
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    <span>Set an uploadId to enable API actions</span>
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Choose an upload</label>
+                  <select
+                    value={currentUploadId ?? ''}
+                    onChange={async (e) => {
+                      const val = Number(e.target.value)
+                      if (!Number.isFinite(val)) return
+                      setCurrentUploadId(val)
+                      setUploadIdInput(String(val))
+                      if (typeof window !== 'undefined') {
+                        localStorage.setItem('lastUploadId', String(val))
+                      }
+                      // Reset; fetching happens when user clicks the button
+                      setStats(null)
+                      setReadyContacts([])
+                      setHasFetchedReadyAndStats(false)
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white"
+                    disabled={isLoadingUploads || availableUploads.length === 0}
+                  >
+                    <option value="" disabled>{isLoadingUploads ? 'Loading uploads…' : 'Select an upload'}</option>
+                    {availableUploads.map(u => (
+                      <option key={u.id} value={u.id}>
+                        Upload #{u.id} • {u.totalRecords} records • {u.successfulRecords} successful
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              )}
+              </div>
 
               <div className="mt-4 flex items-center flex-wrap gap-3">
-                <button
-                  onClick={fetchStats}
-                  disabled={!currentUploadId || isLoadingStats}
-                  className="bg-gray-800 text-white px-3 py-2 rounded-lg hover:bg-gray-900 disabled:bg-gray-400 text-sm"
-                >
-                  {isLoadingStats ? 'Loading Stats...' : 'Fetch Stats'}
-                </button>
-                <button
-                  onClick={() => fetchReadyContacts(20)}
-                  disabled={!currentUploadId || isLoadingReady}
-                  className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 text-sm"
-                >
-                  {isLoadingReady ? 'Loading Ready...' : 'Get Ready (20)'}
-                </button>
-                <button
-                  onClick={() => startBatchScraping(20)}
-                  disabled={!currentUploadId || isBatching}
-                  className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 disabled:bg-gray-400 text-sm"
-                >
-                  {isBatching ? 'Scraping...' : 'Start Batch (20)'}
-                </button>
+                {!hasFetchedReadyAndStats && (
+                  <button
+                    onClick={() => fetchStatsAndShowRecords(20)}
+                    disabled={!currentUploadId || isLoadingCombined}
+                    className="bg-indigo-700 text-white px-3 py-2 rounded-lg hover:bg-indigo-800 disabled:bg-gray-400 text-sm"
+                  >
+                    {isLoadingCombined ? 'Fetching…' : 'Fetch and show records'}
+                  </button>
+                )}
+                {hasFetchedReadyAndStats && null}
               </div>
 
               {apiError && (
@@ -489,7 +551,7 @@ export default function ScrapingPage() {
               {/* Stats preview */}
               {stats && (
                 <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-md">
+                  <button onClick={() => { setStatusFilter('all'); setIsStatusOpen(true) }} className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-md text-left">
                     <div className="flex items-center justify-between mb-2">
                       <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -497,8 +559,8 @@ export default function ScrapingPage() {
                     </div>
                     <div className="text-3xl font-bold">{stats.totalContacts}</div>
                     <div className="text-sm text-blue-100 mt-1">Total Contacts</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-md">
+                  </button>
+                  <button onClick={() => { setStatusFilter('scraped'); setIsStatusOpen(true) }} className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-md text-left">
                     <div className="flex items-center justify-between mb-2">
                       <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -506,8 +568,8 @@ export default function ScrapingPage() {
                     </div>
                     <div className="text-3xl font-bold">{stats.scraped}</div>
                     <div className="text-sm text-green-100 mt-1">Successfully Scraped</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl p-5 text-white shadow-md">
+                  </button>
+                  <button onClick={() => { setStatusFilter('ready_to_scrape'); setIsStatusOpen(true) }} className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl p-5 text-white shadow-md text-left">
                     <div className="flex items-center justify-between mb-2">
                       <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -515,8 +577,8 @@ export default function ScrapingPage() {
                   </div>
                     <div className="text-3xl font-bold">{stats.readyToScrape}</div>
                     <div className="text-sm text-yellow-100 mt-1">Ready to Scrape</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-5 text-white shadow-md">
+                  </button>
+                  <button onClick={() => { setStatusFilter('scrape_failed'); setIsStatusOpen(true) }} className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-5 text-white shadow-md text-left">
                     <div className="flex items-center justify-between mb-2">
                       <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -524,15 +586,15 @@ export default function ScrapingPage() {
                   </div>
                     <div className="text-3xl font-bold">{stats.scrapeFailed}</div>
                     <div className="text-sm text-red-100 mt-1">Failed</div>
-                  </div>
+                  </button>
                 </div>
               )}
 
               {/* Ready contacts preview removed - showing full checklist below instead */}
             </div>
 
-            {/* Backend Contacts Checklist (using real data from DB) */}
-            {readyContacts.length > 0 ? (
+            {/* Backend Contacts Checklist replaced by modal-driven flow */}
+            {false ? (
               <div className="bg-white rounded-lg shadow-lg border border-gray-100">
                 <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6 rounded-t-lg text-white">
                   <div className="flex items-center space-x-3 mb-2">
@@ -549,7 +611,9 @@ export default function ScrapingPage() {
                 </div>
                 <div className="p-6">
                   <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {readyContacts.map((contact) => (
+                    {readyContacts
+                      .slice((readyPage - 1) * readyPageSize, readyPage * readyPageSize)
+                      .map((contact) => (
                       <div key={contact.id} className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
                         <input
                           type="checkbox"
@@ -568,10 +632,7 @@ export default function ScrapingPage() {
                                 {/* Show status from backend or current scraping state */}
                                 {(scrapingStatus[contact.id] === 'scraping' || contact.status === 'scraping') && (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                    <svg className="animate-spin -ml-1 mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
+                                    <span className="-ml-1 mr-1 h-3 w-3 rounded bg-slate-200 animate-pulse inline-block"></span>
                                     Scraping...
                                   </span>
                                 )}
@@ -645,8 +706,33 @@ export default function ScrapingPage() {
                         Clear All
                       </button>
                       <span className="text-sm text-gray-500">
-                        {selectedContactIds.length} of {readyContacts.length} selected
+                        {selectedContactIds.length} selected • Page {readyPage} of {Math.max(1, Math.ceil(readyContacts.length / readyPageSize))}
                       </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setReadyPage(p => Math.max(1, p - 1))}
+                        disabled={readyPage === 1}
+                        className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setReadyPage(p => Math.min(Math.ceil(readyContacts.length / readyPageSize), p + 1))}
+                        disabled={readyPage >= Math.ceil(readyContacts.length / readyPageSize)}
+                        className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                      <select
+                        value={readyPageSize}
+                        onChange={(e) => { setReadyPageSize(Number(e.target.value)); setReadyPage(1) }}
+                        className="ml-2 px-2 py-2 text-sm rounded-lg border border-gray-300 text-gray-700"
+                      >
+                        <option value={10}>10 / page</option>
+                        <option value={20}>20 / page</option>
+                        <option value={50}>50 / page</option>
+                      </select>
                     </div>
                     <button 
                       onClick={() => startBatchScraping(selectedContactIds.length)}
@@ -683,7 +769,7 @@ export default function ScrapingPage() {
             {isScraping && (
               <div className="bg-white rounded-lg shadow-lg border border-gray-100 p-12 text-center">
                 <div className="flex flex-col items-center space-y-4">
-                  <div className="animate-spin rounded-full h-16 w-16 border-4 border-indigo-200 border-t-indigo-600"></div>
+                  <div className="h-16 w-16 rounded-full bg-slate-200 animate-pulse"></div>
                   <div className="text-xl font-bold text-gray-900">Scraping in Progress...</div>
                   <div className="text-base text-gray-600">Processing {selectedRecords.length} selected records</div>
                 </div>
@@ -843,6 +929,15 @@ export default function ScrapingPage() {
           </div>
         </div>
       </div>
+      {/* Status Browser Modal */}
+      <ScrapeStatusBrowser
+        isOpen={isStatusOpen}
+        onClose={() => setIsStatusOpen(false)}
+        contacts={readyContacts}
+        initialFilter={statusFilter}
+        onRequestReadyFetch={() => fetchReadyContacts(readyPageSize)}
+        onAfterScrape={async () => { await fetchStats(); await fetchReadyContacts(readyPageSize) }}
+      />
     </AuthGuard>
   )
 }

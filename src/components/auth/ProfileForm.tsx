@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Skeleton, SkeletonAvatar } from '@/components/common/Skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -198,10 +199,21 @@ export function ProfileForm() {
 
   if (isLoadingProfile) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading profile...</p>
+      <div className="p-6 space-y-6">
+        <div className="flex items-center gap-4">
+          <SkeletonAvatar size="lg" />
+          <div className="flex-1">
+            <Skeleton className="h-5 w-48" />
+            <Skeleton className="mt-2 h-4 w-32" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i}>
+              <Skeleton className="h-4 w-24 mb-2" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ))}
         </div>
       </div>
     )
