@@ -1,15 +1,24 @@
 import type { ScrapeSingleResponseData } from './scraping'
 
 export interface BusinessSummary {
-  businessName: string
-  industry: string
-  services: string[]
-  keyFeatures: string[]
-  targetAudience: string
-  businessSize: string
-  location: string
+  id: number
+  contactId: number
+  scrapedDataId: number
+  summaryText: string
+  painPoints: string[]
+  strengths: string[]
+  opportunities: string[]
+  keywords: string[]
+  // Legacy fields for backward compatibility
+  businessName?: string
+  industry?: string
+  services?: string[]
+  keyFeatures?: string[]
+  targetAudience?: string
+  businessSize?: string
+  location?: string
   website?: string
-  contactInfo: {
+  contactInfo?: {
     email?: string
     phone?: string
     address?: string
@@ -18,8 +27,8 @@ export interface BusinessSummary {
     platform: string
     url: string
   }[]
-  summary: string
-  generatedAt: string
+  summary?: string
+  generatedAt?: string
 }
 
 export interface GeneratedEmail {

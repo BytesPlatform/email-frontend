@@ -22,7 +22,7 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit & { timeout?: number } = {}
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseUrl}${endpoint}`
     
@@ -41,7 +41,8 @@ class ApiClient {
 
     try {
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+      const requestTimeout = options.timeout || this.timeout
+      const timeoutId = setTimeout(() => controller.abort(), requestTimeout)
 
       const response = await fetch(url, {
         ...config,
@@ -106,10 +107,11 @@ class ApiClient {
     return this.request<T>(endpoint, { method: 'GET' })
   }
 
-  async post<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
+  async post<T>(endpoint: string, data?: unknown, timeout?: number): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
+      timeout,
     })
   }
 

@@ -98,10 +98,13 @@ export default function EmailGenerationPage() {
             ...prev, 
             scrapedRecords,
             isLoadingRecords: false,
-            currentPage: 1 // Reset to first page when new data is loaded
-          }))
-        } else {
-          console.log('History API Error:', historyRes.error)
+          currentPage: 1 // Reset to first page when new data is loaded
+        }))
+        
+        // Load summaries for all records
+        loadSummariesForRecords(scrapedRecords)
+      } else {
+        console.log('History API Error:', historyRes.error)
           setState(prev => ({ 
             ...prev, 
             error: historyRes.error || 'Failed to load scraped records',
@@ -119,6 +122,47 @@ export default function EmailGenerationPage() {
     
     loadScrapedRecords()
   }, [client?.id])
+
+  // Function to fetch summary for a specific contact
+  const fetchSummaryForContact = async (contactId: number): Promise<BusinessSummary | null> => {
+    try {
+      const res = await emailGenerationApi.getContactSummary(contactId)
+      if (res.success && res.data && 'summaryText' in res.data) {
+        return res.data as BusinessSummary
+      }
+      return null
+    } catch (error) {
+      console.log(`No summary found     for contact ${contactId}:`, error)
+      return null
+    }
+  }
+
+  // Function to load summaries for all contacts
+  const loadSummariesForRecords = async (records: ScrapedRecord[]) => {
+    try {
+      console.log('Loading summaries for', records.length, 'records')
+      // Fetch summaries for all contacts in parallel
+      const summaryPromises = records.map(record => 
+        fetchSummaryForContact(record.contactId)
+      )
+      
+      const summaries = await Promise.all(summaryPromises)
+      console.log('Loaded summaries:', summaries.filter(s => s !== null).length, 'out of', summaries.length)
+      
+      // Merge summaries with records
+      const updatedRecords = records.map((record, index) => ({
+        ...record,
+        generatedSummary: summaries[index] || undefined
+      }))
+      
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: updatedRecords
+      }))
+    } catch (error) {
+      console.error('Error loading summaries:', error)
+    }
+  }
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -139,32 +183,56 @@ export default function EmailGenerationPage() {
       error: null
     }))
     
-    try {
-      const res = await emailGenerationApi.generateSummary(record.contactId, 1) // Using uploadId 1 for now
-      if (res.success && res.data?.success) {
-        setState(prev => ({
-          ...prev,
-          scrapedRecords: prev.scrapedRecords.map(r => 
-            r.id === recordId 
-              ? { 
-                  ...r, 
-                  generatedSummary: res.data!.data!,
-                  generatedEmail: undefined, // Reset email when new summary is generated
-                  isGeneratingSummary: false 
-                } 
-              : r
-          )
-        }))
-      } else {
-        setState(prev => ({
-          ...prev,
-          scrapedRecords: prev.scrapedRecords.map(r => 
-            r.id === recordId ? { ...r, isGeneratingSummary: false } : r
-          ),
-          error: res.data?.error || res.error || 'Failed to generate summary'
-        }))
-      }
+      try {
+        console.log('Generating summary for contactId:', record.contactId)
+        const res = await emailGenerationApi.summarizeContact(record.contactId)
+        console.log('Summary API response:', res)
+        console.log('Response success:', res.success)
+        console.log('Response data:', res.data)
+        console.log('Response data type:', typeof res.data)
+        console.log('Response data keys:', res.data ? Object.keys(res.data) : 'No data')
+        console.log('Response data structure:', res.data)
+        console.log('Full response structure:', JSON.stringify(res, null, 2))
+        if (res.success && res.data) {
+          // The API now returns BusinessSummary directly as res.data
+          console.log('Found summary data directly in res.data:', res.data)
+          
+          // Check if the response has the expected BusinessSummary structure
+          if (res.data && 'summaryText' in res.data) {
+            setState(prev => ({
+              ...prev,
+              scrapedRecords: prev.scrapedRecords.map(r => 
+                r.id === recordId 
+                  ? { 
+                      ...r, 
+                      generatedSummary: res.data as BusinessSummary,
+                      generatedEmail: undefined, // Reset email when new summary is generated
+                      isGeneratingSummary: false 
+                    } 
+                  : r
+              )
+            }))
+          } else {
+            console.log('Response data does not contain expected BusinessSummary structure')
+            setState(prev => ({
+              ...prev,
+              scrapedRecords: prev.scrapedRecords.map(r => 
+                r.id === recordId ? { ...r, isGeneratingSummary: false } : r
+              ),
+              error: 'Invalid summary data structure received from server'
+            }))
+          }
+        } else {
+          setState(prev => ({
+            ...prev,
+            scrapedRecords: prev.scrapedRecords.map(r => 
+              r.id === recordId ? { ...r, isGeneratingSummary: false } : r
+            ),
+            error: res.error || 'Failed to generate summary'
+          }))
+        }
     } catch (error) {
+      console.error('Error generating summary:', error)
       setState(prev => ({
         ...prev,
         scrapedRecords: prev.scrapedRecords.map(r => 
@@ -338,26 +406,28 @@ export default function EmailGenerationPage() {
                     </Link>
                   </div>
                  ) : (
-                   <div>
-                     <table className="w-full divide-y divide-gray-200">
+                   <div className="overflow-x-auto relative">
+                     {/* Horizontal scroll indicator */}
+                     <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-gray-300 to-transparent opacity-50 pointer-events-none"></div>
+                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
                             Business
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                             Contact Info
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                             Location
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                             Summary
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                             Email
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[140px]">
                             Actions
                           </th>
                         </tr>
@@ -365,7 +435,7 @@ export default function EmailGenerationPage() {
                        <tbody className="bg-white divide-y divide-gray-200">
                          {getCurrentPageRecords().map((record) => (
                           <tr key={record.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openDrawer(record)}>
-                            <td className="px-3 py-2 whitespace-nowrap">
+                            <td className="px-2 py-2 whitespace-nowrap min-w-[150px]">
                               <div className="flex items-center">
                                 <div className="flex-shrink-0 h-8 w-8">
                                   <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
@@ -384,15 +454,15 @@ export default function EmailGenerationPage() {
                                 </div>
                               </div>
                             </td>
-                            <td className="px-3 py-2 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">
+                            <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
+                              <div className="text-sm text-gray-900 truncate">
                                 {record.email || 'No email'}
                               </div>
-                              <div className="text-xs text-gray-500">
+                              <div className="text-xs text-gray-500 truncate">
                                 {record.website || 'No website'}
                               </div>
                             </td>
-                             <td className="px-3 py-2 whitespace-nowrap">
+                             <td className="px-2 py-2 whitespace-nowrap min-w-[80px]">
                                <div className="text-sm text-gray-900">
                                  {record.state || 'N/A'}
                                </div>
@@ -400,25 +470,39 @@ export default function EmailGenerationPage() {
                                  {record.zipCode || 'N/A'}
                                </div>
                              </td>
-                            <td className="px-3 py-2 whitespace-nowrap">
+                            <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
                               {record.generatedSummary ? (
                                 <div className="flex items-center space-x-1">
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                     ✓ Generated
                                   </span>
                                   <Button
-                                    onClick={() => copyToClipboard(record.generatedSummary!.summary)}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      copyToClipboard(record.generatedSummary!.summaryText || record.generatedSummary!.summary || '')
+                                    }}
                                     variant="outline"
                                     size="xs"
                                   >
                                     Copy
+                                  </Button>
+                                  <Button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      openDrawer(record)
+                                    }}
+                                    variant="outline"
+                                    size="xs"
+                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                  >
+                                    View
                                   </Button>
                                 </div>
                               ) : (
                                 <span className="text-gray-400 text-xs">Not generated</span>
                               )}
                             </td>
-                            <td className="px-3 py-2 whitespace-nowrap">
+                            <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
                               {record.generatedEmail ? (
                                 <div className="flex items-center space-x-1">
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -436,7 +520,7 @@ export default function EmailGenerationPage() {
                                 <span className="text-gray-400 text-xs">Not generated</span>
                               )}
                             </td>
-                            <td className="px-3 py-2 whitespace-nowrap text-sm font-medium">
+                            <td className="px-2 py-2 whitespace-nowrap text-sm font-medium min-w-[140px]">
                               <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
                                 {!record.generatedSummary ? (
                                   <Button
@@ -445,7 +529,7 @@ export default function EmailGenerationPage() {
                                     isLoading={record.isGeneratingSummary}
                                     size="sm"
                                   >
-                                    {record.isGeneratingSummary ? 'Generating...' : 'Generate Summary'}
+                                    {record.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
                                   </Button>
                                 ) : !record.generatedEmail ? (
                                   <Button
@@ -564,7 +648,7 @@ export default function EmailGenerationPage() {
           <div className="relative w-full max-w-5xl h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 transform transition-transform overflow-hidden">
             <div className="flex flex-col h-full">
               {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 rounded-t-2xl">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 rounded-t-2xl flex-shrink-0">
                 <div className="flex items-center space-x-3">
                   <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                     <span className="text-white font-semibold text-lg">
@@ -589,8 +673,13 @@ export default function EmailGenerationPage() {
               </div>
 
               {/* Content */}
-              <div className="flex-1 p-6">
-                <div className="space-y-4">
+              <div className="flex-1 relative overflow-hidden">
+                {/* Scroll indicator at top */}
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-b from-gray-200 to-transparent z-10 pointer-events-none"></div>
+                
+                {/* Scrollable content */}
+                <div className="h-full p-6 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                  <div className="space-y-6">
                   {/* Basic Information */}
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-3">Basic Information</h3>
@@ -667,28 +756,125 @@ export default function EmailGenerationPage() {
                   {selectedRecord.generatedSummary && (
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">Generated Summary</h3>
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-green-800">Business Overview</span>
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <span className="text-lg font-semibold text-green-800">Business Overview</span>
                           <Button
-                            onClick={() => copyToClipboard(selectedRecord.generatedSummary!.summary)}
+                            onClick={() => copyToClipboard(selectedRecord.generatedSummary!.summaryText || selectedRecord.generatedSummary!.summary || '')}
                             variant="outline"
                             size="sm"
+                            className="bg-white hover:bg-gray-50"
                           >
                             Copy Summary
                           </Button>
                         </div>
-                        <p className="text-sm text-green-700 leading-relaxed max-h-20 overflow-hidden">
-                          {selectedRecord.generatedSummary.summary}
-                        </p>
-                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                          <div>
-                            <span className="font-medium text-green-800">Industry:</span> {selectedRecord.generatedSummary.industry}
-                          </div>
-                          <div>
-                            <span className="font-medium text-green-800">Services:</span> {selectedRecord.generatedSummary.services.join(', ')}
-                          </div>
+                        <div className="bg-white rounded-lg p-4 mb-4">
+                          <p className="text-sm text-gray-800 leading-relaxed">
+                            {selectedRecord.generatedSummary.summaryText || selectedRecord.generatedSummary.summary}
+                          </p>
                         </div>
+                        {/* Display new BusinessSummary fields if available */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {selectedRecord.generatedSummary.painPoints && selectedRecord.generatedSummary.painPoints.length > 0 && (
+                            <div className="bg-white rounded-lg p-4">
+                              <h4 className="text-sm font-semibold text-red-800 mb-3 flex items-center">
+                                <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
+                                Pain Points
+                              </h4>
+                              <ul className="text-sm text-gray-700 space-y-2">
+                                {selectedRecord.generatedSummary.painPoints.map((point, index) => (
+                                  <li key={index} className="flex items-start">
+                                    <span className="text-red-500 mr-2">•</span>
+                                    <span>{point}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          {selectedRecord.generatedSummary.strengths && selectedRecord.generatedSummary.strengths.length > 0 && (
+                            <div className="bg-white rounded-lg p-4">
+                              <h4 className="text-sm font-semibold text-green-800 mb-3 flex items-center">
+                                <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                                Strengths
+                              </h4>
+                              <ul className="text-sm text-gray-700 space-y-2">
+                                {selectedRecord.generatedSummary.strengths.map((strength, index) => (
+                                  <li key={index} className="flex items-start">
+                                    <span className="text-green-500 mr-2">•</span>
+                                    <span>{strength}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          {selectedRecord.generatedSummary.opportunities && selectedRecord.generatedSummary.opportunities.length > 0 && (
+                            <div className="bg-white rounded-lg p-4">
+                              <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center">
+                                <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
+                                Opportunities
+                              </h4>
+                              <ul className="text-sm text-gray-700 space-y-2">
+                                {selectedRecord.generatedSummary.opportunities.map((opportunity, index) => (
+                                  <li key={index} className="flex items-start">
+                                    <span className="text-blue-500 mr-2">•</span>
+                                    <span>{opportunity}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          {selectedRecord.generatedSummary.keywords && selectedRecord.generatedSummary.keywords.length > 0 && (
+                            <div className="bg-white rounded-lg p-4">
+                              <h4 className="text-sm font-semibold text-purple-800 mb-3 flex items-center">
+                                <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
+                                Keywords
+                              </h4>
+                              <div className="flex flex-wrap gap-2">
+                                {selectedRecord.generatedSummary.keywords.map((keyword, index) => (
+                                  <span key={index} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                    {keyword}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Additional Information */}
+                        {(selectedRecord.generatedSummary.industry || selectedRecord.generatedSummary.services || selectedRecord.generatedSummary.businessName) && (
+                          <div className="mt-4 bg-white rounded-lg p-4">
+                            <h4 className="text-sm font-semibold text-gray-800 mb-3">Additional Information</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                              {selectedRecord.generatedSummary.businessName && (
+                                <div>
+                                  <span className="font-medium text-gray-600">Business Name:</span>
+                                  <p className="text-gray-800 mt-1">{selectedRecord.generatedSummary.businessName}</p>
+                                </div>
+                              )}
+                              {selectedRecord.generatedSummary.industry && (
+                                <div>
+                                  <span className="font-medium text-gray-600">Industry:</span>
+                                  <p className="text-gray-800 mt-1">{selectedRecord.generatedSummary.industry}</p>
+                                </div>
+                              )}
+                              {selectedRecord.generatedSummary.services && selectedRecord.generatedSummary.services.length > 0 && (
+                                <div>
+                                  <span className="font-medium text-gray-600">Services:</span>
+                                  <p className="text-gray-800 mt-1">{selectedRecord.generatedSummary.services.join(', ')}</p>
+                                </div>
+                              )}
+                              {selectedRecord.generatedSummary.targetAudience && (
+                                <div>
+                                  <span className="font-medium text-gray-600">Target Audience:</span>
+                                  <p className="text-gray-800 mt-1">{selectedRecord.generatedSummary.targetAudience}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -750,7 +936,7 @@ export default function EmailGenerationPage() {
                           disabled={selectedRecord.isGeneratingSummary}
                           isLoading={selectedRecord.isGeneratingSummary}
                         >
-                          {selectedRecord.isGeneratingSummary ? 'Generating...' : 'Generate Summary'}
+                          {selectedRecord.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
                         </Button>
                       ) : !selectedRecord.generatedEmail ? (
                         <Button
@@ -791,6 +977,7 @@ export default function EmailGenerationPage() {
                         </div>
                       )}
                     </div>
+                  </div>
                   </div>
                 </div>
               </div>
