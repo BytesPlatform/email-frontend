@@ -95,6 +95,16 @@ export function Header() {
                   Scraping
                 </Link>
                 <Link 
+                  href="/dashboard/email-generation" 
+                  className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                    isActive('/dashboard/email-generation') 
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  Email Generation
+                </Link>
+                <Link 
                   href="/dashboard/history" 
                   className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
                     isActive('/dashboard/history') 
@@ -238,6 +248,17 @@ export function Header() {
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Scraping
+                  </Link>
+                  <Link 
+                    href="/dashboard/email-generation" 
+                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${
+                      isActive('/dashboard/email-generation')
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                    }`}
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    Email Generation
                   </Link>
                   <Link 
                     href="/dashboard/history" 
