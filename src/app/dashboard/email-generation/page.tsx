@@ -26,6 +26,10 @@ export default function EmailGenerationPage() {
     recordsPerPage: 8
   })
 
+  // Detail drawer state
+  const [selectedRecord, setSelectedRecord] = useState<ScrapedRecord | null>(null)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+
   // Load scraped records on component mount
   useEffect(() => {
     const loadScrapedRecords = async () => {
@@ -115,6 +119,13 @@ export default function EmailGenerationPage() {
     
     loadScrapedRecords()
   }, [client?.id])
+
+  // Cleanup effect to restore body scroll when component unmounts
+  useEffect(() => {
+    return () => {
+      document.body.style.overflow = 'unset'
+    }
+  }, [])
 
   const handleGenerateSummary = async (recordId: number) => {
     const record = state.scrapedRecords.find(r => r.id === recordId)
@@ -249,6 +260,21 @@ export default function EmailGenerationPage() {
     }
   }
 
+  // Drawer handlers
+  const openDrawer = (record: ScrapedRecord) => {
+    setSelectedRecord(record)
+    setIsDrawerOpen(true)
+    // Prevent body scrolling when drawer is open
+    document.body.style.overflow = 'hidden'
+  }
+
+  const closeDrawer = () => {
+    setSelectedRecord(null)
+    setIsDrawerOpen(false)
+    // Restore body scrolling when drawer is closed
+    document.body.style.overflow = 'unset'
+  }
+
   return (
     <AuthGuard>
       <div className="bg-gray-50 min-h-screen">
@@ -338,7 +364,7 @@ export default function EmailGenerationPage() {
                       </thead>
                        <tbody className="bg-white divide-y divide-gray-200">
                          {getCurrentPageRecords().map((record) => (
-                          <tr key={record.id} className="hover:bg-gray-50">
+                          <tr key={record.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openDrawer(record)}>
                             <td className="px-3 py-2 whitespace-nowrap">
                               <div className="flex items-center">
                                 <div className="flex-shrink-0 h-8 w-8">
@@ -411,7 +437,7 @@ export default function EmailGenerationPage() {
                               )}
                             </td>
                             <td className="px-3 py-2 whitespace-nowrap text-sm font-medium">
-                              <div className="flex space-x-1">
+                              <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
                                 {!record.generatedSummary ? (
                                   <Button
                                     onClick={() => handleGenerateSummary(record.id)}
@@ -524,6 +550,254 @@ export default function EmailGenerationPage() {
           </div>
         </div>
       </div>
+
+      {/* Detail Drawer */}
+      {isDrawerOpen && selectedRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop - blurred page background */}
+          <div 
+            className="absolute inset-0 backdrop-blur-md"
+            onClick={closeDrawer}
+          />
+          
+          {/* Drawer */}
+          <div className="relative w-full max-w-5xl h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 transform transition-transform overflow-hidden">
+            <div className="flex flex-col h-full">
+              {/* Header */}
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 rounded-t-2xl">
+                <div className="flex items-center space-x-3">
+                  <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                    <span className="text-white font-semibold text-lg">
+                      {selectedRecord.businessName?.[0]?.toUpperCase() || 'B'}
+                    </span>
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">
+                      {selectedRecord.businessName || 'Unknown Business'}
+                    </h2>
+                    <p className="text-sm text-gray-500">Contact ID: {selectedRecord.contactId}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={closeDrawer}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 p-6">
+                <div className="space-y-4">
+                  {/* Basic Information */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Basic Information</h3>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <label className="text-sm font-medium text-gray-500">Business Name</label>
+                        <p className="text-sm text-gray-900 mt-1">{selectedRecord.businessName || 'N/A'}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <label className="text-sm font-medium text-gray-500">Email</label>
+                        <p className="text-sm text-gray-900 mt-1">{selectedRecord.email || 'N/A'}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <label className="text-sm font-medium text-gray-500">Website</label>
+                        <p className="text-sm text-gray-900 mt-1">
+                          {selectedRecord.website ? (
+                            <a href={selectedRecord.website} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800">
+                              {selectedRecord.website}
+                            </a>
+                          ) : 'N/A'}
+                        </p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <label className="text-sm font-medium text-gray-500">Location</label>
+                        <p className="text-sm text-gray-900 mt-1">
+                          {selectedRecord.state || 'N/A'} {selectedRecord.zipCode ? `(${selectedRecord.zipCode})` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Scraping Details */}
+                  {selectedRecord.scrapedData && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Scraping Details</h3>
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <label className="text-sm font-medium text-gray-500">Method</label>
+                          <p className="text-sm text-gray-900 mt-1 capitalize">{selectedRecord.scrapedData.method || 'N/A'}</p>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <label className="text-sm font-medium text-gray-500">Status</label>
+                          <p className="text-sm text-gray-900 mt-1">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              selectedRecord.scrapedData.scrapeSuccess 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {selectedRecord.scrapedData.scrapeSuccess ? 'Success' : 'Failed'}
+                            </span>
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <label className="text-sm font-medium text-gray-500">Scraped URL</label>
+                          <p className="text-sm text-gray-900 mt-1">
+                            {selectedRecord.scrapedData.url ? (
+                              <a href={selectedRecord.scrapedData.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 break-all">
+                                {selectedRecord.scrapedData.url}
+                              </a>
+                            ) : 'N/A'}
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <label className="text-sm font-medium text-gray-500">Scraped At</label>
+                          <p className="text-sm text-gray-900 mt-1">
+                            {selectedRecord.scrapedData.timestamp ? new Date(selectedRecord.scrapedData.timestamp).toLocaleString() : 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Generated Summary */}
+                  {selectedRecord.generatedSummary && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Generated Summary</h3>
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-green-800">Business Overview</span>
+                          <Button
+                            onClick={() => copyToClipboard(selectedRecord.generatedSummary!.summary)}
+                            variant="outline"
+                            size="sm"
+                          >
+                            Copy Summary
+                          </Button>
+                        </div>
+                        <p className="text-sm text-green-700 leading-relaxed max-h-20 overflow-hidden">
+                          {selectedRecord.generatedSummary.summary}
+                        </p>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="font-medium text-green-800">Industry:</span> {selectedRecord.generatedSummary.industry}
+                          </div>
+                          <div>
+                            <span className="font-medium text-green-800">Services:</span> {selectedRecord.generatedSummary.services.join(', ')}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Generated Email */}
+                  {selectedRecord.generatedEmail && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Generated Email</h3>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-blue-800">Email Content</span>
+                          <div className="space-x-2">
+                            <Button
+                              onClick={() => copyToClipboard(selectedRecord.generatedEmail!.subject)}
+                              variant="outline"
+                              size="sm"
+                            >
+                              Copy Subject
+                            </Button>
+                            <Button
+                              onClick={() => copyToClipboard(selectedRecord.generatedEmail!.body)}
+                              variant="outline"
+                              size="sm"
+                            >
+                              Copy Body
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <div>
+                            <label className="text-xs font-medium text-blue-800">Subject:</label>
+                            <p className="text-sm text-blue-700 font-medium mt-1">{selectedRecord.generatedEmail.subject}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-blue-800">Body:</label>
+                            <div className="text-sm text-blue-700 mt-1 whitespace-pre-wrap bg-white p-3 rounded border max-h-24 overflow-hidden">
+                              {selectedRecord.generatedEmail.body}
+                            </div>
+                          </div>
+                          <div className="text-xs text-blue-600">
+                            <span className="font-medium">Tone:</span> {selectedRecord.generatedEmail.tone} • 
+                            <span className="font-medium ml-2">Call to Action:</span> {selectedRecord.generatedEmail.callToAction}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Actions</h3>
+                    <div className="flex space-x-2">
+                      {!selectedRecord.generatedSummary ? (
+                        <Button
+                          onClick={() => {
+                            handleGenerateSummary(selectedRecord.id)
+                            closeDrawer()
+                          }}
+                          disabled={selectedRecord.isGeneratingSummary}
+                          isLoading={selectedRecord.isGeneratingSummary}
+                        >
+                          {selectedRecord.isGeneratingSummary ? 'Generating...' : 'Generate Summary'}
+                        </Button>
+                      ) : !selectedRecord.generatedEmail ? (
+                        <Button
+                          onClick={() => {
+                            handleGenerateEmail(selectedRecord.id)
+                            closeDrawer()
+                          }}
+                          disabled={selectedRecord.isGeneratingEmail}
+                          isLoading={selectedRecord.isGeneratingEmail}
+                          variant="success"
+                        >
+                          {selectedRecord.isGeneratingEmail ? 'Generating...' : 'Generate Email'}
+                        </Button>
+                      ) : (
+                        <div className="flex space-x-2">
+                          <Button
+                            onClick={() => {
+                              handleGenerateSummary(selectedRecord.id)
+                              closeDrawer()
+                            }}
+                            disabled={selectedRecord.isGeneratingSummary}
+                            isLoading={selectedRecord.isGeneratingSummary}
+                            variant="outline"
+                          >
+                            Regenerate Summary
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              handleGenerateEmail(selectedRecord.id)
+                              closeDrawer()
+                            }}
+                            disabled={selectedRecord.isGeneratingEmail}
+                            isLoading={selectedRecord.isGeneratingEmail}
+                            variant="outline"
+                          >
+                            Regenerate Email
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </AuthGuard>
   )
 }

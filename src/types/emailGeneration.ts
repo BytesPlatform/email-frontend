@@ -1,3 +1,5 @@
+import type { ScrapeSingleResponseData } from './scraping'
+
 export interface BusinessSummary {
   businessName: string
   industry: string
