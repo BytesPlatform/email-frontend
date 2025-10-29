@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { historyApi } from '@/api/history'
@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/Button'
 import Link from 'next/link'
 import type { 
   BusinessSummary, 
-  GeneratedEmail, 
   ScrapedRecord,
   EmailGenerationState 
 } from '@/types/emailGeneration'
@@ -29,6 +28,47 @@ export default function EmailGenerationPage() {
   // Detail drawer state
   const [selectedRecord, setSelectedRecord] = useState<ScrapedRecord | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+
+  // Function to fetch summary for a specific contact
+  const fetchSummaryForContact = useCallback(async (contactId: number): Promise<BusinessSummary | null> => {
+    try {
+      const res = await emailGenerationApi.getContactSummary(contactId)
+      if (res.success && res.data && 'summaryText' in res.data) {
+        return res.data as BusinessSummary
+      }
+      return null
+    } catch (error) {
+      console.log(`No summary found for contact ${contactId}:`, error)
+      return null
+    }
+  }, [])
+
+  // Function to load summaries for all contacts
+  const loadSummariesForRecords = useCallback(async (records: ScrapedRecord[]) => {
+    try {
+      console.log('Loading summaries for', records.length, 'records')
+      // Fetch summaries for all contacts in parallel
+      const summaryPromises = records.map(record => 
+        fetchSummaryForContact(record.contactId)
+      )
+      
+      const summaries = await Promise.all(summaryPromises)
+      console.log('Loaded summaries:', summaries.filter(s => s !== null).length, 'out of', summaries.length)
+      
+      // Merge summaries with records
+      const updatedRecords = records.map((record, index) => ({
+        ...record,
+        generatedSummary: summaries[index] || undefined
+      }))
+      
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: updatedRecords
+      }))
+    } catch (error) {
+      console.error('Error loading summaries:', error)
+    }
+  }, [fetchSummaryForContact])
 
   // Load scraped records on component mount
   useEffect(() => {
@@ -75,7 +115,7 @@ export default function EmailGenerationPage() {
             scrapedData: {
               id: item.id,
               contactId: item.contactId,
-              method: item.method as any,
+              method: (item.method as string) as 'direct_url' | 'email_domain' | 'business_search',
               url: item.discoveredUrl,
               pageTitle: undefined,
               metaDescription: undefined,
@@ -121,48 +161,7 @@ export default function EmailGenerationPage() {
     }
     
     loadScrapedRecords()
-  }, [client?.id])
-
-  // Function to fetch summary for a specific contact
-  const fetchSummaryForContact = async (contactId: number): Promise<BusinessSummary | null> => {
-    try {
-      const res = await emailGenerationApi.getContactSummary(contactId)
-      if (res.success && res.data && 'summaryText' in res.data) {
-        return res.data as BusinessSummary
-      }
-      return null
-    } catch (error) {
-      console.log(`No summary found     for contact ${contactId}:`, error)
-      return null
-    }
-  }
-
-  // Function to load summaries for all contacts
-  const loadSummariesForRecords = async (records: ScrapedRecord[]) => {
-    try {
-      console.log('Loading summaries for', records.length, 'records')
-      // Fetch summaries for all contacts in parallel
-      const summaryPromises = records.map(record => 
-        fetchSummaryForContact(record.contactId)
-      )
-      
-      const summaries = await Promise.all(summaryPromises)
-      console.log('Loaded summaries:', summaries.filter(s => s !== null).length, 'out of', summaries.length)
-      
-      // Merge summaries with records
-      const updatedRecords = records.map((record, index) => ({
-        ...record,
-        generatedSummary: summaries[index] || undefined
-      }))
-      
-      setState(prev => ({
-        ...prev,
-        scrapedRecords: updatedRecords
-      }))
-    } catch (error) {
-      console.error('Error loading summaries:', error)
-    }
-  }
+  }, [client?.id, loadSummariesForRecords])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {

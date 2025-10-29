@@ -2,8 +2,6 @@ import { apiClient, ApiResponse } from './ApiClient'
 import {
   BusinessSummary,
   GeneratedEmail,
-  SummaryGenerationRequest,
-  EmailGenerationRequest,
   SummaryGenerationResponse,
   EmailGenerationResponse,
 } from '@/types/emailGeneration'
@@ -49,7 +47,7 @@ export const emailGenerationApi = {
    * Generate business summary for a specific contact
    * Note: This will be implemented when backend API is ready
    */
-  async generateSummary(contactId: number, uploadId: number): Promise<ApiResponse<SummaryGenerationResponse>> {
+  async generateSummary(contactId: number, _uploadId: number): Promise<ApiResponse<SummaryGenerationResponse>> {
     // TODO: Replace with actual API call when backend is ready
     // return apiClient.post<SummaryGenerationResponse>('/email-generation/summary', { contactId, uploadId })
     
@@ -106,7 +104,7 @@ export const emailGenerationApi = {
   async generateEmail(
     contactId: number, 
     summaryData: BusinessSummary, 
-    emailType: 'sales' | 'outreach' | 'follow-up' = 'sales',
+    _emailType: 'sales' | 'outreach' | 'follow-up' = 'sales',
     tone: 'professional' | 'friendly' | 'persuasive' = 'professional'
   ): Promise<ApiResponse<EmailGenerationResponse>> {
     // TODO: Replace with actual API call when backend is ready
