@@ -42,10 +42,14 @@ export const ingestionApi = {
   /**
    * Get all CSV uploads for a client
    */
-  async getClientUploads(clientId: number): Promise<ApiResponse<CsvUpload[]>> {
+  async getClientUploads(): Promise<ApiResponse<CsvUpload[]>> {
     try {
-      const response = await apiClient.get<CsvUpload[]>(`/ingestion/upload/${clientId}`)
-      return response
+      // Backend: GET /ingestion/uploads returns { message, count, uploads }
+      const response = await apiClient.get<{ message: string; count: number; uploads: CsvUpload[] }>(`/ingestion/uploads`)
+      if (response.success && response.data) {
+        return { success: true, data: response.data.uploads }
+      }
+      return { success: false, error: response.error || 'Failed to fetch uploads' }
     } catch (error) {
       return {
         success: false,
@@ -59,8 +63,12 @@ export const ingestionApi = {
    */
   async getUploadDetails(uploadId: number): Promise<ApiResponse<CsvUpload>> {
     try {
-      const response = await apiClient.get<CsvUpload>(`/ingestion/upload/${uploadId}`)
-      return response
+      // Backend: GET /ingestion/upload/:id returns { message, upload }
+      const response = await apiClient.get<{ message: string; upload: CsvUpload }>(`/ingestion/upload/${uploadId}`)
+      if (response.success && response.data) {
+        return { success: true, data: response.data.upload }
+      }
+      return { success: false, error: response.error || 'Failed to fetch upload details' }
     } catch (error) {
       return {
         success: false,

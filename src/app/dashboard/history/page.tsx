@@ -13,7 +13,7 @@ export default function HistoryPage() {
   const { client } = useAuthContext()
   const [filters, setFilters] = useState<ClientHistoryFilters>({
     page: 1,
-    limit: 20,
+    limit: 5,
     status: 'all',
     sortBy: 'scrapedAt',
     sortOrder: 'desc'
@@ -71,7 +71,14 @@ export default function HistoryPage() {
   }
 
   const handleFilterChange = (newFilters: Partial<ClientHistoryFilters>) => {
-    setFilters(prev => ({ ...prev, ...newFilters, page: 1 }))
+    setFilters(prev => {
+      const isExplicitPageChange = typeof newFilters.page === 'number'
+      return {
+        ...prev,
+        ...newFilters,
+        ...(isExplicitPageChange ? {} : { page: 1 })
+      }
+    })
   }
 
   return (

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import type { ClientHistoryFilters, ClientScrapingHistoryResponse } from '@/types/history'
 import { historyApi } from '@/api/history'
 import { useState, useEffect } from 'react'
+import { Skeleton } from '@/components/common/Skeleton'
 import type { ContactScrapingHistoryResponse } from '@/types/history'
 
 interface HistoryListProps {
@@ -57,11 +58,19 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
     return (
       <Card>
         <CardContent>
-          <div className="flex items-center justify-center py-12">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading history...</p>
-            </div>
+          <div className="py-4 space-y-4">
+            {Array.from({ length: 5 }).map((_, idx) => (
+              <div key={idx} className="rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="flex-1">
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="mt-2 h-3 w-32" />
+                  </div>
+                  <Skeleton className="h-8 w-20" />
+                </div>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -224,7 +233,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onPageChange(filters.page || 1 - 1)}
+                onClick={() => onPageChange((filters.page || 1) - 1)}
                 disabled={filters.page === 1}
               >
                 Previous
@@ -272,7 +281,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
               <div className="p-6">
                 {isLoadingContact ? (
                   <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+                    <Skeleton className="h-12 w-12 rounded-full" />
                   </div>
                 ) : contactHistory ? (
                   <div className="space-y-4">
