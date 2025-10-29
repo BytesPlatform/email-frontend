@@ -311,27 +311,27 @@ export default function EmailGenerationPage() {
                       Go to Scraping
                     </Link>
                   </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
+                 ) : (
+                   <div>
+                     <table className="w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Business
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Contact Info
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Location
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Summary
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Email
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Actions
                           </th>
                         </tr>
@@ -339,45 +339,45 @@ export default function EmailGenerationPage() {
                        <tbody className="bg-white divide-y divide-gray-200">
                          {getCurrentPageRecords().map((record) => (
                           <tr key={record.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
+                            <td className="px-3 py-2 whitespace-nowrap">
                               <div className="flex items-center">
-                                <div className="flex-shrink-0 h-10 w-10">
-                                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                                    <span className="text-white font-semibold text-sm">
+                                <div className="flex-shrink-0 h-8 w-8">
+                                  <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                                    <span className="text-white font-semibold text-xs">
                                       {record.businessName?.[0]?.toUpperCase() || 'B'}
                                     </span>
                                   </div>
                                 </div>
-                                <div className="ml-4">
+                                <div className="ml-3">
                                   <div className="text-sm font-medium text-gray-900">
                                     {record.businessName || 'Unknown Business'}
                                   </div>
-                                  <div className="text-sm text-gray-500">
+                                  <div className="text-xs text-gray-500">
                                     ID: {record.contactId}
                                   </div>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
+                            <td className="px-3 py-2 whitespace-nowrap">
                               <div className="text-sm text-gray-900">
                                 {record.email || 'No email'}
                               </div>
-                              <div className="text-sm text-gray-500">
+                              <div className="text-xs text-gray-500">
                                 {record.website || 'No website'}
                               </div>
                             </td>
-                             <td className="px-6 py-4 whitespace-nowrap">
+                             <td className="px-3 py-2 whitespace-nowrap">
                                <div className="text-sm text-gray-900">
                                  {record.state || 'N/A'}
                                </div>
-                               <div className="text-sm text-gray-500">
+                               <div className="text-xs text-gray-500">
                                  {record.zipCode || 'N/A'}
                                </div>
                              </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
+                            <td className="px-3 py-2 whitespace-nowrap">
                               {record.generatedSummary ? (
-                                <div className="flex items-center space-x-2">
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <div className="flex items-center space-x-1">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                     ✓ Generated
                                   </span>
                                   <Button
@@ -389,13 +389,13 @@ export default function EmailGenerationPage() {
                                   </Button>
                                 </div>
                               ) : (
-                                <span className="text-gray-400 text-sm">Not generated</span>
+                                <span className="text-gray-400 text-xs">Not generated</span>
                               )}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
+                            <td className="px-3 py-2 whitespace-nowrap">
                               {record.generatedEmail ? (
-                                <div className="flex items-center space-x-2">
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                <div className="flex items-center space-x-1">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                     ✓ Generated
                                   </span>
                                   <Button
@@ -407,11 +407,11 @@ export default function EmailGenerationPage() {
                                   </Button>
                                 </div>
                               ) : (
-                                <span className="text-gray-400 text-sm">Not generated</span>
+                                <span className="text-gray-400 text-xs">Not generated</span>
                               )}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                              <div className="flex space-x-2">
+                            <td className="px-3 py-2 whitespace-nowrap text-sm font-medium">
+                              <div className="flex space-x-1">
                                 {!record.generatedSummary ? (
                                   <Button
                                     onClick={() => handleGenerateSummary(record.id)}
