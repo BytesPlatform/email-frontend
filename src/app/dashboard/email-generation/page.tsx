@@ -559,16 +559,6 @@ export default function EmailGenerationPage() {
                                   <Button
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      copyToClipboard(record.generatedSummary!.summaryText || record.generatedSummary!.summary || '')
-                                    }}
-                                    variant="outline"
-                                    size="xs"
-                                  >
-                                    Copy
-                                  </Button>
-                                  <Button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
                                       openDrawer(record)
                                     }}
                                     variant="outline"
@@ -620,17 +610,6 @@ export default function EmailGenerationPage() {
                                     className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
                                   >
                                     View Body
-                                  </Button>
-                                  <Button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleViewEmail(record.id)
-                                    }}
-                                    variant="outline"
-                                    size="xs"
-                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                  >
-                                    View
                                   </Button>
                                 </div>
                               ) : (
@@ -1127,73 +1106,69 @@ export default function EmailGenerationPage() {
           />
           
           {/* Overlay Content */}
-          <div className="relative w-full max-w-3xl max-h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 transform transition-transform overflow-hidden">
-            <div className="flex flex-col h-full">
-              {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 rounded-t-2xl flex-shrink-0">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Email Preview</h2>
-                  <p className="text-sm text-gray-500 mt-1">Full email body content</p>
-                </div>
-                <button
-                  onClick={() => setEmailBodyOverlay(null)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+          <div className="relative w-full max-w-3xl h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 transform transition-transform overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 rounded-t-2xl flex-shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Email Preview</h2>
+                <p className="text-sm text-gray-500 mt-1">Full email body content</p>
               </div>
+              <button
+                onClick={() => setEmailBodyOverlay(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
 
-              {/* Content */}
-              <div className="flex-1 relative overflow-hidden">
-                <div className="h-full p-6 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                  <div className="space-y-6">
-                    {/* Subject */}
-                    <div>
-                      <label className="text-sm font-semibold text-gray-700 mb-2 block">Subject:</label>
-                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                        <p className="text-base font-medium text-gray-900">{emailBodyOverlay.subject}</p>
-                      </div>
-                    </div>
+            {/* Scrollable Content */}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="p-6 space-y-6">
+                {/* Subject */}
+                <div>
+                  <label className="text-sm font-semibold text-gray-700 mb-2 block">Subject:</label>
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <p className="text-base font-medium text-gray-900">{emailBodyOverlay.subject}</p>
+                  </div>
+                </div>
 
-                    {/* Body */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-semibold text-gray-700">Email Body:</label>
-                        <Button
-                          onClick={() => copyToClipboard(emailBodyOverlay.body)}
-                          variant="outline"
-                          size="sm"
-                        >
-                          Copy Body
-                        </Button>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
-                        <div className="text-base text-gray-800 whitespace-pre-wrap leading-relaxed">
-                          {emailBodyOverlay.body}
-                        </div>
-                      </div>
+                {/* Body */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-semibold text-gray-700">Email Body:</label>
+                    <Button
+                      onClick={() => copyToClipboard(emailBodyOverlay.body)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Copy Body
+                    </Button>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                    <div className="text-base text-gray-800 whitespace-pre-wrap leading-relaxed">
+                      {emailBodyOverlay.body}
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Footer */}
-              <div className="flex items-center justify-end p-6 border-t border-gray-200 rounded-b-2xl flex-shrink-0 space-x-3">
-                <Button
-                  onClick={() => copyToClipboard(emailBodyOverlay.body)}
-                  variant="outline"
-                >
-                  Copy Body
-                </Button>
-                <Button
-                  onClick={() => setEmailBodyOverlay(null)}
-                  variant="primary"
-                >
-                  Close
-                </Button>
-              </div>
+            {/* Footer */}
+            <div className="flex items-center justify-end p-6 border-t border-gray-200 rounded-b-2xl flex-shrink-0 space-x-3 bg-white">
+              <Button
+                onClick={() => copyToClipboard(emailBodyOverlay.body)}
+                variant="outline"
+              >
+                Copy Body
+              </Button>
+              <Button
+                onClick={() => setEmailBodyOverlay(null)}
+                variant="primary"
+              >
+                Close
+              </Button>
             </div>
           </div>
         </div>
