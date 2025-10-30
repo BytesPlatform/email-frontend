@@ -107,6 +107,10 @@ class ApiClient {
     return this.request<T>(endpoint, { method: 'GET' })
   }
 
+  async getWithTimeout<T>(endpoint: string, timeoutMs: number): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, { method: 'GET', timeout: timeoutMs as any })
+  }
+
   async post<T>(endpoint: string, data?: unknown, timeout?: number): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: 'POST',

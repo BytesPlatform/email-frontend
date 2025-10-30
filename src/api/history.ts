@@ -29,7 +29,8 @@ export const historyApi = {
     const query = queryParams.toString()
     const url = `/scraping/history/client/${clientId}${query ? `?${query}` : ''}`
     
-    return apiClient.get<ClientScrapingHistoryResponse>(url)
+    // Increase timeout for potentially heavier history queries
+    return apiClient.getWithTimeout<ClientScrapingHistoryResponse>(url, 20000)
   },
 
   /**
