@@ -44,6 +44,25 @@ export interface GeneratedEmail {
   generatedAt: string
 }
 
+// Backend email draft entity
+export interface EmailDraft {
+  id: number
+  subjectLine?: string
+  bodyText?: string
+  icebreaker?: string
+  productsRelevant?: string
+  status?: string
+  contactId?: number
+  summaryId?: number
+  clientEmailId?: number
+  createdAt?: string
+  updatedAt?: string
+  // Legacy fields for backward compatibility
+  subject?: string
+  body?: string
+  tone?: string
+}
+
 export interface SummaryGenerationRequest {
   contactId: number
   uploadId: number
@@ -83,6 +102,7 @@ export interface ScrapedRecord {
   scrapedData?: ScrapeSingleResponseData
   generatedSummary?: BusinessSummary
   generatedEmail?: GeneratedEmail
+  emailDraftId?: number
   isGeneratingSummary?: boolean
   isGeneratingEmail?: boolean
 }
