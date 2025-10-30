@@ -153,9 +153,9 @@ export const emailGenerationApi = {
    * Send an email draft
    * POST /emails/send-draft
    */
-  async sendEmailDraft(draftId: number): Promise<ApiResponse<any>> {
+  async sendEmailDraft(draftId: number): Promise<ApiResponse<{ success: boolean; message?: string }>> {
     try {
-      return await apiClient.post<any>('/emails/send-draft', { draftId })
+      return await apiClient.post<{ success: boolean; message?: string }>('/emails/send-draft', { draftId })
     } catch (error) {
       console.error('Error sending email draft:', error)
       throw error

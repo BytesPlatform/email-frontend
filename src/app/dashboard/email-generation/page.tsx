@@ -41,6 +41,7 @@ export default function EmailGenerationPage() {
 
   // Function to check if summary exists for a contact (lightweight check - only checks existence, doesn't load full data)
   // Note: Since backend doesn't have a lightweight "exists" endpoint, we catch errors to determine existence
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const checkSummaryExists = useCallback(async (contactId: number): Promise<boolean> => {
     try {
       // Make a HEAD or GET request - if it succeeds, summary exists; if 404, it doesn't
@@ -49,9 +50,10 @@ export default function EmailGenerationPage() {
       // If we get here and res.success is true, summary exists
       // We intentionally don't store the data here - just check existence
       return res.success && res.data !== null && res.data !== undefined
-    } catch (error: any) {
+    } catch (error: unknown) {
       // If we get a 404 or "not found" error, summary doesn't exist
-      if (error?.message?.includes('not found') || error?.message?.includes('404') || error?.message?.includes('No summary')) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage?.includes('not found') || errorMessage?.includes('404') || errorMessage?.includes('No summary')) {
         return false
       }
       // For other errors, assume summary might exist but there's a different issue
@@ -289,7 +291,8 @@ export default function EmailGenerationPage() {
       // The ApiClient wraps it, so we need to check both the response structure
       if (res.success) {
         // Check if response has emailDraftId in data or directly
-        const emailDraftId = (res.data as any)?.emailDraftId || (res.data as any)?.id
+        const data = res.data as { emailDraftId?: number; id?: number } | undefined
+        const emailDraftId = data?.emailDraftId || data?.id
         if (emailDraftId) {
           setState(prev => ({
             ...prev,
