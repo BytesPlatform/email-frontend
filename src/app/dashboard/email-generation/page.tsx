@@ -36,7 +36,28 @@ export default function EmailGenerationPage() {
     body: string
   } | null>(null)
 
-  // Function to fetch summary for a specific contact
+  // Function to check if summary exists for a contact (lightweight check - only checks existence, doesn't load full data)
+  // Note: Since backend doesn't have a lightweight "exists" endpoint, we catch errors to determine existence
+  const checkSummaryExists = useCallback(async (contactId: number): Promise<boolean> => {
+    try {
+      // Make a HEAD or GET request - if it succeeds, summary exists; if 404, it doesn't
+      // For now, we'll use a try-catch approach: attempt to fetch, catch 404
+      const res = await emailGenerationApi.getContactSummary(contactId)
+      // If we get here and res.success is true, summary exists
+      // We intentionally don't store the data here - just check existence
+      return res.success && res.data !== null && res.data !== undefined
+    } catch (error: any) {
+      // If we get a 404 or "not found" error, summary doesn't exist
+      if (error?.message?.includes('not found') || error?.message?.includes('404') || error?.message?.includes('No summary')) {
+        return false
+      }
+      // For other errors, assume summary might exist but there's a different issue
+      // Return false to be safe
+      return false
+    }
+  }, [])
+
+  // Function to fetch full summary for a specific contact (only when View is clicked)
   const fetchSummaryForContact = useCallback(async (contactId: number): Promise<BusinessSummary | null> => {
     try {
       const res = await emailGenerationApi.getContactSummary(contactId)
@@ -50,8 +71,8 @@ export default function EmailGenerationPage() {
     }
   }, [])
 
-  // Function to fetch email draft for a specific contact
-  const fetchEmailDraftForContact = useCallback(async (contactId: number): Promise<number | null> => {
+  // Function to fetch email draft ID for a specific contact (only called when View Body is clicked)
+  const fetchEmailDraftIdForContact = useCallback(async (contactId: number): Promise<number | null> => {
     try {
       const res = await emailGenerationApi.getContactEmailDrafts(contactId)
       if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
@@ -64,69 +85,6 @@ export default function EmailGenerationPage() {
       return null
     }
   }, [])
-
-  // Function to load email drafts for all contacts
-  const loadEmailDraftsForRecords = useCallback(async (records: ScrapedRecord[]) => {
-    try {
-      console.log('Loading email drafts for', records.length, 'records')
-      // Fetch email drafts for all contacts in parallel
-      const emailDraftPromises = records.map(record => 
-        fetchEmailDraftForContact(record.contactId)
-      )
-      
-      const emailDraftIds = await Promise.all(emailDraftPromises)
-      console.log('Loaded email drafts:', emailDraftIds.filter(id => id !== null).length, 'out of', emailDraftIds.length)
-      
-      // Create a map of contactId to emailDraftId
-      const draftIdMap = new Map<number, number>()
-      records.forEach((record, index) => {
-        if (emailDraftIds[index] !== null) {
-          draftIdMap.set(record.contactId, emailDraftIds[index]!)
-        }
-      })
-      
-      // Merge email draft IDs with records
-      setState(prev => ({
-        ...prev,
-        scrapedRecords: prev.scrapedRecords.map(record => ({
-          ...record,
-          emailDraftId: draftIdMap.get(record.contactId) || undefined
-        }))
-      }))
-    } catch (error) {
-      console.error('Error loading email drafts:', error)
-    }
-  }, [fetchEmailDraftForContact])
-
-  // Function to load summaries for all contacts
-  const loadSummariesForRecords = useCallback(async (records: ScrapedRecord[]) => {
-    try {
-      console.log('Loading summaries for', records.length, 'records')
-      // Fetch summaries for all contacts in parallel
-      const summaryPromises = records.map(record => 
-        fetchSummaryForContact(record.contactId)
-      )
-      
-      const summaries = await Promise.all(summaryPromises)
-      console.log('Loaded summaries:', summaries.filter(s => s !== null).length, 'out of', summaries.length)
-      
-      // Merge summaries with records
-      const updatedRecords = records.map((record, index) => ({
-        ...record,
-        generatedSummary: summaries[index] || undefined
-      }))
-      
-      setState(prev => ({
-        ...prev,
-        scrapedRecords: updatedRecords
-      }))
-      
-      // Load email drafts for all records after summaries are loaded
-      loadEmailDraftsForRecords(updatedRecords)
-    } catch (error) {
-      console.error('Error loading summaries:', error)
-    }
-  }, [fetchSummaryForContact, loadEmailDraftsForRecords])
 
   // Load scraped records on component mount
   useEffect(() => {
@@ -199,8 +157,7 @@ export default function EmailGenerationPage() {
           currentPage: 1 // Reset to first page when new data is loaded
         }))
         
-        // Load summaries for all records
-        loadSummariesForRecords(scrapedRecords)
+        // Don't load email drafts on page load - they will be fetched only when View Body is clicked
       } else {
         console.log('History API Error:', historyRes.error)
           setState(prev => ({ 
@@ -219,7 +176,7 @@ export default function EmailGenerationPage() {
     }
     
     loadScrapedRecords()
-  }, [client?.id, loadSummariesForRecords, fetchEmailDraftForContact, loadEmailDraftsForRecords])
+  }, [client?.id])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -421,6 +378,119 @@ export default function EmailGenerationPage() {
     }
   }
 
+  // Handler to view email body (fetches email draft ONLY when View Body button is clicked)
+  const handleViewEmailBody = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record) return
+
+    // If email is already loaded, just show it
+    if (record.generatedEmail) {
+      setEmailBodyOverlay({
+        isOpen: true,
+        subject: record.generatedEmail.subject,
+        body: record.generatedEmail.body
+      })
+      return
+    }
+
+    // Set loading state
+    setState(prev => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map(r => 
+        r.id === recordId ? { ...r, isLoadingEmailDraft: true } : r
+      )
+    }))
+
+    try {
+      let draftId = record.emailDraftId
+
+      // If we don't have emailDraftId, fetch it first
+      if (!draftId) {
+        const fetchedDraftId = await fetchEmailDraftIdForContact(record.contactId)
+        
+        if (!fetchedDraftId) {
+          setState(prev => ({
+            ...prev,
+            scrapedRecords: prev.scrapedRecords.map(r => 
+              r.id === recordId ? { ...r, isLoadingEmailDraft: false } : r
+            ),
+            error: 'No email draft found for this contact'
+          }))
+          return
+        }
+
+        draftId = fetchedDraftId
+
+        // Update record with emailDraftId
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, emailDraftId: draftId } : r
+          )
+        }))
+      }
+
+      // Now fetch the email draft content
+      const res = await emailGenerationApi.getEmailDraft(draftId)
+      if (res.success && res.data) {
+        const emailDraft = res.data
+        
+        // Update record with fetched email data
+        const updatedRecord = {
+          ...record,
+          emailDraftId: draftId,
+          generatedEmail: {
+            subject: emailDraft.subjectLine || emailDraft.subject || 'No Subject',
+            body: emailDraft.bodyText || emailDraft.body || '',
+            personalization: {
+              businessName: record.businessName || 'Your Company',
+              industry: record.generatedSummary?.industry || 'Your Industry',
+              keyFeatures: record.generatedSummary?.keyFeatures || []
+            },
+            tone: (emailDraft.tone === 'friendly' || emailDraft.tone === 'persuasive') 
+              ? emailDraft.tone 
+              : 'professional' as 'professional' | 'friendly' | 'persuasive',
+            callToAction: 'Review and send',
+            generatedAt: emailDraft.createdAt || new Date().toISOString()
+          },
+          isLoadingEmailDraft: false
+        }
+        
+        // Update state
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? updatedRecord : r
+          )
+        }))
+        
+        // Show email in overlay
+        setEmailBodyOverlay({
+          isOpen: true,
+          subject: updatedRecord.generatedEmail.subject,
+          body: updatedRecord.generatedEmail.body
+        })
+      } else {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isLoadingEmailDraft: false } : r
+          ),
+          error: res.error || 'Failed to fetch email draft'
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching email draft:', error)
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(r => 
+          r.id === recordId ? { ...r, isLoadingEmailDraft: false } : r
+        ),
+        error: error instanceof Error ? error.message : 'Failed to fetch email draft'
+      }))
+    }
+  }
+
   const handleViewEmail = async (recordId: number) => {
     const record = state.scrapedRecords.find(r => r.id === recordId)
     if (!record || !record.emailDraftId) {
@@ -503,6 +573,67 @@ export default function EmailGenerationPage() {
     const totalPages = getTotalPages()
     if (state.currentPage < totalPages) {
       setState(prev => ({ ...prev, currentPage: prev.currentPage + 1 }))
+    }
+  }
+
+  // Handler to view summary (fetches summary data ONLY when View button is clicked)
+  const handleViewSummary = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record) return
+
+    // If summary is already loaded, just open drawer
+    if (record.generatedSummary) {
+      openDrawer(record)
+      return
+    }
+
+    // Set loading state
+    setState(prev => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map(r => 
+        r.id === recordId ? { ...r, isLoadingSummary: true } : r
+      )
+    }))
+
+    try {
+      // NOW fetch the summary (this is the ONLY place we call the API)
+      const summary = await fetchSummaryForContact(record.contactId)
+      if (summary) {
+        // Update record with fetched summary
+        const updatedRecord = {
+          ...record,
+          generatedSummary: summary,
+          hasSummary: true,
+          isLoadingSummary: false
+        }
+        
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? updatedRecord : r
+          )
+        }))
+        
+        // Open drawer with updated record
+        openDrawer(updatedRecord)
+      } else {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isLoadingSummary: false, hasSummary: false } : r
+          ),
+          error: 'Summary not found for this contact'
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching summary:', error)
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(r => 
+          r.id === recordId ? { ...r, isLoadingSummary: false, hasSummary: false } : r
+        ),
+        error: 'Failed to load summary. Summary may not exist for this contact.'
+      }))
     }
   }
 
@@ -649,74 +780,93 @@ export default function EmailGenerationPage() {
                                </div>
                              </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
-                              {record.generatedSummary ? (
-                                <div className="flex items-center space-x-1">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    ✓ Generated
-                                  </span>
-                                  <Button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      openDrawer(record)
-                                    }}
-                                    variant="outline"
-                                    size="xs"
-                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                  >
-                                    View
-                                  </Button>
-                                </div>
-                              ) : (
-                                <span className="text-gray-400 text-xs">Not generated</span>
-                              )}
+                              <div className="flex items-center space-x-1">
+                                {record.generatedSummary ? (
+                                  <>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                      ✓ Generated
+                                    </span>
+                                    <Button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        await handleViewSummary(record.id)
+                                      }}
+                                      disabled={record.isLoadingSummary}
+                                      variant="outline"
+                                      size="xs"
+                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    >
+                                      {record.isLoadingSummary ? 'Loading...' : 'View'}
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                      {record.isLoadingSummary ? 'Checking...' : '?'}
+                                    </span>
+                                    <Button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        await handleViewSummary(record.id)
+                                      }}
+                                      disabled={record.isLoadingSummary}
+                                      variant="outline"
+                                      size="xs"
+                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    >
+                                      {record.isLoadingSummary ? 'Loading...' : 'View'}
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
-                              {record.emailDraftId || record.generatedEmail ? (
-                                <div className="flex items-center space-x-1">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                    ✓ Generated
-                                  </span>
-                                  <Button
-                                    onClick={async (e) => {
-                                      e.stopPropagation()
-                                      // If we have email already loaded, show it directly
-                                      if (record.generatedEmail) {
+                              <div className="flex items-center space-x-1">
+                                {record.generatedEmail ? (
+                                  <>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                      ✓ Generated
+                                    </span>
+                                    <Button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
                                         setEmailBodyOverlay({
                                           isOpen: true,
-                                          subject: record.generatedEmail.subject,
-                                          body: record.generatedEmail.body
+                                          subject: record.generatedEmail!.subject,
+                                          body: record.generatedEmail!.body
                                         })
-                                      } else if (record.emailDraftId) {
-                                        // If we only have emailDraftId, fetch it first
-                                        try {
-                                          const res = await emailGenerationApi.getEmailDraft(record.emailDraftId)
-                                          if (res.success && res.data) {
-                                            const emailDraft = res.data
-                                            setEmailBodyOverlay({
-                                              isOpen: true,
-                                              subject: emailDraft.subjectLine || emailDraft.subject || 'No Subject',
-                                              body: emailDraft.bodyText || emailDraft.body || ''
-                                            })
-                                          }
-                                        } catch (error) {
-                                          console.error('Error fetching email draft:', error)
-                                        }
-                                      }
-                                    }}
-                                    variant="outline"
-                                    size="xs"
-                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                  >
-                                    View Body
-                                  </Button>
-                                </div>
-                              ) : (
-                                <span className="text-gray-400 text-xs">Not generated</span>
-                              )}
+                                      }}
+                                      variant="outline"
+                                      size="xs"
+                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    >
+                                      View Body
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                      {record.isLoadingEmailDraft ? 'Checking...' : '?'}
+                                    </span>
+                                    <Button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        await handleViewEmailBody(record.id)
+                                      }}
+                                      disabled={record.isLoadingEmailDraft}
+                                      variant="outline"
+                                      size="xs"
+                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    >
+                                      {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap text-sm font-medium min-w-[140px]">
                               <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
-                                {!record.generatedSummary ? (
+                                {(!record.hasSummary && !record.generatedSummary) ? (
                                   <Button
                                     onClick={() => handleGenerateSummary(record.id)}
                                     disabled={record.isGeneratingSummary}
@@ -725,7 +875,7 @@ export default function EmailGenerationPage() {
                                   >
                                     {record.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
                                   </Button>
-                                ) : !record.emailDraftId && !record.generatedEmail ? (
+                                ) : !record.generatedEmail && !record.emailDraftId ? (
                                   <Button
                                     onClick={() => handleGenerateEmail(record.id)}
                                     disabled={record.isGeneratingEmail}
