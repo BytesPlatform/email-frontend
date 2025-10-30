@@ -29,6 +29,9 @@ export default function EmailGenerationPage() {
   const [selectedRecord, setSelectedRecord] = useState<ScrapedRecord | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   
+  // Mode toggle state (Email or SMS)
+  const [mode, setMode] = useState<'email' | 'sms'>('email')
+  
   // Email body overlay state
   const [emailBodyOverlay, setEmailBodyOverlay] = useState<{
     isOpen: boolean
@@ -660,21 +663,54 @@ export default function EmailGenerationPage() {
             {/* Page Header */}
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-lg">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1">
                   <Link href="/dashboard" className="text-white/80 hover:text-white text-sm mb-2 inline-flex items-center">
                     <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                     </svg>
                     Back to Dashboard
                   </Link>
-                  <h1 className="text-3xl font-bold mb-2">Email Generation</h1>
-                  <p className="text-indigo-100 text-lg">Generate business summaries and personalized emails for your scraped contacts.</p>
+                  <h1 className="text-3xl font-bold mb-2">{mode === 'email' ? 'Email Generation' : 'SMS Generation'}</h1>
+                  <p className="text-indigo-100 text-lg">
+                    {mode === 'email' 
+                      ? 'Generate business summaries and personalized emails for your scraped contacts.'
+                      : 'Generate business summaries and personalized SMS for your scraped contacts.'}
+                  </p>
                 </div>
-                <div className="hidden md:block">
-                  <div className="h-20 w-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30">
-                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
+                <div className="flex items-center space-x-4">
+                  {/* Mode Toggle */}
+                  <div className="flex items-center space-x-3 bg-white/10 backdrop-blur-sm rounded-lg p-2 border border-white/20">
+                    <span className={`text-sm font-medium px-3 py-1 rounded transition-colors ${mode === 'email' ? 'bg-white text-indigo-600' : 'text-white/70'}`}>
+                      Email
+                    </span>
+                    <button
+                      onClick={() => setMode(mode === 'email' ? 'sms' : 'email')}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-indigo-600 ${
+                        mode === 'sms' ? 'bg-white' : 'bg-white/30'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-indigo-600 transition-transform ${
+                          mode === 'sms' ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                    <span className={`text-sm font-medium px-3 py-1 rounded transition-colors ${mode === 'sms' ? 'bg-white text-indigo-600' : 'text-white/70'}`}>
+                      SMS
+                    </span>
+                  </div>
+                  <div className="hidden md:block">
+                    <div className="h-20 w-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30">
+                      {mode === 'email' ? (
+                        <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -734,7 +770,7 @@ export default function EmailGenerationPage() {
                             Summary
                           </th>
                           <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-                            Email
+                            {mode === 'email' ? 'Email' : 'SMS'}
                           </th>
                           <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[140px]">
                             Actions
@@ -821,48 +857,68 @@ export default function EmailGenerationPage() {
                               </div>
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
-                              <div className="flex items-center space-x-1">
-                                {record.generatedEmail ? (
-                                  <>
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                      ✓ Generated
-                                    </span>
-                                    <Button
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        setEmailBodyOverlay({
-                                          isOpen: true,
-                                          subject: record.generatedEmail!.subject,
-                                          body: record.generatedEmail!.body
-                                        })
-                                      }}
-                                      variant="outline"
-                                      size="xs"
-                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                    >
-                                      View Body
-                                    </Button>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                      {record.isLoadingEmailDraft ? 'Checking...' : '?'}
-                                    </span>
-                                    <Button
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        await handleViewEmailBody(record.id)
-                                      }}
-                                      disabled={record.isLoadingEmailDraft}
-                                      variant="outline"
-                                      size="xs"
-                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                    >
-                                      {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
-                                    </Button>
-                                  </>
-                                )}
-                              </div>
+                              {mode === 'email' ? (
+                                <div className="flex items-center space-x-1">
+                                  {record.generatedEmail ? (
+                                    <>
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        ✓ Generated
+                                      </span>
+                                      <Button
+                                        onClick={async (e) => {
+                                          e.stopPropagation()
+                                          setEmailBodyOverlay({
+                                            isOpen: true,
+                                            subject: record.generatedEmail!.subject,
+                                            body: record.generatedEmail!.body
+                                          })
+                                        }}
+                                        variant="outline"
+                                        size="xs"
+                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                      >
+                                        View Body
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                        {record.isLoadingEmailDraft ? 'Checking...' : '?'}
+                                      </span>
+                                      <Button
+                                        onClick={async (e) => {
+                                          e.stopPropagation()
+                                          await handleViewEmailBody(record.id)
+                                        }}
+                                        disabled={record.isLoadingEmailDraft}
+                                        variant="outline"
+                                        size="xs"
+                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                      >
+                                        {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="flex items-center space-x-1">
+                                  {/* SMS mode - similar structure, will be connected to SMS APIs later */}
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                    ?
+                                  </span>
+                                  <Button
+                                    onClick={async (e) => {
+                                      e.stopPropagation()
+                                      // TODO: Implement handleViewSMSBody when SMS APIs are ready
+                                    }}
+                                    variant="outline"
+                                    size="xs"
+                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                  >
+                                    View SMS
+                                  </Button>
+                                </div>
+                              )}
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap text-sm font-medium min-w-[140px]">
                               <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
@@ -875,25 +931,40 @@ export default function EmailGenerationPage() {
                                   >
                                     {record.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
                                   </Button>
-                                ) : !record.generatedEmail && !record.emailDraftId ? (
+                                ) : mode === 'email' ? (
+                                  !record.generatedEmail && !record.emailDraftId ? (
+                                    <Button
+                                      onClick={() => handleGenerateEmail(record.id)}
+                                      disabled={record.isGeneratingEmail}
+                                      isLoading={record.isGeneratingEmail}
+                                      size="sm"
+                                      variant="success"
+                                    >
+                                      {record.isGeneratingEmail ? 'Generating...' : 'Generate Email'}
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      onClick={() => handleSendEmail(record.id)}
+                                      disabled={record.isSendingEmail}
+                                      isLoading={record.isSendingEmail}
+                                      size="sm"
+                                      variant="primary"
+                                    >
+                                      {record.isSendingEmail ? 'Sending...' : 'Send Email'}
+                                    </Button>
+                                  )
+                                ) : (
+                                  // SMS mode - similar structure, will be connected to SMS APIs later
                                   <Button
-                                    onClick={() => handleGenerateEmail(record.id)}
-                                    disabled={record.isGeneratingEmail}
-                                    isLoading={record.isGeneratingEmail}
+                                    onClick={() => {
+                                      // TODO: Implement handleGenerateSMS when SMS APIs are ready
+                                      console.log('Generate SMS - API to be implemented')
+                                    }}
+                                    disabled={false}
                                     size="sm"
                                     variant="success"
                                   >
-                                    {record.isGeneratingEmail ? 'Generating...' : 'Generate Email'}
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    onClick={() => handleSendEmail(record.id)}
-                                    disabled={record.isSendingEmail}
-                                    isLoading={record.isSendingEmail}
-                                    size="sm"
-                                    variant="primary"
-                                  >
-                                    {record.isSendingEmail ? 'Sending...' : 'Send Email'}
+                                    Generate SMS
                                   </Button>
                                 )}
                               </div>
