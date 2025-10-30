@@ -105,6 +105,7 @@ export interface ScrapedRecord {
   emailDraftId?: number
   isGeneratingSummary?: boolean
   isGeneratingEmail?: boolean
+  isSendingEmail?: boolean
 }
 
 // Component state types

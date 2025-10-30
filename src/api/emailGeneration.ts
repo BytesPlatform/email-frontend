@@ -134,5 +134,31 @@ export const emailGenerationApi = {
       console.error('Error fetching email draft:', error)
       throw error
     }
+  },
+
+  /**
+   * Get all email drafts for a specific contact
+   * GET /emails/generation/contacts/:contactId/drafts
+   */
+  async getContactEmailDrafts(contactId: number): Promise<ApiResponse<EmailDraft[]>> {
+    try {
+      return await apiClient.get<EmailDraft[]>(`/emails/generation/contacts/${contactId}/drafts`)
+    } catch (error) {
+      console.error('Error fetching contact email drafts:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Send an email draft
+   * POST /emails/send-draft
+   */
+  async sendEmailDraft(draftId: number): Promise<ApiResponse<any>> {
+    try {
+      return await apiClient.post<any>('/emails/send-draft', { draftId })
+    } catch (error) {
+      console.error('Error sending email draft:', error)
+      throw error
+    }
   }
 }

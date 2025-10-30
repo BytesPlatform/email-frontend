@@ -50,6 +50,54 @@ export default function EmailGenerationPage() {
     }
   }, [])
 
+  // Function to fetch email draft for a specific contact
+  const fetchEmailDraftForContact = useCallback(async (contactId: number): Promise<number | null> => {
+    try {
+      const res = await emailGenerationApi.getContactEmailDrafts(contactId)
+      if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
+        // Return the most recent draft ID (first one since backend orders by createdAt desc)
+        return res.data[0].id
+      }
+      return null
+    } catch (error) {
+      console.log(`No email draft found for contact ${contactId}:`, error)
+      return null
+    }
+  }, [])
+
+  // Function to load email drafts for all contacts
+  const loadEmailDraftsForRecords = useCallback(async (records: ScrapedRecord[]) => {
+    try {
+      console.log('Loading email drafts for', records.length, 'records')
+      // Fetch email drafts for all contacts in parallel
+      const emailDraftPromises = records.map(record => 
+        fetchEmailDraftForContact(record.contactId)
+      )
+      
+      const emailDraftIds = await Promise.all(emailDraftPromises)
+      console.log('Loaded email drafts:', emailDraftIds.filter(id => id !== null).length, 'out of', emailDraftIds.length)
+      
+      // Create a map of contactId to emailDraftId
+      const draftIdMap = new Map<number, number>()
+      records.forEach((record, index) => {
+        if (emailDraftIds[index] !== null) {
+          draftIdMap.set(record.contactId, emailDraftIds[index]!)
+        }
+      })
+      
+      // Merge email draft IDs with records
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(record => ({
+          ...record,
+          emailDraftId: draftIdMap.get(record.contactId) || undefined
+        }))
+      }))
+    } catch (error) {
+      console.error('Error loading email drafts:', error)
+    }
+  }, [fetchEmailDraftForContact])
+
   // Function to load summaries for all contacts
   const loadSummariesForRecords = useCallback(async (records: ScrapedRecord[]) => {
     try {
@@ -72,10 +120,13 @@ export default function EmailGenerationPage() {
         ...prev,
         scrapedRecords: updatedRecords
       }))
+      
+      // Load email drafts for all records after summaries are loaded
+      loadEmailDraftsForRecords(updatedRecords)
     } catch (error) {
       console.error('Error loading summaries:', error)
     }
-  }, [fetchSummaryForContact])
+  }, [fetchSummaryForContact, loadEmailDraftsForRecords])
 
   // Load scraped records on component mount
   useEffect(() => {
@@ -168,7 +219,7 @@ export default function EmailGenerationPage() {
     }
     
     loadScrapedRecords()
-  }, [client?.id, loadSummariesForRecords])
+  }, [client?.id, loadSummariesForRecords, fetchEmailDraftForContact, loadEmailDraftsForRecords])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -319,6 +370,53 @@ export default function EmailGenerationPage() {
           r.id === recordId ? { ...r, isGeneratingEmail: false } : r
         ),
         error: error instanceof Error ? error.message : 'Failed to generate email'
+      }))
+    }
+  }
+
+  const handleSendEmail = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record || !record.emailDraftId) {
+      setState(prev => ({ ...prev, error: 'Email draft not found. Please generate an email first.' }))
+      return
+    }
+
+    setState(prev => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map(r => 
+        r.id === recordId ? { ...r, isSendingEmail: true } : r
+      ),
+      error: null
+    }))
+    
+    try {
+      const res = await emailGenerationApi.sendEmailDraft(record.emailDraftId)
+      if (res.success) {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isSendingEmail: false } : r
+          )
+        }))
+        // You could add a success notification here
+        alert('Email sent successfully!')
+      } else {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isSendingEmail: false } : r
+          ),
+          error: res.error || 'Failed to send email'
+        }))
+      }
+    } catch (error) {
+      console.error('Error sending email:', error)
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(r => 
+          r.id === recordId ? { ...r, isSendingEmail: false } : r
+        ),
+        error: error instanceof Error ? error.message : 'Failed to send email'
       }))
     }
   }
@@ -627,7 +725,7 @@ export default function EmailGenerationPage() {
                                   >
                                     {record.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
                                   </Button>
-                                ) : !record.generatedEmail ? (
+                                ) : !record.emailDraftId && !record.generatedEmail ? (
                                   <Button
                                     onClick={() => handleGenerateEmail(record.id)}
                                     disabled={record.isGeneratingEmail}
@@ -638,26 +736,15 @@ export default function EmailGenerationPage() {
                                     {record.isGeneratingEmail ? 'Generating...' : 'Generate Email'}
                                   </Button>
                                 ) : (
-                                  <div className="flex space-x-1">
-                                    <Button
-                                      onClick={() => handleGenerateSummary(record.id)}
-                                      disabled={record.isGeneratingSummary}
-                                      isLoading={record.isGeneratingSummary}
-                                      size="sm"
-                                      variant="outline"
-                                    >
-                                      Regenerate Summary
-                                    </Button>
-                                    <Button
-                                      onClick={() => handleGenerateEmail(record.id)}
-                                      disabled={record.isGeneratingEmail}
-                                      isLoading={record.isGeneratingEmail}
-                                      size="sm"
-                                      variant="outline"
-                                    >
-                                      Regenerate Email
-                                    </Button>
-                                  </div>
+                                  <Button
+                                    onClick={() => handleSendEmail(record.id)}
+                                    disabled={record.isSendingEmail}
+                                    isLoading={record.isSendingEmail}
+                                    size="sm"
+                                    variant="primary"
+                                  >
+                                    {record.isSendingEmail ? 'Sending...' : 'Send Email'}
+                                  </Button>
                                 )}
                               </div>
                             </td>
