@@ -223,7 +223,9 @@ export default function EmailGenerationPage() {
                   ? { 
                       ...r, 
                       generatedSummary: res.data as BusinessSummary,
+                      hasSummary: true, // Mark that summary exists
                       generatedEmail: undefined, // Reset email when new summary is generated
+                      emailDraftId: undefined, // Reset email draft ID when new summary is generated
                       isGeneratingSummary: false 
                     } 
                   : r
@@ -902,21 +904,48 @@ export default function EmailGenerationPage() {
                                 </div>
                               ) : (
                                 <div className="flex items-center space-x-1">
-                                  {/* SMS mode - similar structure, will be connected to SMS APIs later */}
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                    ?
-                                  </span>
-                                  <Button
-                                    onClick={async (e) => {
-                                      e.stopPropagation()
-                                      // TODO: Implement handleViewSMSBody when SMS APIs are ready
-                                    }}
-                                    variant="outline"
-                                    size="xs"
-                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                  >
-                                    View SMS
-                                  </Button>
+                                  {/* SMS mode - same structure as Email */}
+                                  {record.generatedSMS ? (
+                                    <>
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        ✓ Generated
+                                      </span>
+                                      <Button
+                                        onClick={async (e) => {
+                                          e.stopPropagation()
+                                          setEmailBodyOverlay({
+                                            isOpen: true,
+                                            subject: record.generatedSMS!.subject,
+                                            body: record.generatedSMS!.body
+                                          })
+                                        }}
+                                        variant="outline"
+                                        size="xs"
+                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                      >
+                                        View SMS
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                        {record.isLoadingSMSDraft ? 'Checking...' : '?'}
+                                      </span>
+                                      <Button
+                                        onClick={async (e) => {
+                                          e.stopPropagation()
+                                          // TODO: Implement handleViewSMSBody when SMS APIs are ready
+                                          console.log('View SMS - API to be implemented')
+                                        }}
+                                        disabled={record.isLoadingSMSDraft}
+                                        variant="outline"
+                                        size="xs"
+                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                      >
+                                        {record.isLoadingSMSDraft ? 'Loading...' : 'View SMS'}
+                                      </Button>
+                                    </>
+                                  )}
                                 </div>
                               )}
                             </td>
@@ -955,17 +984,31 @@ export default function EmailGenerationPage() {
                                   )
                                 ) : (
                                   // SMS mode - similar structure, will be connected to SMS APIs later
-                                  <Button
-                                    onClick={() => {
-                                      // TODO: Implement handleGenerateSMS when SMS APIs are ready
-                                      console.log('Generate SMS - API to be implemented')
-                                    }}
-                                    disabled={false}
-                                    size="sm"
-                                    variant="success"
-                                  >
-                                    Generate SMS
-                                  </Button>
+                                  !record.generatedSMS && !record.smsDraftId ? (
+                                    <Button
+                                      onClick={() => {
+                                        // TODO: Implement handleGenerateSMS when SMS APIs are ready
+                                        console.log('Generate SMS - API to be implemented')
+                                      }}
+                                      disabled={false}
+                                      size="sm"
+                                      variant="success"
+                                    >
+                                      Generate SMS
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      onClick={() => {
+                                        // TODO: Implement handleSendSMS when SMS APIs are ready
+                                        console.log('Send SMS - API to be implemented')
+                                      }}
+                                      disabled={false}
+                                      size="sm"
+                                      variant="primary"
+                                    >
+                                      Send SMS
+                                    </Button>
+                                  )
                                 )}
                               </div>
                             </td>

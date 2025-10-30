@@ -103,12 +103,17 @@ export interface ScrapedRecord {
   generatedSummary?: BusinessSummary
   generatedEmail?: GeneratedEmail
   emailDraftId?: number
+  smsDraftId?: number // SMS draft ID (similar to emailDraftId)
+  generatedSMS?: GeneratedEmail // SMS content (reusing GeneratedEmail structure for now)
   hasSummary?: boolean // Flag to indicate summary exists (without loading full data)
   isGeneratingSummary?: boolean
   isGeneratingEmail?: boolean
+  isGeneratingSMS?: boolean
   isSendingEmail?: boolean
+  isSendingSMS?: boolean
   isLoadingSummary?: boolean // Flag for when fetching summary on View click
   isLoadingEmailDraft?: boolean // Flag for when fetching email draft on View Body click
+  isLoadingSMSDraft?: boolean // Flag for when fetching SMS draft on View SMS click
 }
 
 // Component state types
