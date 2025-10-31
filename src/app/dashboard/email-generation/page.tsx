@@ -556,6 +556,13 @@ export default function EmailGenerationPage() {
     // You could add a toast notification here
   }
 
+  // Helper function to truncate business name to 10 characters
+  const truncateBusinessName = (name: string | undefined | null): string => {
+    if (!name) return 'Unknown Business'
+    if (name.length <= 10) return name
+    return name.substring(0, 10) + '...'
+  }
+
   // Pagination helpers
   const getCurrentPageRecords = () => {
     const startIndex = (state.currentPage - 1) * state.recordsPerPage
@@ -768,9 +775,6 @@ export default function EmailGenerationPage() {
                           <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                             Contact Info
                           </th>
-                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                            Location
-                          </th>
                           <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                             Summary
                           </th>
@@ -796,7 +800,7 @@ export default function EmailGenerationPage() {
                                 </div>
                                 <div className="ml-3">
                                   <div className="text-sm font-medium text-gray-900">
-                                    {record.businessName || 'Unknown Business'}
+                                    {truncateBusinessName(record.businessName)}
                                   </div>
                                   <div className="text-xs text-gray-500">
                                     ID: {record.contactId}
@@ -812,14 +816,6 @@ export default function EmailGenerationPage() {
                                 {record.website || 'No website'}
                               </div>
                             </td>
-                             <td className="px-2 py-2 whitespace-nowrap min-w-[80px]">
-                               <div className="text-sm text-gray-900">
-                                 {record.state || 'N/A'}
-                               </div>
-                               <div className="text-xs text-gray-500">
-                                 {record.zipCode || 'N/A'}
-                               </div>
-                             </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
                               <div className="flex items-center space-x-1">
                                 {record.generatedSummary ? (
