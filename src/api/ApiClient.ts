@@ -16,6 +16,11 @@ class ApiClient {
   private timeout: number
 
   constructor() {
+    // Use environment variable if set (for Vercel deployments), otherwise use localhost
+    // This allows:
+    // - Local development: uses localhost (no env var needed)
+    // - Local production testing: uses localhost (no env var needed)
+    // - Vercel deployments: uses Render URL (set via NEXT_PUBLIC_API_URL env var)
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
     this.timeout = 100000 // 100 seconds
   }
