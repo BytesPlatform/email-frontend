@@ -5,6 +5,7 @@ import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { historyApi } from '@/api/history'
 import { emailGenerationApi } from '@/api/emailGeneration'
+import { apiClient } from '@/api/ApiClient'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import Link from 'next/link'
@@ -28,6 +29,7 @@ export default function EmailGenerationPage() {
   // Detail drawer state
   const [selectedRecord, setSelectedRecord] = useState<ScrapedRecord | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [drawerViewMode, setDrawerViewMode] = useState<'full' | 'summary-only'>('full')
   
   // Mode toggle state (Email or SMS)
   const [mode, setMode] = useState<'email' | 'sms'>('email')
@@ -41,7 +43,6 @@ export default function EmailGenerationPage() {
 
   // Function to check if summary exists for a contact (lightweight check - only checks existence, doesn't load full data)
   // Note: Since backend doesn't have a lightweight "exists" endpoint, we catch errors to determine existence
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const checkSummaryExists = useCallback(async (contactId: number): Promise<boolean> => {
     try {
       // Make a HEAD or GET request - if it succeeds, summary exists; if 404, it doesn't
@@ -76,6 +77,58 @@ export default function EmailGenerationPage() {
     }
   }, [])
 
+  // Function to check if email draft exists for a contact (lightweight check - only checks existence)
+  const checkEmailDraftExists = useCallback(async (contactId: number): Promise<boolean> => {
+    try {
+      const res = await emailGenerationApi.getContactEmailDrafts(contactId)
+      // If we get here and res.success is true with data, email draft exists
+      return !!(res.success && res.data && Array.isArray(res.data) && res.data.length > 0)
+    } catch (error: unknown) {
+      // If we get an error, email draft doesn't exist
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage?.includes('not found') || errorMessage?.includes('404') || errorMessage?.includes('No email')) {
+        return false
+      }
+      // For other errors, assume email draft might exist but there's a different issue
+      return false
+    }
+  }, [])
+
+  // Function to check if SMS draft exists for a contact (lightweight check - only checks existence)
+  const checkSMSDraftExists = useCallback(async (contactId: number): Promise<boolean> => {
+    try {
+      // Using the SMS API endpoint: GET /sms/drafts/:contactId
+      // Backend returns: { message, success, count, data: [...] }
+      interface SMSDraftsResponse {
+        data?: Array<{ id: number }>
+        message?: string
+        success?: boolean
+        count?: number
+      }
+      const res = await apiClient.get<SMSDraftsResponse | Array<{ id: number }>>(`/sms/drafts/${contactId}`)
+      // The ApiClient wraps the response, so check res.data structure
+      // Backend format: { message, success, count, data: [...] }
+      // ApiClient format: { success: true, data: { message, success, count, data: [...] } }
+      if (res.success && res.data) {
+        // Check if data has the drafts array
+        const data = res.data as SMSDraftsResponse
+        const drafts = (data.data && Array.isArray(data.data)) 
+          ? data.data 
+          : (Array.isArray(res.data) ? res.data : [])
+        return Array.isArray(drafts) && drafts.length > 0
+      }
+      return false
+    } catch (error: unknown) {
+      // If we get an error, SMS draft doesn't exist
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage?.includes('not found') || errorMessage?.includes('404') || errorMessage?.includes('No SMS')) {
+        return false
+      }
+      // For other errors, assume SMS draft might exist but there's a different issue
+      return false
+    }
+  }, [])
+
   // Function to fetch email draft ID for a specific contact (only called when View Body is clicked)
   const fetchEmailDraftIdForContact = useCallback(async (contactId: number): Promise<number | null> => {
     try {
@@ -87,6 +140,25 @@ export default function EmailGenerationPage() {
       return null
     } catch (error) {
       console.log(`No email draft found for contact ${contactId}:`, error)
+      return null
+    }
+  }, [])
+
+  // Function to fetch SMS draft ID for a specific contact (only called when View SMS is clicked)
+  // Currently unused - will be implemented when SMS view functionality is added
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const fetchSMSDraftIdForContact = useCallback(async (contactId: number): Promise<number | null> => {
+    try {
+      // TODO: Replace with actual SMS API endpoint when available
+      // For now, using email API structure as placeholder
+      const res = await emailGenerationApi.getContactEmailDrafts(contactId)
+      // When SMS API is ready: const res = await smsGenerationApi.getContactSMSDrafts(contactId)
+      if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
+        return res.data[0].id
+      }
+      return null
+    } catch (error) {
+      console.log(`No SMS draft found for contact ${contactId}:`, error)
       return null
     }
   }, [])
@@ -155,12 +227,58 @@ export default function EmailGenerationPage() {
           
           console.log('Converted Scraped Records:', scrapedRecords)
           
+          // Set records first to show them immediately
           setState(prev => ({ 
             ...prev, 
             scrapedRecords,
             isLoadingRecords: false,
-          currentPage: 1 // Reset to first page when new data is loaded
-        }))
+            currentPage: 1 // Reset to first page when new data is loaded
+          }))
+          
+          // After records are set, check which ones have summaries, email drafts, and SMS drafts (in background)
+          // This runs in parallel for all contacts to check existence
+          Promise.all([
+            // Check summaries
+            Promise.all(
+              scrapedRecords.map(async (record) => {
+                const hasSummary = await checkSummaryExists(record.contactId)
+                return { contactId: record.contactId, hasSummary }
+              })
+            ),
+            // Check email drafts
+            Promise.all(
+              scrapedRecords.map(async (record) => {
+                const hasEmailDraft = await checkEmailDraftExists(record.contactId)
+                return { contactId: record.contactId, hasEmailDraft }
+              })
+            ),
+            // Check SMS drafts
+            Promise.all(
+              scrapedRecords.map(async (record) => {
+                const hasSMSDraft = await checkSMSDraftExists(record.contactId)
+                return { contactId: record.contactId, hasSMSDraft }
+              })
+            )
+          ]).then(([summaryChecks, emailDraftChecks, smsDraftChecks]) => {
+            // Update records with summary, email draft, and SMS draft status
+            setState(prev => ({
+              ...prev,
+              scrapedRecords: prev.scrapedRecords.map(record => {
+                const summaryCheck = summaryChecks.find(c => c.contactId === record.contactId)
+                const emailDraftCheck = emailDraftChecks.find(c => c.contactId === record.contactId)
+                const smsDraftCheck = smsDraftChecks.find(c => c.contactId === record.contactId)
+                return {
+                  ...record,
+                  hasSummary: summaryCheck?.hasSummary ?? false,
+                  hasEmailDraft: emailDraftCheck?.hasEmailDraft ?? false,
+                  hasSMSDraft: smsDraftCheck?.hasSMSDraft ?? false
+                }
+              })
+            }))
+          }).catch((error) => {
+            console.error('Error checking summary, email draft, and SMS draft statuses:', error)
+            // Don't block the UI if checks fail
+          })
         
         // Don't load email drafts on page load - they will be fetched only when View Body is clicked
       } else {
@@ -181,7 +299,7 @@ export default function EmailGenerationPage() {
     }
     
     loadScrapedRecords()
-  }, [client?.id])
+  }, [client?.id, checkSummaryExists, checkEmailDraftExists, checkSMSDraftExists])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -301,6 +419,7 @@ export default function EmailGenerationPage() {
                 ? { 
                     ...r, 
                     emailDraftId: emailDraftId,
+                    hasEmailDraft: true,
                     isGeneratingEmail: false 
                   } 
                 : r
@@ -335,6 +454,86 @@ export default function EmailGenerationPage() {
           r.id === recordId ? { ...r, isGeneratingEmail: false } : r
         ),
         error: error instanceof Error ? error.message : 'Failed to generate email'
+      }))
+    }
+  }
+
+  const handleGenerateSMS = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record || !record.generatedSummary) return
+
+    setState(prev => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map(r => 
+        r.id === recordId ? { ...r, isGeneratingSMS: true } : r
+      ),
+      error: null
+    }))
+    
+    try {
+      // Call SMS generation API: POST /sms/generate/:contactId/:summaryId
+      interface SMSGenerationResponse {
+        data?: {
+          id?: number
+          smsDraftId?: number
+          contactId?: number
+          summaryId?: number
+        }
+        message?: string
+        success?: boolean
+      }
+      const res = await apiClient.post<SMSGenerationResponse>(`/sms/generate/${record.contactId}/${record.generatedSummary.id}`)
+      
+      console.log('SMS generation response:', res)
+      
+      if (res.success && res.data) {
+        // Backend returns: { message, success, data: { id, contactId, summaryId, ... } }
+        // ApiClient may wrap it, so check if data has a nested data property
+        const responseData = res.data as SMSGenerationResponse
+        const smsDraft = responseData.data || (responseData as unknown as SMSGenerationResponse['data'])
+        const smsDraftId = smsDraft?.id || smsDraft?.smsDraftId
+        
+        if (smsDraftId) {
+          setState(prev => ({
+            ...prev,
+            scrapedRecords: prev.scrapedRecords.map(r => 
+              r.id === recordId 
+                ? { 
+                    ...r, 
+                    smsDraftId: smsDraftId,
+                    hasSMSDraft: true,
+                    isGeneratingSMS: false 
+                  } 
+                : r
+            )
+          }))
+        } else {
+          console.warn('Unexpected SMS response structure:', res.data)
+          setState(prev => ({
+            ...prev,
+            scrapedRecords: prev.scrapedRecords.map(r => 
+              r.id === recordId ? { ...r, isGeneratingSMS: false } : r
+            ),
+            error: 'SMS generated but could not retrieve draft ID'
+          }))
+        }
+      } else {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isGeneratingSMS: false } : r
+          ),
+          error: res.error || 'Failed to generate SMS'
+        }))
+      }
+    } catch (error) {
+      console.error('Error generating SMS:', error)
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(r => 
+          r.id === recordId ? { ...r, isGeneratingSMS: false } : r
+        ),
+        error: error instanceof Error ? error.message : 'Failed to generate SMS'
       }))
     }
   }
@@ -556,6 +755,13 @@ export default function EmailGenerationPage() {
     // You could add a toast notification here
   }
 
+  // Helper function to truncate business name to 10 characters
+  const truncateBusinessName = (name: string | undefined | null): string => {
+    if (!name) return 'Unknown Business'
+    if (name.length <= 10) return name
+    return name.substring(0, 10) + '...'
+  }
+
   // Pagination helpers
   const getCurrentPageRecords = () => {
     const startIndex = (state.currentPage - 1) * state.recordsPerPage
@@ -589,9 +795,9 @@ export default function EmailGenerationPage() {
     const record = state.scrapedRecords.find(r => r.id === recordId)
     if (!record) return
 
-    // If summary is already loaded, just open drawer
+    // If summary is already loaded, just open drawer in summary-only mode
     if (record.generatedSummary) {
-      openDrawer(record)
+      openDrawer(record, 'summary-only')
       return
     }
 
@@ -622,8 +828,8 @@ export default function EmailGenerationPage() {
           )
         }))
         
-        // Open drawer with updated record
-        openDrawer(updatedRecord)
+        // Open drawer with updated record in summary-only mode
+        openDrawer(updatedRecord, 'summary-only')
       } else {
         setState(prev => ({
           ...prev,
@@ -646,8 +852,9 @@ export default function EmailGenerationPage() {
   }
 
   // Drawer handlers
-  const openDrawer = (record: ScrapedRecord) => {
+  const openDrawer = (record: ScrapedRecord, viewMode: 'full' | 'summary-only' = 'full') => {
     setSelectedRecord(record)
+    setDrawerViewMode(viewMode)
     setIsDrawerOpen(true)
     // Prevent body scrolling when drawer is open
     document.body.style.overflow = 'hidden'
@@ -655,6 +862,7 @@ export default function EmailGenerationPage() {
 
   const closeDrawer = () => {
     setSelectedRecord(null)
+    setDrawerViewMode('full')
     setIsDrawerOpen(false)
     // Restore body scrolling when drawer is closed
     document.body.style.overflow = 'unset'
@@ -768,9 +976,6 @@ export default function EmailGenerationPage() {
                           <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                             Contact Info
                           </th>
-                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                            Location
-                          </th>
                           <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                             Summary
                           </th>
@@ -796,7 +1001,7 @@ export default function EmailGenerationPage() {
                                 </div>
                                 <div className="ml-3">
                                   <div className="text-sm font-medium text-gray-900">
-                                    {record.businessName || 'Unknown Business'}
+                                    {truncateBusinessName(record.businessName)}
                                   </div>
                                   <div className="text-xs text-gray-500">
                                     ID: {record.contactId}
@@ -812,142 +1017,91 @@ export default function EmailGenerationPage() {
                                 {record.website || 'No website'}
                               </div>
                             </td>
-                             <td className="px-2 py-2 whitespace-nowrap min-w-[80px]">
-                               <div className="text-sm text-gray-900">
-                                 {record.state || 'N/A'}
-                               </div>
-                               <div className="text-xs text-gray-500">
-                                 {record.zipCode || 'N/A'}
-                               </div>
-                             </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
                               <div className="flex items-center space-x-1">
-                                {record.generatedSummary ? (
-                                  <>
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                      ✓ Generated
-                                    </span>
-                                    <Button
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        await handleViewSummary(record.id)
-                                      }}
-                                      disabled={record.isLoadingSummary}
-                                      variant="outline"
-                                      size="xs"
-                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                    >
-                                      {record.isLoadingSummary ? 'Loading...' : 'View'}
-                                    </Button>
-                                  </>
+                                {record.generatedSummary || record.hasSummary ? (
+                                  <Button
+                                    onClick={async (e) => {
+                                      e.stopPropagation()
+                                      await handleViewSummary(record.id)
+                                    }}
+                                    disabled={record.isLoadingSummary}
+                                    variant="outline"
+                                    size="xs"
+                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                  >
+                                    {record.isLoadingSummary ? 'Loading...' : 'View'}
+                                  </Button>
                                 ) : (
-                                  <>
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                      {record.isLoadingSummary ? 'Checking...' : '?'}
-                                    </span>
-                                    <Button
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        await handleViewSummary(record.id)
-                                      }}
-                                      disabled={record.isLoadingSummary}
-                                      variant="outline"
-                                      size="xs"
-                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                    >
-                                      {record.isLoadingSummary ? 'Loading...' : 'View'}
-                                    </Button>
-                                  </>
+                                  <span className="text-sm text-gray-600">
+                                    {record.isLoadingSummary ? 'Checking...' : 'Not Generated'}
+                                  </span>
                                 )}
                               </div>
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
                               {mode === 'email' ? (
                                 <div className="flex items-center space-x-1">
-                                  {record.generatedEmail ? (
-                                    <>
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                        ✓ Generated
-                                      </span>
-                                      <Button
-                                        onClick={async (e) => {
-                                          e.stopPropagation()
+                                  {record.generatedEmail || record.hasEmailDraft || record.emailDraftId ? (
+                                    <Button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        // If email is already loaded, show it directly
+                                        if (record.generatedEmail) {
                                           setEmailBodyOverlay({
                                             isOpen: true,
-                                            subject: record.generatedEmail!.subject,
-                                            body: record.generatedEmail!.body
+                                            subject: record.generatedEmail.subject,
+                                            body: record.generatedEmail.body
                                           })
-                                        }}
-                                        variant="outline"
-                                        size="xs"
-                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                      >
-                                        View Body
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                        {record.isLoadingEmailDraft ? 'Checking...' : '?'}
-                                      </span>
-                                      <Button
-                                        onClick={async (e) => {
-                                          e.stopPropagation()
+                                        } else {
+                                          // Otherwise, fetch and show it
                                           await handleViewEmailBody(record.id)
-                                        }}
-                                        disabled={record.isLoadingEmailDraft}
-                                        variant="outline"
-                                        size="xs"
-                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                      >
-                                        {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
-                                      </Button>
-                                    </>
+                                        }
+                                      }}
+                                      disabled={record.isLoadingEmailDraft}
+                                      variant="outline"
+                                      size="xs"
+                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    >
+                                      {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
+                                    </Button>
+                                  ) : (
+                                    <span className="text-sm text-gray-600">
+                                      {record.isLoadingEmailDraft ? 'Checking...' : 'Not Generated'}
+                                    </span>
                                   )}
                                 </div>
                               ) : (
                                 <div className="flex items-center space-x-1">
                                   {/* SMS mode - same structure as Email */}
-                                  {record.generatedSMS ? (
-                                    <>
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                        ✓ Generated
-                                      </span>
-                                      <Button
-                                        onClick={async (e) => {
-                                          e.stopPropagation()
+                                  {record.generatedSMS || record.hasSMSDraft || record.smsDraftId ? (
+                                    <Button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        // If SMS is already loaded, show it directly
+                                        if (record.generatedSMS) {
                                           setEmailBodyOverlay({
                                             isOpen: true,
-                                            subject: record.generatedSMS!.subject,
-                                            body: record.generatedSMS!.body
+                                            subject: record.generatedSMS.subject,
+                                            body: record.generatedSMS.body
                                           })
-                                        }}
-                                        variant="outline"
-                                        size="xs"
-                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                      >
-                                        View SMS
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                        {record.isLoadingSMSDraft ? 'Checking...' : '?'}
-                                      </span>
-                                      <Button
-                                        onClick={async (e) => {
-                                          e.stopPropagation()
+                                        } else {
+                                          // Otherwise, fetch and show it
                                           // TODO: Implement handleViewSMSBody when SMS APIs are ready
                                           console.log('View SMS - API to be implemented')
-                                        }}
-                                        disabled={record.isLoadingSMSDraft}
-                                        variant="outline"
-                                        size="xs"
-                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                      >
-                                        {record.isLoadingSMSDraft ? 'Loading...' : 'View SMS'}
-                                      </Button>
-                                    </>
+                                        }
+                                      }}
+                                      disabled={record.isLoadingSMSDraft}
+                                      variant="outline"
+                                      size="xs"
+                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    >
+                                      {record.isLoadingSMSDraft ? 'Loading...' : 'View SMS'}
+                                    </Button>
+                                  ) : (
+                                    <span className="text-sm text-gray-600">
+                                      {record.isLoadingSMSDraft ? 'Checking...' : 'Not Generated'}
+                                    </span>
                                   )}
                                 </div>
                               )}
@@ -964,7 +1118,7 @@ export default function EmailGenerationPage() {
                                     {record.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
                                   </Button>
                                 ) : mode === 'email' ? (
-                                  !record.generatedEmail && !record.emailDraftId ? (
+                                  !record.generatedEmail && !record.emailDraftId && !record.hasEmailDraft ? (
                                     <Button
                                       onClick={() => handleGenerateEmail(record.id)}
                                       disabled={record.isGeneratingEmail}
@@ -986,18 +1140,16 @@ export default function EmailGenerationPage() {
                                     </Button>
                                   )
                                 ) : (
-                                  // SMS mode - similar structure, will be connected to SMS APIs later
-                                  !record.generatedSMS && !record.smsDraftId ? (
+                                  // SMS mode - show Generate SMS if not generated, Send SMS if generated
+                                  !record.generatedSMS && !record.smsDraftId && !record.hasSMSDraft ? (
                                     <Button
-                                      onClick={() => {
-                                        // TODO: Implement handleGenerateSMS when SMS APIs are ready
-                                        console.log('Generate SMS - API to be implemented')
-                                      }}
-                                      disabled={false}
+                                      onClick={() => handleGenerateSMS(record.id)}
+                                      disabled={record.isGeneratingSMS}
+                                      isLoading={record.isGeneratingSMS}
                                       size="sm"
                                       variant="success"
                                     >
-                                      Generate SMS
+                                      {record.isGeneratingSMS ? 'Generating...' : 'Generate SMS'}
                                     </Button>
                                   ) : (
                                     <Button
@@ -1005,11 +1157,12 @@ export default function EmailGenerationPage() {
                                         // TODO: Implement handleSendSMS when SMS APIs are ready
                                         console.log('Send SMS - API to be implemented')
                                       }}
-                                      disabled={false}
+                                      disabled={record.isSendingSMS}
+                                      isLoading={record.isSendingSMS}
                                       size="sm"
                                       variant="primary"
                                     >
-                                      Send SMS
+                                      {record.isSendingSMS ? 'Sending...' : 'Send SMS'}
                                     </Button>
                                   )
                                 )}
@@ -1130,74 +1283,87 @@ export default function EmailGenerationPage() {
                 {/* Scrollable content */}
                 <div className="h-full p-6 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                   <div className="space-y-6">
-                  {/* Basic Information */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Basic Information</h3>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  {/* Basic Information - Only show business name in summary-only mode */}
+                  {drawerViewMode === 'full' ? (
+                    <>
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-3">Basic Information</h3>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div className="bg-gray-50 rounded-lg p-4">
+                            <label className="text-sm font-medium text-gray-500">Business Name</label>
+                            <p className="text-sm text-gray-900 mt-1">{selectedRecord.businessName || 'N/A'}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-4">
+                            <label className="text-sm font-medium text-gray-500">Email</label>
+                            <p className="text-sm text-gray-900 mt-1">{selectedRecord.email || 'N/A'}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-4">
+                            <label className="text-sm font-medium text-gray-500">Website</label>
+                            <p className="text-sm text-gray-900 mt-1">
+                              {selectedRecord.website ? (
+                                <a href={selectedRecord.website} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800">
+                                  {selectedRecord.website}
+                                </a>
+                              ) : 'N/A'}
+                            </p>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-4">
+                            <label className="text-sm font-medium text-gray-500">Location</label>
+                            <p className="text-sm text-gray-900 mt-1">
+                              {selectedRecord.state || 'N/A'} {selectedRecord.zipCode ? `(${selectedRecord.zipCode})` : ''}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Scraping Details */}
+                      {selectedRecord.scrapedData && (
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900 mb-3">Scraping Details</h3>
+                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div className="bg-gray-50 rounded-lg p-4">
+                              <label className="text-sm font-medium text-gray-500">Method</label>
+                              <p className="text-sm text-gray-900 mt-1 capitalize">{selectedRecord.scrapedData.method || 'N/A'}</p>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-4">
+                              <label className="text-sm font-medium text-gray-500">Status</label>
+                              <p className="text-sm text-gray-900 mt-1">
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  selectedRecord.scrapedData.scrapeSuccess 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {selectedRecord.scrapedData.scrapeSuccess ? 'Success' : 'Failed'}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-4">
+                              <label className="text-sm font-medium text-gray-500">Scraped URL</label>
+                              <p className="text-sm text-gray-900 mt-1">
+                                {selectedRecord.scrapedData.url ? (
+                                  <a href={selectedRecord.scrapedData.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 break-all">
+                                    {selectedRecord.scrapedData.url}
+                                  </a>
+                                ) : 'N/A'}
+                              </p>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-4">
+                              <label className="text-sm font-medium text-gray-500">Scraped At</label>
+                              <p className="text-sm text-gray-900 mt-1">
+                                {selectedRecord.scrapedData.timestamp ? new Date(selectedRecord.scrapedData.timestamp).toLocaleString() : 'N/A'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    // Summary-only mode: Show just business name info
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Business Information</h3>
                       <div className="bg-gray-50 rounded-lg p-4">
                         <label className="text-sm font-medium text-gray-500">Business Name</label>
                         <p className="text-sm text-gray-900 mt-1">{selectedRecord.businessName || 'N/A'}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <label className="text-sm font-medium text-gray-500">Email</label>
-                        <p className="text-sm text-gray-900 mt-1">{selectedRecord.email || 'N/A'}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <label className="text-sm font-medium text-gray-500">Website</label>
-                        <p className="text-sm text-gray-900 mt-1">
-                          {selectedRecord.website ? (
-                            <a href={selectedRecord.website} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800">
-                              {selectedRecord.website}
-                            </a>
-                          ) : 'N/A'}
-                        </p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <label className="text-sm font-medium text-gray-500">Location</label>
-                        <p className="text-sm text-gray-900 mt-1">
-                          {selectedRecord.state || 'N/A'} {selectedRecord.zipCode ? `(${selectedRecord.zipCode})` : ''}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Scraping Details */}
-                  {selectedRecord.scrapedData && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Scraping Details</h3>
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <label className="text-sm font-medium text-gray-500">Method</label>
-                          <p className="text-sm text-gray-900 mt-1 capitalize">{selectedRecord.scrapedData.method || 'N/A'}</p>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <label className="text-sm font-medium text-gray-500">Status</label>
-                          <p className="text-sm text-gray-900 mt-1">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              selectedRecord.scrapedData.scrapeSuccess 
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {selectedRecord.scrapedData.scrapeSuccess ? 'Success' : 'Failed'}
-                            </span>
-                          </p>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <label className="text-sm font-medium text-gray-500">Scraped URL</label>
-                          <p className="text-sm text-gray-900 mt-1">
-                            {selectedRecord.scrapedData.url ? (
-                              <a href={selectedRecord.scrapedData.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 break-all">
-                                {selectedRecord.scrapedData.url}
-                              </a>
-                            ) : 'N/A'}
-                          </p>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <label className="text-sm font-medium text-gray-500">Scraped At</label>
-                          <p className="text-sm text-gray-900 mt-1">
-                            {selectedRecord.scrapedData.timestamp ? new Date(selectedRecord.scrapedData.timestamp).toLocaleString() : 'N/A'}
-                          </p>
-                        </div>
                       </div>
                     </div>
                   )}
@@ -1329,8 +1495,8 @@ export default function EmailGenerationPage() {
                     </div>
                   )}
 
-                  {/* Generated Email */}
-                  {selectedRecord.generatedEmail && (
+                  {/* Generated Email - Only show in full mode */}
+                  {drawerViewMode === 'full' && selectedRecord.generatedEmail && (
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">Generated Email</h3>
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -1387,35 +1553,12 @@ export default function EmailGenerationPage() {
                     </div>
                   )}
 
-                  {/* Actions */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Actions</h3>
-                    <div className="flex space-x-2">
-                      {!selectedRecord.generatedSummary ? (
-                        <Button
-                          onClick={() => {
-                            handleGenerateSummary(selectedRecord.id)
-                            closeDrawer()
-                          }}
-                          disabled={selectedRecord.isGeneratingSummary}
-                          isLoading={selectedRecord.isGeneratingSummary}
-                        >
-                          {selectedRecord.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
-                        </Button>
-                      ) : !selectedRecord.generatedEmail ? (
-                        <Button
-                          onClick={() => {
-                            handleGenerateEmail(selectedRecord.id)
-                            closeDrawer()
-                          }}
-                          disabled={selectedRecord.isGeneratingEmail}
-                          isLoading={selectedRecord.isGeneratingEmail}
-                          variant="success"
-                        >
-                          {selectedRecord.isGeneratingEmail ? 'Generating...' : 'Generate Email'}
-                        </Button>
-                      ) : (
-                        <div className="flex space-x-2">
+                  {/* Actions - Only show in full mode */}
+                  {drawerViewMode === 'full' && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Actions</h3>
+                      <div className="flex space-x-2">
+                        {!selectedRecord.generatedSummary ? (
                           <Button
                             onClick={() => {
                               handleGenerateSummary(selectedRecord.id)
@@ -1423,10 +1566,10 @@ export default function EmailGenerationPage() {
                             }}
                             disabled={selectedRecord.isGeneratingSummary}
                             isLoading={selectedRecord.isGeneratingSummary}
-                            variant="outline"
                           >
-                            Regenerate Summary
+                            {selectedRecord.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
                           </Button>
+                        ) : !selectedRecord.generatedEmail ? (
                           <Button
                             onClick={() => {
                               handleGenerateEmail(selectedRecord.id)
@@ -1434,14 +1577,39 @@ export default function EmailGenerationPage() {
                             }}
                             disabled={selectedRecord.isGeneratingEmail}
                             isLoading={selectedRecord.isGeneratingEmail}
-                            variant="outline"
+                            variant="success"
                           >
-                            Regenerate Email
+                            {selectedRecord.isGeneratingEmail ? 'Generating...' : 'Generate Email'}
                           </Button>
-                        </div>
-                      )}
+                        ) : (
+                          <div className="flex space-x-2">
+                            <Button
+                              onClick={() => {
+                                handleGenerateSummary(selectedRecord.id)
+                                closeDrawer()
+                              }}
+                              disabled={selectedRecord.isGeneratingSummary}
+                              isLoading={selectedRecord.isGeneratingSummary}
+                              variant="outline"
+                            >
+                              Regenerate Summary
+                            </Button>
+                            <Button
+                              onClick={() => {
+                                handleGenerateEmail(selectedRecord.id)
+                                closeDrawer()
+                              }}
+                              disabled={selectedRecord.isGeneratingEmail}
+                              isLoading={selectedRecord.isGeneratingEmail}
+                              variant="outline"
+                            >
+                              Regenerate Email
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                   </div>
                 </div>
               </div>
