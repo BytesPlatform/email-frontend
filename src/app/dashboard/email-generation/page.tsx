@@ -5,6 +5,7 @@ import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { historyApi } from '@/api/history'
 import { emailGenerationApi } from '@/api/emailGeneration'
+import { smsGenerationApi } from '@/api/smsGeneration'
 import { apiClient } from '@/api/ApiClient'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -15,6 +16,191 @@ import type {
   EmailGenerationState 
 } from '@/types/emailGeneration'
 import type { ScrapingHistoryItem } from '@/types/history'
+
+// Email/SMS Overlay Component
+function EmailSmsOverlay({ 
+  overlay, 
+  onClose, 
+  onSave, 
+  copyToClipboard,
+  onToggleEdit,
+  onCancelEdit
+}: { 
+  overlay: { isOpen: boolean; subject: string; body: string; isEditMode?: boolean; smsDraftId?: number }
+  onClose: () => void
+  onSave: (newBody: string) => Promise<void>
+  copyToClipboard: (text: string) => void
+  onToggleEdit: () => void
+  onCancelEdit: () => void
+}) {
+  const isSMS = !!overlay.smsDraftId
+  const isEditMode = overlay.isEditMode || false
+  const [editText, setEditText] = useState(overlay.body)
+  const [isSaving, setIsSaving] = useState(false)
+  const characterCount = editText.length
+  const maxChars = 160
+
+  // Reset edit text when body changes or entering edit mode
+  useEffect(() => {
+    setEditText(overlay.body)
+  }, [overlay.body, isEditMode])
+
+  const handleSave = async () => {
+    if (editText.trim().length === 0) {
+      alert('SMS message cannot be empty')
+      return
+    }
+    if (editText.trim().length > maxChars) {
+      alert(`SMS must be ${maxChars} characters or less`)
+      return
+    }
+    setIsSaving(true)
+    try {
+      await onSave(editText.trim())
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      
+      {/* Overlay Content */}
+      <div className="relative w-full max-w-3xl h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 transform transition-transform overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 rounded-t-2xl flex-shrink-0">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">
+              {isSMS ? (isEditMode ? 'Edit SMS' : 'SMS Preview') : 'Email Preview'}
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              {isSMS ? 'Short message service' : 'Full email body content'}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="p-6 space-y-6">
+            {/* Subject - only for Email */}
+            {!isSMS && (
+              <div>
+                <label className="text-sm font-semibold text-gray-700 mb-2 block">Subject:</label>
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <p className="text-base font-medium text-gray-900">{overlay.subject}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Body */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-semibold text-gray-700">
+                  {isSMS ? 'SMS Message:' : 'Email Body:'}
+                </label>
+                {!isEditMode && (
+                  <Button
+                    onClick={() => copyToClipboard(isEditMode ? editText : overlay.body)}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Copy {isSMS ? 'Message' : 'Body'}
+                  </Button>
+                )}
+              </div>
+              
+              {isEditMode && isSMS ? (
+                <div>
+                  <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    className="w-full h-32 p-4 border border-gray-300 rounded-lg text-base text-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="Enter your SMS message..."
+                  />
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className={`text-sm ${characterCount > maxChars ? 'text-red-600' : characterCount > 0 ? 'text-gray-600' : 'text-gray-400'}`}>
+                      {characterCount} / {maxChars} characters
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                  <div className="text-base text-gray-800 whitespace-pre-wrap leading-relaxed">
+                    {overlay.body}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-6 border-t border-gray-200 rounded-b-2xl flex-shrink-0 space-x-3 bg-white">
+          <div>
+            {isSMS && !isEditMode && (
+              <Button
+                onClick={onToggleEdit}
+                variant="outline"
+              >
+                Edit SMS
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center space-x-3">
+            {!isEditMode && (
+              <Button
+                onClick={() => copyToClipboard(isEditMode ? editText : overlay.body)}
+                variant="outline"
+              >
+                Copy {isSMS ? 'Message' : 'Body'}
+              </Button>
+            )}
+            {isEditMode && (
+              <>
+                <Button
+                  onClick={handleSave}
+                  disabled={isSaving || characterCount === 0 || characterCount > maxChars}
+                  isLoading={isSaving}
+                  variant="success"
+                >
+                  {isSaving ? 'Saving...' : 'Save Changes'}
+                </Button>
+                <Button
+                  onClick={onCancelEdit}
+                  disabled={isSaving}
+                  variant="outline"
+                >
+                  Cancel
+                </Button>
+              </>
+            )}
+            {!isEditMode && (
+              <Button
+                onClick={onClose}
+                variant="primary"
+              >
+                Close
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function EmailGenerationPage() {
   const { client } = useAuthContext()
@@ -39,29 +225,9 @@ export default function EmailGenerationPage() {
     isOpen: boolean
     subject: string
     body: string
+    isEditMode?: boolean // For SMS editing
+    smsDraftId?: number // For SMS editing
   } | null>(null)
-
-  // Function to check if summary exists for a contact (lightweight check - only checks existence, doesn't load full data)
-  // Note: Since backend doesn't have a lightweight "exists" endpoint, we catch errors to determine existence
-  const checkSummaryExists = useCallback(async (contactId: number): Promise<boolean> => {
-    try {
-      // Make a HEAD or GET request - if it succeeds, summary exists; if 404, it doesn't
-      // For now, we'll use a try-catch approach: attempt to fetch, catch 404
-      const res = await emailGenerationApi.getContactSummary(contactId)
-      // If we get here and res.success is true, summary exists
-      // We intentionally don't store the data here - just check existence
-      return res.success && res.data !== null && res.data !== undefined
-    } catch (error: unknown) {
-      // If we get a 404 or "not found" error, summary doesn't exist
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      if (errorMessage?.includes('not found') || errorMessage?.includes('404') || errorMessage?.includes('No summary')) {
-        return false
-      }
-      // For other errors, assume summary might exist but there's a different issue
-      // Return false to be safe
-      return false
-    }
-  }, [])
 
   // Function to fetch full summary for a specific contact (only when View is clicked)
   const fetchSummaryForContact = useCallback(async (contactId: number): Promise<BusinessSummary | null> => {
@@ -74,58 +240,6 @@ export default function EmailGenerationPage() {
     } catch (error) {
       console.log(`No summary found for contact ${contactId}:`, error)
       return null
-    }
-  }, [])
-
-  // Function to check if email draft exists for a contact (lightweight check - only checks existence)
-  const checkEmailDraftExists = useCallback(async (contactId: number): Promise<boolean> => {
-    try {
-      const res = await emailGenerationApi.getContactEmailDrafts(contactId)
-      // If we get here and res.success is true with data, email draft exists
-      return !!(res.success && res.data && Array.isArray(res.data) && res.data.length > 0)
-    } catch (error: unknown) {
-      // If we get an error, email draft doesn't exist
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      if (errorMessage?.includes('not found') || errorMessage?.includes('404') || errorMessage?.includes('No email')) {
-        return false
-      }
-      // For other errors, assume email draft might exist but there's a different issue
-      return false
-    }
-  }, [])
-
-  // Function to check if SMS draft exists for a contact (lightweight check - only checks existence)
-  const checkSMSDraftExists = useCallback(async (contactId: number): Promise<boolean> => {
-    try {
-      // Using the SMS API endpoint: GET /sms/drafts/:contactId
-      // Backend returns: { message, success, count, data: [...] }
-      interface SMSDraftsResponse {
-        data?: Array<{ id: number }>
-        message?: string
-        success?: boolean
-        count?: number
-      }
-      const res = await apiClient.get<SMSDraftsResponse | Array<{ id: number }>>(`/sms/drafts/${contactId}`)
-      // The ApiClient wraps the response, so check res.data structure
-      // Backend format: { message, success, count, data: [...] }
-      // ApiClient format: { success: true, data: { message, success, count, data: [...] } }
-      if (res.success && res.data) {
-        // Check if data has the drafts array
-        const data = res.data as SMSDraftsResponse
-        const drafts = (data.data && Array.isArray(data.data)) 
-          ? data.data 
-          : (Array.isArray(res.data) ? res.data : [])
-        return Array.isArray(drafts) && drafts.length > 0
-      }
-      return false
-    } catch (error: unknown) {
-      // If we get an error, SMS draft doesn't exist
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      if (errorMessage?.includes('not found') || errorMessage?.includes('404') || errorMessage?.includes('No SMS')) {
-        return false
-      }
-      // For other errors, assume SMS draft might exist but there's a different issue
-      return false
     }
   }, [])
 
@@ -145,15 +259,11 @@ export default function EmailGenerationPage() {
   }, [])
 
   // Function to fetch SMS draft ID for a specific contact (only called when View SMS is clicked)
-  // Currently unused - will be implemented when SMS view functionality is added
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const fetchSMSDraftIdForContact = useCallback(async (contactId: number): Promise<number | null> => {
     try {
-      // TODO: Replace with actual SMS API endpoint when available
-      // For now, using email API structure as placeholder
-      const res = await emailGenerationApi.getContactEmailDrafts(contactId)
-      // When SMS API is ready: const res = await smsGenerationApi.getContactSMSDrafts(contactId)
+      const res = await smsGenerationApi.getContactSmsDrafts(contactId)
       if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
+        // Return the most recent draft ID (first one since backend orders by createdAt desc)
         return res.data[0].id
       }
       return null
@@ -177,7 +287,7 @@ export default function EmailGenerationPage() {
           limit: 100 // Get up to 100 records
         })
         
-        if (historyRes.success && historyRes.data) {
+        if (historyRes.success && historyRes.data) {  
           console.log('History API Response:', historyRes.data)
           console.log('Recent Activity:', historyRes.data.recentActivity)
           
@@ -191,7 +301,7 @@ export default function EmailGenerationPage() {
               ...prev, 
               scrapedRecords: [],
               isLoadingRecords: false 
-            }))
+            })) 
             return
           }
           
@@ -235,52 +345,8 @@ export default function EmailGenerationPage() {
             currentPage: 1 // Reset to first page when new data is loaded
           }))
           
-          // After records are set, check which ones have summaries, email drafts, and SMS drafts (in background)
-          // This runs in parallel for all contacts to check existence
-          Promise.all([
-            // Check summaries
-            Promise.all(
-              scrapedRecords.map(async (record) => {
-                const hasSummary = await checkSummaryExists(record.contactId)
-                return { contactId: record.contactId, hasSummary }
-              })
-            ),
-            // Check email drafts
-            Promise.all(
-              scrapedRecords.map(async (record) => {
-                const hasEmailDraft = await checkEmailDraftExists(record.contactId)
-                return { contactId: record.contactId, hasEmailDraft }
-              })
-            ),
-            // Check SMS drafts
-            Promise.all(
-              scrapedRecords.map(async (record) => {
-                const hasSMSDraft = await checkSMSDraftExists(record.contactId)
-                return { contactId: record.contactId, hasSMSDraft }
-              })
-            )
-          ]).then(([summaryChecks, emailDraftChecks, smsDraftChecks]) => {
-            // Update records with summary, email draft, and SMS draft status
-            setState(prev => ({
-              ...prev,
-              scrapedRecords: prev.scrapedRecords.map(record => {
-                const summaryCheck = summaryChecks.find(c => c.contactId === record.contactId)
-                const emailDraftCheck = emailDraftChecks.find(c => c.contactId === record.contactId)
-                const smsDraftCheck = smsDraftChecks.find(c => c.contactId === record.contactId)
-                return {
-                  ...record,
-                  hasSummary: summaryCheck?.hasSummary ?? false,
-                  hasEmailDraft: emailDraftCheck?.hasEmailDraft ?? false,
-                  hasSMSDraft: smsDraftCheck?.hasSMSDraft ?? false
-                }
-              })
-            }))
-          }).catch((error) => {
-            console.error('Error checking summary, email draft, and SMS draft statuses:', error)
-            // Don't block the UI if checks fail
-          })
-        
-        // Don't load email drafts on page load - they will be fetched only when View Body is clicked
+          // Don't check summaries, email drafts, or SMS drafts on page load
+          // They will be fetched only when user clicks View buttons
       } else {
         console.log('History API Error:', historyRes.error)
           setState(prev => ({ 
@@ -299,7 +365,7 @@ export default function EmailGenerationPage() {
     }
     
     loadScrapedRecords()
-  }, [client?.id, checkSummaryExists, checkEmailDraftExists, checkSMSDraftExists])
+  }, [client?.id])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -471,27 +537,13 @@ export default function EmailGenerationPage() {
     }))
     
     try {
-      // Call SMS generation API: POST /sms/generate/:contactId/:summaryId
-      interface SMSGenerationResponse {
-        data?: {
-          id?: number
-          smsDraftId?: number
-          contactId?: number
-          summaryId?: number
-        }
-        message?: string
-        success?: boolean
-      }
-      const res = await apiClient.post<SMSGenerationResponse>(`/sms/generate/${record.contactId}/${record.generatedSummary.id}`)
+      const res = await smsGenerationApi.generateSmsDraft(record.contactId, record.generatedSummary.id)
       
       console.log('SMS generation response:', res)
       
       if (res.success && res.data) {
-        // Backend returns: { message, success, data: { id, contactId, summaryId, ... } }
-        // ApiClient may wrap it, so check if data has a nested data property
-        const responseData = res.data as SMSGenerationResponse
-        const smsDraft = responseData.data || (responseData as unknown as SMSGenerationResponse['data'])
-        const smsDraftId = smsDraft?.id || smsDraft?.smsDraftId
+        const smsDraftId = res.data.id
+        const smsDraft = res.data
         
         if (smsDraftId) {
           setState(prev => ({
@@ -501,6 +553,7 @@ export default function EmailGenerationPage() {
                 ? { 
                     ...r, 
                     smsDraftId: smsDraftId,
+                    smsStatus: smsDraft.status || 'draft',
                     hasSMSDraft: true,
                     isGeneratingSMS: false 
                   } 
@@ -508,7 +561,7 @@ export default function EmailGenerationPage() {
             )
           }))
         } else {
-          console.warn('Unexpected SMS response structure:', res.data)
+          console.warn('SMS generated but no ID returned:', res.data)
           setState(prev => ({
             ...prev,
             scrapedRecords: prev.scrapedRecords.map(r => 
@@ -581,6 +634,53 @@ export default function EmailGenerationPage() {
           r.id === recordId ? { ...r, isSendingEmail: false } : r
         ),
         error: error instanceof Error ? error.message : 'Failed to send email'
+      }))
+    }
+  }
+
+  const handleSendSMS = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record || !record.smsDraftId) {
+      setState(prev => ({ ...prev, error: 'SMS draft not found. Please generate an SMS first.' }))
+      return
+    }
+
+    setState(prev => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map(r => 
+        r.id === recordId ? { ...r, isSendingSMS: true } : r
+      ),
+      error: null
+    }))
+    
+    try {
+      const res = await smsGenerationApi.sendSmsDraft(record.smsDraftId)
+      if (res.success) {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isSendingSMS: false, smsStatus: 'sent' } : r
+          )
+        }))
+        // You could add a success notification here
+        alert('SMS sent successfully!')
+      } else {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isSendingSMS: false, smsStatus: 'failed' } : r
+          ),
+          error: res.error || 'Failed to send SMS'
+        }))
+      }
+    } catch (error) {
+      console.error('Error sending SMS:', error)
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(r => 
+          r.id === recordId ? { ...r, isSendingSMS: false, smsStatus: 'failed' } : r
+        ),
+        error: error instanceof Error ? error.message : 'Failed to send SMS'
       }))
     }
   }
@@ -660,6 +760,7 @@ export default function EmailGenerationPage() {
             callToAction: 'Review and send',
             generatedAt: emailDraft.createdAt || new Date().toISOString()
           },
+          hasEmailDraft: true,
           isLoadingEmailDraft: false
         }
         
@@ -747,6 +848,123 @@ export default function EmailGenerationPage() {
     } catch (error) {
       console.error('Error fetching email draft:', error)
       setState(prev => ({ ...prev, error: error instanceof Error ? error.message : 'Failed to fetch email draft' }))
+    }
+  }
+
+  // Handler to view SMS body (fetches SMS draft ONLY when View SMS button is clicked)
+  const handleViewSMSBody = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record) return
+
+    // If SMS is already loaded, just show it
+    if (record.generatedSMS) {
+      setEmailBodyOverlay({
+        isOpen: true,
+        subject: record.generatedSMS.subject,
+        body: record.generatedSMS.body,
+        smsDraftId: record.smsDraftId,
+        isEditMode: false
+      })
+      return
+    }
+
+    // Set loading state
+    setState(prev => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map(r => 
+        r.id === recordId ? { ...r, isLoadingSMSDraft: true } : r
+      )
+    }))
+
+    try {
+      let draftId = record.smsDraftId
+
+      // If we don't have smsDraftId, fetch it first
+      if (!draftId) {
+        const fetchedDraftId = await fetchSMSDraftIdForContact(record.contactId)
+        
+        if (!fetchedDraftId) {
+          setState(prev => ({
+            ...prev,
+            scrapedRecords: prev.scrapedRecords.map(r => 
+              r.id === recordId ? { ...r, isLoadingSMSDraft: false } : r
+            ),
+            error: 'No SMS draft found for this contact'
+          }))
+          return
+        }
+
+        draftId = fetchedDraftId
+
+        // Update record with smsDraftId
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, smsDraftId: draftId } : r
+          )
+        }))
+      }
+
+      // Now fetch the SMS draft content
+      const res = await smsGenerationApi.getSmsDraft(draftId)
+      if (res.success && res.data) {
+        const smsDraft = res.data
+        
+        // Update record with fetched SMS data
+        const updatedRecord = {
+          ...record,
+          smsDraftId: draftId,
+          generatedSMS: {
+            subject: 'SMS Message', // SMS doesn't have subject, use generic title
+            body: smsDraft.messageText || smsDraft.message || '',
+            personalization: {
+              businessName: record.businessName || 'Your Company',
+              industry: record.generatedSummary?.industry || 'Your Industry',
+              keyFeatures: record.generatedSummary?.keyFeatures || []
+            },
+            tone: 'professional' as 'professional' | 'friendly' | 'persuasive',
+            callToAction: 'Review and send',
+            generatedAt: smsDraft.createdAt || new Date().toISOString()
+          },
+          smsStatus: smsDraft.status || 'draft',
+          hasSMSDraft: true,
+          isLoadingSMSDraft: false
+        }
+        
+        // Update state
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? updatedRecord : r
+          )
+        }))
+        
+        // Show SMS in overlay
+        setEmailBodyOverlay({
+          isOpen: true,
+          subject: updatedRecord.generatedSMS.subject,
+          body: updatedRecord.generatedSMS.body,
+          smsDraftId: draftId,
+          isEditMode: false
+        })
+      } else {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isLoadingSMSDraft: false } : r
+          ),
+          error: res.error || 'Failed to fetch SMS draft'
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching SMS draft:', error)
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(r => 
+          r.id === recordId ? { ...r, isLoadingSMSDraft: false } : r
+        ),
+        error: error instanceof Error ? error.message : 'Failed to fetch SMS draft'
+      }))
     }
   }
 
@@ -1019,90 +1237,73 @@ export default function EmailGenerationPage() {
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
                               <div className="flex items-center space-x-1">
-                                {record.generatedSummary || record.hasSummary ? (
-                                  <Button
-                                    onClick={async (e) => {
-                                      e.stopPropagation()
-                                      await handleViewSummary(record.id)
-                                    }}
-                                    disabled={record.isLoadingSummary}
-                                    variant="outline"
-                                    size="xs"
-                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                  >
-                                    {record.isLoadingSummary ? 'Loading...' : 'View'}
-                                  </Button>
-                                ) : (
-                                  <span className="text-sm text-gray-600">
-                                    {record.isLoadingSummary ? 'Checking...' : 'Not Generated'}
-                                  </span>
-                                )}
+                                <Button
+                                  onClick={async (e) => {
+                                    e.stopPropagation()
+                                    await handleViewSummary(record.id)
+                                  }}
+                                  disabled={record.isLoadingSummary}
+                                  variant="outline"
+                                  size="xs"
+                                  className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                >
+                                  {record.isLoadingSummary ? 'Loading...' : 'View'}
+                                </Button>
                               </div>
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
                               {mode === 'email' ? (
                                 <div className="flex items-center space-x-1">
-                                  {record.generatedEmail || record.hasEmailDraft || record.emailDraftId ? (
-                                    <Button
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        // If email is already loaded, show it directly
-                                        if (record.generatedEmail) {
-                                          setEmailBodyOverlay({
-                                            isOpen: true,
-                                            subject: record.generatedEmail.subject,
-                                            body: record.generatedEmail.body
-                                          })
-                                        } else {
-                                          // Otherwise, fetch and show it
-                                          await handleViewEmailBody(record.id)
-                                        }
-                                      }}
-                                      disabled={record.isLoadingEmailDraft}
-                                      variant="outline"
-                                      size="xs"
-                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                    >
-                                      {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
-                                    </Button>
-                                  ) : (
-                                    <span className="text-sm text-gray-600">
-                                      {record.isLoadingEmailDraft ? 'Checking...' : 'Not Generated'}
-                                    </span>
-                                  )}
+                                  <Button
+                                    onClick={async (e) => {
+                                      e.stopPropagation()
+                                      // If email is already loaded, show it directly
+                                      if (record.generatedEmail) {
+                                        setEmailBodyOverlay({
+                                          isOpen: true,
+                                          subject: record.generatedEmail.subject,
+                                          body: record.generatedEmail.body
+                                        })
+                                      } else {
+                                        // Otherwise, fetch and show it
+                                        await handleViewEmailBody(record.id)
+                                      }
+                                    }}
+                                    disabled={record.isLoadingEmailDraft}
+                                    variant="outline"
+                                    size="xs"
+                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                  >
+                                    {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
+                                  </Button>
                                 </div>
                               ) : (
                                 <div className="flex items-center space-x-1">
                                   {/* SMS mode - same structure as Email */}
-                                  {record.generatedSMS || record.hasSMSDraft || record.smsDraftId ? (
-                                    <Button
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        // If SMS is already loaded, show it directly
-                                        if (record.generatedSMS) {
-                                          setEmailBodyOverlay({
-                                            isOpen: true,
-                                            subject: record.generatedSMS.subject,
-                                            body: record.generatedSMS.body
-                                          })
-                                        } else {
-                                          // Otherwise, fetch and show it
-                                          // TODO: Implement handleViewSMSBody when SMS APIs are ready
-                                          console.log('View SMS - API to be implemented')
-                                        }
-                                      }}
-                                      disabled={record.isLoadingSMSDraft}
-                                      variant="outline"
-                                      size="xs"
-                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                    >
-                                      {record.isLoadingSMSDraft ? 'Loading...' : 'View SMS'}
-                                    </Button>
-                                  ) : (
-                                    <span className="text-sm text-gray-600">
-                                      {record.isLoadingSMSDraft ? 'Checking...' : 'Not Generated'}
-                                    </span>
-                                  )}
+                                  <Button
+                                    onClick={async (e) => {
+                                      e.stopPropagation()
+                                      // If SMS is already loaded, show it directly
+                                      if (record.generatedSMS) {
+                                        setEmailBodyOverlay({
+                                          isOpen: true,
+                                          subject: record.generatedSMS.subject,
+                                          body: record.generatedSMS.body,
+                                          smsDraftId: record.smsDraftId,
+                                          isEditMode: false
+                                        })
+                                      } else {
+                                        // Otherwise, fetch and show it
+                                        await handleViewSMSBody(record.id)
+                                      }
+                                    }}
+                                    disabled={record.isLoadingSMSDraft}
+                                    variant="outline"
+                                    size="xs"
+                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                  >
+                                    {record.isLoadingSMSDraft ? 'Loading...' : 'View SMS'}
+                                  </Button>
                                 </div>
                               )}
                             </td>
@@ -1140,7 +1341,7 @@ export default function EmailGenerationPage() {
                                     </Button>
                                   )
                                 ) : (
-                                  // SMS mode - show Generate SMS if not generated, Send SMS if generated
+                                  // SMS mode - show Generate SMS if not generated, Send SMS if generated and not sent
                                   !record.generatedSMS && !record.smsDraftId && !record.hasSMSDraft ? (
                                     <Button
                                       onClick={() => handleGenerateSMS(record.id)}
@@ -1151,12 +1352,11 @@ export default function EmailGenerationPage() {
                                     >
                                       {record.isGeneratingSMS ? 'Generating...' : 'Generate SMS'}
                                     </Button>
+                                  ) : record.smsStatus === 'sent' ? (
+                                    <span className="text-sm text-green-600 font-medium">SMS Sent ✓</span>
                                   ) : (
                                     <Button
-                                      onClick={() => {
-                                        // TODO: Implement handleSendSMS when SMS APIs are ready
-                                        console.log('Send SMS - API to be implemented')
-                                      }}
+                                      onClick={() => handleSendSMS(record.id)}
                                       disabled={record.isSendingSMS}
                                       isLoading={record.isSendingSMS}
                                       size="sm"
@@ -1618,82 +1818,61 @@ export default function EmailGenerationPage() {
         </div>
       )}
 
-      {/* Email Body Overlay */}
+      {/* Email/SMS Body Overlay */}
       {emailBodyOverlay && emailBodyOverlay.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setEmailBodyOverlay(null)}
-          />
-          
-          {/* Overlay Content */}
-          <div className="relative w-full max-w-3xl h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 transform transition-transform overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 rounded-t-2xl flex-shrink-0">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">Email Preview</h2>
-                <p className="text-sm text-gray-500 mt-1">Full email body content</p>
-              </div>
-              <button
-                onClick={() => setEmailBodyOverlay(null)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Scrollable Content */}
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <div className="p-6 space-y-6">
-                {/* Subject */}
-                <div>
-                  <label className="text-sm font-semibold text-gray-700 mb-2 block">Subject:</label>
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <p className="text-base font-medium text-gray-900">{emailBodyOverlay.subject}</p>
-                  </div>
-                </div>
-
-                {/* Body */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-semibold text-gray-700">Email Body:</label>
-                    <Button
-                      onClick={() => copyToClipboard(emailBodyOverlay.body)}
-                      variant="outline"
-                      size="sm"
-                    >
-                      Copy Body
-                    </Button>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
-                    <div className="text-base text-gray-800 whitespace-pre-wrap leading-relaxed">
-                      {emailBodyOverlay.body}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end p-6 border-t border-gray-200 rounded-b-2xl flex-shrink-0 space-x-3 bg-white">
-              <Button
-                onClick={() => copyToClipboard(emailBodyOverlay.body)}
-                variant="outline"
-              >
-                Copy Body
-              </Button>
-              <Button
-                onClick={() => setEmailBodyOverlay(null)}
-                variant="primary"
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
+        <EmailSmsOverlay
+          overlay={emailBodyOverlay}
+          onClose={() => setEmailBodyOverlay(null)}
+          onToggleEdit={() => {
+            if (emailBodyOverlay.smsDraftId) {
+              setEmailBodyOverlay({
+                ...emailBodyOverlay,
+                isEditMode: true
+              })
+            }
+          }}
+          onCancelEdit={() => {
+            if (emailBodyOverlay.smsDraftId) {
+              setEmailBodyOverlay({
+                ...emailBodyOverlay,
+                isEditMode: false
+              })
+            }
+          }}
+          onSave={async (newBody: string) => {
+            if (emailBodyOverlay.smsDraftId) {
+              // Update SMS draft
+              try {
+                const res = await smsGenerationApi.updateSmsDraft(emailBodyOverlay.smsDraftId, { messageText: newBody })
+                if (res.success) {
+                  // Fetch the updated SMS draft to show the latest version
+                  const updatedRes = await smsGenerationApi.getSmsDraft(emailBodyOverlay.smsDraftId)
+                  if (updatedRes.success && updatedRes.data) {
+                    const updatedDraft = updatedRes.data
+                    // Update overlay with new data and switch back to view mode
+                    setEmailBodyOverlay({
+                      isOpen: true,
+                      subject: 'SMS Message',
+                      body: updatedDraft.messageText || updatedDraft.message || '',
+                      smsDraftId: emailBodyOverlay.smsDraftId,
+                      isEditMode: false
+                    })
+                    alert('SMS updated successfully!')
+                  } else {
+                    // If fetch fails, just close and show success
+                    setEmailBodyOverlay(null)
+                    alert('SMS updated successfully!')
+                  }
+                } else {
+                  alert('Failed to update SMS: ' + (res.error || 'Unknown error'))
+                }
+              } catch (error) {
+                alert('Error updating SMS: ' + (error instanceof Error ? error.message : 'Unknown error'))
+              }
+            }
+          }}
+          copyToClipboard={copyToClipboard}
+        />
       )}
     </AuthGuard>
   )
