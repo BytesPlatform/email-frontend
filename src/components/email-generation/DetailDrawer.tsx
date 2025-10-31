@@ -4,7 +4,7 @@ import type { ScrapedRecord } from '@/types/emailGeneration'
 interface DetailDrawerProps {
   isOpen: boolean
   record: ScrapedRecord | null
-  viewMode: 'full' | 'summary-only'
+  viewMode?: 'full' | 'summary-only' // Made optional since it's not used yet
   onClose: () => void
   children?: React.ReactNode
 }

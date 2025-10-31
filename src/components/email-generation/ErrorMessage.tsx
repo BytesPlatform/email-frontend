@@ -4,7 +4,7 @@ interface ErrorMessageProps {
   message: string | null
 }
 
-export const ErrorMessage: React.FC<ErrorMessageProps> = React.memo(({ message }) => {
+const ErrorMessageComponent: React.FC<ErrorMessageProps> = ({ message }) => {
   if (!message) return null
 
   return (
@@ -15,4 +15,8 @@ export const ErrorMessage: React.FC<ErrorMessageProps> = React.memo(({ message }
       <span className="text-red-700">{message}</span>
     </div>
   )
-})
+}
+
+ErrorMessageComponent.displayName = 'ErrorMessage'
+
+export const ErrorMessage = React.memo(ErrorMessageComponent)

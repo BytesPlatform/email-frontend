@@ -11,7 +11,7 @@ interface PaginationControlsProps {
   onNextPage: () => void
 }
 
-export const PaginationControls: React.FC<PaginationControlsProps> = React.memo(({
+const PaginationControlsComponent: React.FC<PaginationControlsProps> = ({
   currentPage,
   recordsCount,
   recordsPerPage,
@@ -69,4 +69,8 @@ export const PaginationControls: React.FC<PaginationControlsProps> = React.memo(
       </div>
     </div>
   )
-})
+}
+
+PaginationControlsComponent.displayName = 'PaginationControls'
+
+export const PaginationControls = React.memo(PaginationControlsComponent)

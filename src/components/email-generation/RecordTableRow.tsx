@@ -24,7 +24,7 @@ interface RecordTableRowProps {
   onSendSMS: (recordId: number) => void
 }
 
-export const RecordTableRow: React.FC<RecordTableRowProps> = React.memo(({
+const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
   record,
   mode,
   onRowClick,
@@ -196,4 +196,8 @@ export const RecordTableRow: React.FC<RecordTableRowProps> = React.memo(({
       </td>
     </tr>
   )
-})
+}
+
+RecordTableRowComponent.displayName = 'RecordTableRow'
+
+export const RecordTableRow = React.memo(RecordTableRowComponent)

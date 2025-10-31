@@ -13,10 +13,9 @@ import { RecordsTable } from '@/components/email-generation/RecordsTable'
 import { PaginationControls } from '@/components/email-generation/PaginationControls'
 import { ErrorMessage } from '@/components/email-generation/ErrorMessage'
 import { EmailBodyOverlay } from '@/components/email-generation/EmailBodyOverlay'
-import { DetailDrawer } from '@/components/email-generation/DetailDrawer'
 import { useEmailGenerationState } from '@/components/email-generation/hooks/useEmailGenerationState'
 import { useEmailGenerationAPI } from '@/components/email-generation/hooks/useEmailGenerationAPI'
-import { getTotalPages, copyToClipboard } from '@/components/email-generation/utils/emailGenerationUtils'
+import { copyToClipboard } from '@/components/email-generation/utils/emailGenerationUtils'
 import { Button } from '@/components/ui/Button'
 
 export default function EmailGenerationPage() {
@@ -138,7 +137,8 @@ export default function EmailGenerationPage() {
     }
     
     loadScrapedRecords()
-  }, [client?.id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client?.id, setState])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -572,57 +572,7 @@ export default function EmailGenerationPage() {
     }
   }
 
-  const handleViewEmail = async (recordId: number) => {
-    const record = state.scrapedRecords.find(r => r.id === recordId)
-    if (!record || !record.emailDraftId) {
-      // If no emailDraftId but we have generatedEmail, just open drawer
-      if (record && record.generatedEmail) {
-        openDrawer(record)
-      }
-      return
-    }
-    
-    try {
-      const res = await emailGenerationApi.getEmailDraft(record.emailDraftId)
-      if (res.success && res.data) {
-        const emailDraft = res.data
-        // Update the record with the fetched email data
-        const updatedRecord: ScrapedRecord = {
-          ...record,
-          generatedEmail: {
-            subject: emailDraft.subjectLine || emailDraft.subject || 'No Subject',
-            body: emailDraft.bodyText || emailDraft.body || '',
-            personalization: {
-              businessName: record.businessName || 'Your Company',
-              industry: record.generatedSummary?.industry || 'Your Industry',
-              keyFeatures: record.generatedSummary?.keyFeatures || []
-            },
-            tone: (emailDraft.tone === 'friendly' || emailDraft.tone === 'persuasive') 
-              ? emailDraft.tone 
-              : 'professional' as 'professional' | 'friendly' | 'persuasive',
-            callToAction: 'Review and send',
-            generatedAt: emailDraft.createdAt || new Date().toISOString()
-          }
-        }
-        
-        // Update state
-        setState(prev => ({
-          ...prev,
-          scrapedRecords: prev.scrapedRecords.map(r => 
-            r.id === recordId ? updatedRecord : r
-          )
-        }))
-        
-        // Open drawer with updated record
-        openDrawer(updatedRecord)
-      } else {
-        setState(prev => ({ ...prev, error: res.error || 'Failed to fetch email draft' }))
-      }
-    } catch (error) {
-      console.error('Error fetching email draft:', error)
-      setState(prev => ({ ...prev, error: error instanceof Error ? error.message : 'Failed to fetch email draft' }))
-    }
-  }
+  // handleViewEmail removed - functionality covered by handleViewEmailBody
 
   // Handler to view SMS body (fetches SMS draft ONLY when View SMS button is clicked)
   const handleViewSMSBody = async (recordId: number) => {
@@ -741,7 +691,7 @@ export default function EmailGenerationPage() {
     }
   }
 
-  // Helper functions (truncateBusinessName, getCurrentPageRecords, getTotalPages) are imported from utils
+  // Helper functions (truncateBusinessName, getCurrentPageRecords) are in utils
   // Pagination handlers (handlePageChange, handlePreviousPage, handleNextPage) come from useEmailGenerationState hook
   // Drawer handlers (openDrawer, closeDrawer) come from useEmailGenerationState hook
 

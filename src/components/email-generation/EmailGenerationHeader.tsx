@@ -6,7 +6,7 @@ interface EmailGenerationHeaderProps {
   onModeChange: (mode: 'email' | 'sms') => void
 }
 
-export const EmailGenerationHeader: React.FC<EmailGenerationHeaderProps> = React.memo(({
+const EmailGenerationHeaderComponent: React.FC<EmailGenerationHeaderProps> = ({
   mode,
   onModeChange,
 }) => {
@@ -66,4 +66,8 @@ export const EmailGenerationHeader: React.FC<EmailGenerationHeaderProps> = React
       </div>
     </div>
   )
-})
+}
+
+EmailGenerationHeaderComponent.displayName = 'EmailGenerationHeader'
+
+export const EmailGenerationHeader = React.memo(EmailGenerationHeaderComponent)
