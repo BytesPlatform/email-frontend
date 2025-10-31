@@ -43,7 +43,6 @@ export default function EmailGenerationPage() {
 
   // Function to check if summary exists for a contact (lightweight check - only checks existence, doesn't load full data)
   // Note: Since backend doesn't have a lightweight "exists" endpoint, we catch errors to determine existence
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const checkSummaryExists = useCallback(async (contactId: number): Promise<boolean> => {
     try {
       // Make a HEAD or GET request - if it succeeds, summary exists; if 404, it doesn't
@@ -100,13 +99,22 @@ export default function EmailGenerationPage() {
     try {
       // Using the SMS API endpoint: GET /sms/drafts/:contactId
       // Backend returns: { message, success, count, data: [...] }
-      const res = await apiClient.get<any>(`/sms/drafts/${contactId}`)
+      interface SMSDraftsResponse {
+        data?: Array<{ id: number }>
+        message?: string
+        success?: boolean
+        count?: number
+      }
+      const res = await apiClient.get<SMSDraftsResponse | Array<{ id: number }>>(`/sms/drafts/${contactId}`)
       // The ApiClient wraps the response, so check res.data structure
       // Backend format: { message, success, count, data: [...] }
       // ApiClient format: { success: true, data: { message, success, count, data: [...] } }
       if (res.success && res.data) {
         // Check if data has the drafts array
-        const drafts = res.data.data || (Array.isArray(res.data) ? res.data : [])
+        const data = res.data as SMSDraftsResponse
+        const drafts = (data.data && Array.isArray(data.data)) 
+          ? data.data 
+          : (Array.isArray(res.data) ? res.data : [])
         return Array.isArray(drafts) && drafts.length > 0
       }
       return false
@@ -137,6 +145,8 @@ export default function EmailGenerationPage() {
   }, [])
 
   // Function to fetch SMS draft ID for a specific contact (only called when View SMS is clicked)
+  // Currently unused - will be implemented when SMS view functionality is added
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const fetchSMSDraftIdForContact = useCallback(async (contactId: number): Promise<number | null> => {
     try {
       // TODO: Replace with actual SMS API endpoint when available
@@ -409,6 +419,7 @@ export default function EmailGenerationPage() {
                 ? { 
                     ...r, 
                     emailDraftId: emailDraftId,
+                    hasEmailDraft: true,
                     isGeneratingEmail: false 
                   } 
                 : r
@@ -443,6 +454,86 @@ export default function EmailGenerationPage() {
           r.id === recordId ? { ...r, isGeneratingEmail: false } : r
         ),
         error: error instanceof Error ? error.message : 'Failed to generate email'
+      }))
+    }
+  }
+
+  const handleGenerateSMS = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record || !record.generatedSummary) return
+
+    setState(prev => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map(r => 
+        r.id === recordId ? { ...r, isGeneratingSMS: true } : r
+      ),
+      error: null
+    }))
+    
+    try {
+      // Call SMS generation API: POST /sms/generate/:contactId/:summaryId
+      interface SMSGenerationResponse {
+        data?: {
+          id?: number
+          smsDraftId?: number
+          contactId?: number
+          summaryId?: number
+        }
+        message?: string
+        success?: boolean
+      }
+      const res = await apiClient.post<SMSGenerationResponse>(`/sms/generate/${record.contactId}/${record.generatedSummary.id}`)
+      
+      console.log('SMS generation response:', res)
+      
+      if (res.success && res.data) {
+        // Backend returns: { message, success, data: { id, contactId, summaryId, ... } }
+        // ApiClient may wrap it, so check if data has a nested data property
+        const responseData = res.data as SMSGenerationResponse
+        const smsDraft = responseData.data || (responseData as unknown as SMSGenerationResponse['data'])
+        const smsDraftId = smsDraft?.id || smsDraft?.smsDraftId
+        
+        if (smsDraftId) {
+          setState(prev => ({
+            ...prev,
+            scrapedRecords: prev.scrapedRecords.map(r => 
+              r.id === recordId 
+                ? { 
+                    ...r, 
+                    smsDraftId: smsDraftId,
+                    hasSMSDraft: true,
+                    isGeneratingSMS: false 
+                  } 
+                : r
+            )
+          }))
+        } else {
+          console.warn('Unexpected SMS response structure:', res.data)
+          setState(prev => ({
+            ...prev,
+            scrapedRecords: prev.scrapedRecords.map(r => 
+              r.id === recordId ? { ...r, isGeneratingSMS: false } : r
+            ),
+            error: 'SMS generated but could not retrieve draft ID'
+          }))
+        }
+      } else {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isGeneratingSMS: false } : r
+          ),
+          error: res.error || 'Failed to generate SMS'
+        }))
+      }
+    } catch (error) {
+      console.error('Error generating SMS:', error)
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(r => 
+          r.id === recordId ? { ...r, isGeneratingSMS: false } : r
+        ),
+        error: error instanceof Error ? error.message : 'Failed to generate SMS'
       }))
     }
   }
@@ -1049,18 +1140,16 @@ export default function EmailGenerationPage() {
                                     </Button>
                                   )
                                 ) : (
-                                  // SMS mode - similar structure, will be connected to SMS APIs later
+                                  // SMS mode - show Generate SMS if not generated, Send SMS if generated
                                   !record.generatedSMS && !record.smsDraftId && !record.hasSMSDraft ? (
                                     <Button
-                                      onClick={() => {
-                                        // TODO: Implement handleGenerateSMS when SMS APIs are ready
-                                        console.log('Generate SMS - API to be implemented')
-                                      }}
-                                      disabled={false}
+                                      onClick={() => handleGenerateSMS(record.id)}
+                                      disabled={record.isGeneratingSMS}
+                                      isLoading={record.isGeneratingSMS}
                                       size="sm"
                                       variant="success"
                                     >
-                                      Generate SMS
+                                      {record.isGeneratingSMS ? 'Generating...' : 'Generate SMS'}
                                     </Button>
                                   ) : (
                                     <Button
@@ -1068,11 +1157,12 @@ export default function EmailGenerationPage() {
                                         // TODO: Implement handleSendSMS when SMS APIs are ready
                                         console.log('Send SMS - API to be implemented')
                                       }}
-                                      disabled={false}
+                                      disabled={record.isSendingSMS}
+                                      isLoading={record.isSendingSMS}
                                       size="sm"
                                       variant="primary"
                                     >
-                                      Send SMS
+                                      {record.isSendingSMS ? 'Sending...' : 'Send SMS'}
                                     </Button>
                                   )
                                 )}
