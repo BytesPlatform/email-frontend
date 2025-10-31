@@ -76,6 +76,23 @@ export default function EmailGenerationPage() {
     }
   }, [])
 
+  // Function to check if email draft exists for a contact (lightweight check - only checks existence)
+  const checkEmailDraftExists = useCallback(async (contactId: number): Promise<boolean> => {
+    try {
+      const res = await emailGenerationApi.getContactEmailDrafts(contactId)
+      // If we get here and res.success is true with data, email draft exists
+      return !!(res.success && res.data && Array.isArray(res.data) && res.data.length > 0)
+    } catch (error: unknown) {
+      // If we get an error, email draft doesn't exist
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage?.includes('not found') || errorMessage?.includes('404') || errorMessage?.includes('No email')) {
+        return false
+      }
+      // For other errors, assume email draft might exist but there's a different issue
+      return false
+    }
+  }, [])
+
   // Function to fetch email draft ID for a specific contact (only called when View Body is clicked)
   const fetchEmailDraftIdForContact = useCallback(async (contactId: number): Promise<number | null> => {
     try {
@@ -163,27 +180,40 @@ export default function EmailGenerationPage() {
             currentPage: 1 // Reset to first page when new data is loaded
           }))
           
-          // After records are set, check which ones have summaries (in background)
-          // This runs in parallel for all contacts to check summary existence
-          Promise.all(
-            scrapedRecords.map(async (record) => {
-              const hasSummary = await checkSummaryExists(record.contactId)
-              return { contactId: record.contactId, hasSummary }
-            })
-          ).then((summaryChecks) => {
-            // Update records with summary status
+          // After records are set, check which ones have summaries and email drafts (in background)
+          // This runs in parallel for all contacts to check existence
+          Promise.all([
+            // Check summaries
+            Promise.all(
+              scrapedRecords.map(async (record) => {
+                const hasSummary = await checkSummaryExists(record.contactId)
+                return { contactId: record.contactId, hasSummary }
+              })
+            ),
+            // Check email drafts
+            Promise.all(
+              scrapedRecords.map(async (record) => {
+                const hasEmailDraft = await checkEmailDraftExists(record.contactId)
+                return { contactId: record.contactId, hasEmailDraft }
+              })
+            )
+          ]).then(([summaryChecks, emailDraftChecks]) => {
+            // Update records with summary and email draft status
             setState(prev => ({
               ...prev,
               scrapedRecords: prev.scrapedRecords.map(record => {
-                const check = summaryChecks.find(c => c.contactId === record.contactId)
-                return check && check.hasSummary
-                  ? { ...record, hasSummary: true }
-                  : { ...record, hasSummary: false }
+                const summaryCheck = summaryChecks.find(c => c.contactId === record.contactId)
+                const emailDraftCheck = emailDraftChecks.find(c => c.contactId === record.contactId)
+                return {
+                  ...record,
+                  hasSummary: summaryCheck?.hasSummary ?? false,
+                  hasEmailDraft: emailDraftCheck?.hasEmailDraft ?? false
+                }
               })
             }))
           }).catch((error) => {
-            console.error('Error checking summary statuses:', error)
-            // Don't block the UI if summary checks fail
+            console.error('Error checking summary and email draft statuses:', error)
+            // Don't block the UI if checks fail
           })
         
         // Don't load email drafts on page load - they will be fetched only when View Body is clicked
@@ -205,7 +235,7 @@ export default function EmailGenerationPage() {
     }
     
     loadScrapedRecords()
-  }, [client?.id, checkSummaryExists])
+  }, [client?.id, checkSummaryExists, checkEmailDraftExists])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -865,45 +895,33 @@ export default function EmailGenerationPage() {
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
                               {mode === 'email' ? (
                                 <div className="flex items-center space-x-1">
-                                  {record.generatedEmail ? (
-                                    <>
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                        ✓ Generated
-                                      </span>
-                                      <Button
-                                        onClick={async (e) => {
-                                          e.stopPropagation()
+                                  {record.generatedEmail || record.hasEmailDraft || record.emailDraftId ? (
+                                    <Button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        // If email is already loaded, show it directly
+                                        if (record.generatedEmail) {
                                           setEmailBodyOverlay({
                                             isOpen: true,
-                                            subject: record.generatedEmail!.subject,
-                                            body: record.generatedEmail!.body
+                                            subject: record.generatedEmail.subject,
+                                            body: record.generatedEmail.body
                                           })
-                                        }}
-                                        variant="outline"
-                                        size="xs"
-                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                      >
-                                        View Body
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                        {record.isLoadingEmailDraft ? 'Checking...' : '?'}
-                                      </span>
-                                      <Button
-                                        onClick={async (e) => {
-                                          e.stopPropagation()
+                                        } else {
+                                          // Otherwise, fetch and show it
                                           await handleViewEmailBody(record.id)
-                                        }}
-                                        disabled={record.isLoadingEmailDraft}
-                                        variant="outline"
-                                        size="xs"
-                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                      >
-                                        {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
-                                      </Button>
-                                    </>
+                                        }
+                                      }}
+                                      disabled={record.isLoadingEmailDraft}
+                                      variant="outline"
+                                      size="xs"
+                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    >
+                                      {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
+                                    </Button>
+                                  ) : (
+                                    <span className="text-sm text-gray-600">
+                                      {record.isLoadingEmailDraft ? 'Checking...' : 'Not Generated'}
+                                    </span>
                                   )}
                                 </div>
                               ) : (
@@ -965,7 +983,7 @@ export default function EmailGenerationPage() {
                                     {record.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
                                   </Button>
                                 ) : mode === 'email' ? (
-                                  !record.generatedEmail && !record.emailDraftId ? (
+                                  !record.generatedEmail && !record.emailDraftId && !record.hasEmailDraft ? (
                                     <Button
                                       onClick={() => handleGenerateEmail(record.id)}
                                       disabled={record.isGeneratingEmail}

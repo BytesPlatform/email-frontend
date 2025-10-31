@@ -106,6 +106,7 @@ export interface ScrapedRecord {
   smsDraftId?: number // SMS draft ID (similar to emailDraftId)
   generatedSMS?: GeneratedEmail // SMS content (reusing GeneratedEmail structure for now)
   hasSummary?: boolean // Flag to indicate summary exists (without loading full data)
+  hasEmailDraft?: boolean // Flag to indicate email draft exists (without loading full data)
   isGeneratingSummary?: boolean
   isGeneratingEmail?: boolean
   isGeneratingSMS?: boolean
