@@ -155,12 +155,36 @@ export default function EmailGenerationPage() {
           
           console.log('Converted Scraped Records:', scrapedRecords)
           
+          // Set records first to show them immediately
           setState(prev => ({ 
             ...prev, 
             scrapedRecords,
             isLoadingRecords: false,
-          currentPage: 1 // Reset to first page when new data is loaded
-        }))
+            currentPage: 1 // Reset to first page when new data is loaded
+          }))
+          
+          // After records are set, check which ones have summaries (in background)
+          // This runs in parallel for all contacts to check summary existence
+          Promise.all(
+            scrapedRecords.map(async (record) => {
+              const hasSummary = await checkSummaryExists(record.contactId)
+              return { contactId: record.contactId, hasSummary }
+            })
+          ).then((summaryChecks) => {
+            // Update records with summary status
+            setState(prev => ({
+              ...prev,
+              scrapedRecords: prev.scrapedRecords.map(record => {
+                const check = summaryChecks.find(c => c.contactId === record.contactId)
+                return check && check.hasSummary
+                  ? { ...record, hasSummary: true }
+                  : { ...record, hasSummary: false }
+              })
+            }))
+          }).catch((error) => {
+            console.error('Error checking summary statuses:', error)
+            // Don't block the UI if summary checks fail
+          })
         
         // Don't load email drafts on page load - they will be fetched only when View Body is clicked
       } else {
@@ -181,7 +205,7 @@ export default function EmailGenerationPage() {
     }
     
     loadScrapedRecords()
-  }, [client?.id])
+  }, [client?.id, checkSummaryExists])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -818,42 +842,23 @@ export default function EmailGenerationPage() {
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
                               <div className="flex items-center space-x-1">
-                                {record.generatedSummary ? (
-                                  <>
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                      ✓ Generated
-                                    </span>
-                                    <Button
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        await handleViewSummary(record.id)
-                                      }}
-                                      disabled={record.isLoadingSummary}
-                                      variant="outline"
-                                      size="xs"
-                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                    >
-                                      {record.isLoadingSummary ? 'Loading...' : 'View'}
-                                    </Button>
-                                  </>
+                                {record.generatedSummary || record.hasSummary ? (
+                                  <Button
+                                    onClick={async (e) => {
+                                      e.stopPropagation()
+                                      await handleViewSummary(record.id)
+                                    }}
+                                    disabled={record.isLoadingSummary}
+                                    variant="outline"
+                                    size="xs"
+                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                  >
+                                    {record.isLoadingSummary ? 'Loading...' : 'View'}
+                                  </Button>
                                 ) : (
-                                  <>
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                      {record.isLoadingSummary ? 'Checking...' : '?'}
-                                    </span>
-                                    <Button
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        await handleViewSummary(record.id)
-                                      }}
-                                      disabled={record.isLoadingSummary}
-                                      variant="outline"
-                                      size="xs"
-                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                    >
-                                      {record.isLoadingSummary ? 'Loading...' : 'View'}
-                                    </Button>
-                                  </>
+                                  <span className="text-sm text-gray-600">
+                                    {record.isLoadingSummary ? 'Checking...' : 'Not Generated'}
+                                  </span>
                                 )}
                               </div>
                             </td>
