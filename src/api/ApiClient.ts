@@ -17,7 +17,7 @@ class ApiClient {
 
   constructor() {
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
-    this.timeout = 10000 // 10 seconds
+    this.timeout = 100000 // 100 seconds
   }
 
   private async request<T>(
@@ -70,9 +70,11 @@ class ApiClient {
         } as ApiResponse<T>
       } else if (data.success !== undefined) {
         // Standard format: { success: true, data: {...} }
+        // OR: { success: true, emailDraftId: ..., ... } (when backend returns directly)
+        // If data.data exists, use it; otherwise, use the entire data object
         return {
           success: data.success,
-          data: data.data,
+          data: data.data !== undefined ? data.data : data,
           error: data.error
         } as ApiResponse<T>
       } else {

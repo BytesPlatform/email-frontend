@@ -4,6 +4,7 @@ import {
   GeneratedEmail,
   SummaryGenerationResponse,
   EmailGenerationResponse,
+  EmailDraft,
 } from '@/types/emailGeneration'
 
 export const emailGenerationApi = {
@@ -99,58 +100,65 @@ export const emailGenerationApi = {
 
   /**
    * Generate personalized email based on business summary
-   * Note: This will be implemented when backend API is ready
    */
-  async generateEmail(
-    contactId: number, 
-    summaryData: BusinessSummary, 
-    _emailType: 'sales' | 'outreach' | 'follow-up' = 'sales',
-    tone: 'professional' | 'friendly' | 'persuasive' = 'professional'
-  ): Promise<ApiResponse<EmailGenerationResponse>> {
-    // TODO: Replace with actual API call when backend is ready
-    // return apiClient.post<EmailGenerationResponse>('/email-generation/email', { 
-    //   contactId, 
-    //   summaryData, 
-    //   emailType, 
-    //   tone 
-    // })
-    
-    // Mock implementation for now
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const mockEmail: GeneratedEmail = {
-          subject: `Partnership Opportunity with ${summaryData.businessName || 'Your Company'}`,
-          body: `Dear ${summaryData.businessName || 'Team'},
+  async generateEmailDraft(
+    params: {
+      contactId: number
+      summaryId: number
+      clientEmailId: number
+      tone?: string // backend expects values like 'pro_friendly'
+    }
+  ): Promise<ApiResponse<EmailDraft>> {
+    try {
+      const payload = {
+        contactId: params.contactId,
+        summaryId: params.summaryId,
+        clientEmailId: params.clientEmailId,
+        tone: params.tone || 'pro_friendly',
+      }
+      return await apiClient.post<EmailDraft>('/emails/generation/generate', payload)
+    } catch (error) {
+      console.error('Error generating email draft:', error)
+      throw error
+    }
+  },
 
-I hope this email finds you well. I came across your company and was impressed by your focus on ${summaryData.services?.join(', ').toLowerCase() || 'your services'}.
+  /**
+   * Get a specific email draft by ID
+   * GET /emails/generation/drafts/:id
+   */
+  async getEmailDraft(draftId: number): Promise<ApiResponse<EmailDraft>> {
+    try {
+      return await apiClient.get<EmailDraft>(`/emails/generation/drafts/${draftId}`)
+    } catch (error) {
+      console.error('Error fetching email draft:', error)
+      throw error
+    }
+  },
 
-As a fellow business in the ${summaryData.industry || 'your industry'} industry, I believe there's a great opportunity for us to collaborate and help each other grow. Your expertise in ${summaryData.keyFeatures?.join(', ').toLowerCase() || 'your key features'} aligns perfectly with what we're looking for in a strategic partner.
+  /**
+   * Get all email drafts for a specific contact
+   * GET /emails/generation/contacts/:contactId/drafts
+   */
+  async getContactEmailDrafts(contactId: number): Promise<ApiResponse<EmailDraft[]>> {
+    try {
+      return await apiClient.get<EmailDraft[]>(`/emails/generation/contacts/${contactId}/drafts`)
+    } catch (error) {
+      console.error('Error fetching contact email drafts:', error)
+      throw error
+    }
+  },
 
-I would love to schedule a brief call to discuss how we can work together to serve your ${summaryData.targetAudience?.toLowerCase() || 'target audience'} more effectively. Would you be available for a 15-minute conversation this week?
-
-Looking forward to hearing from you.
-
-Best regards,
-[Your Name]`,
-          personalization: {
-            businessName: summaryData.businessName || 'Your Company',
-            industry: summaryData.industry || 'Your Industry',
-            keyFeatures: summaryData.keyFeatures || []
-          },
-          tone,
-          callToAction: 'Schedule a 15-minute call',
-          generatedAt: new Date().toISOString()
-        }
-        
-        resolve({
-          success: true,
-          data: {
-            success: true,
-            data: mockEmail,
-            message: 'Email generated successfully'
-          }
-        })
-      }, 3000) // 3 second delay to simulate API call
-    })
+  /**
+   * Send an email draft
+   * POST /emails/send-draft
+   */
+  async sendEmailDraft(draftId: number): Promise<ApiResponse<{ success: boolean; message?: string }>> {
+    try {
+      return await apiClient.post<{ success: boolean; message?: string }>('/emails/send-draft', { draftId })
+    } catch (error) {
+      console.error('Error sending email draft:', error)
+      throw error
+    }
   }
 }

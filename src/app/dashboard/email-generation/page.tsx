@@ -28,8 +28,41 @@ export default function EmailGenerationPage() {
   // Detail drawer state
   const [selectedRecord, setSelectedRecord] = useState<ScrapedRecord | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  
+  // Mode toggle state (Email or SMS)
+  const [mode, setMode] = useState<'email' | 'sms'>('email')
+  
+  // Email body overlay state
+  const [emailBodyOverlay, setEmailBodyOverlay] = useState<{
+    isOpen: boolean
+    subject: string
+    body: string
+  } | null>(null)
 
-  // Function to fetch summary for a specific contact
+  // Function to check if summary exists for a contact (lightweight check - only checks existence, doesn't load full data)
+  // Note: Since backend doesn't have a lightweight "exists" endpoint, we catch errors to determine existence
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const checkSummaryExists = useCallback(async (contactId: number): Promise<boolean> => {
+    try {
+      // Make a HEAD or GET request - if it succeeds, summary exists; if 404, it doesn't
+      // For now, we'll use a try-catch approach: attempt to fetch, catch 404
+      const res = await emailGenerationApi.getContactSummary(contactId)
+      // If we get here and res.success is true, summary exists
+      // We intentionally don't store the data here - just check existence
+      return res.success && res.data !== null && res.data !== undefined
+    } catch (error: unknown) {
+      // If we get a 404 or "not found" error, summary doesn't exist
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage?.includes('not found') || errorMessage?.includes('404') || errorMessage?.includes('No summary')) {
+        return false
+      }
+      // For other errors, assume summary might exist but there's a different issue
+      // Return false to be safe
+      return false
+    }
+  }, [])
+
+  // Function to fetch full summary for a specific contact (only when View is clicked)
   const fetchSummaryForContact = useCallback(async (contactId: number): Promise<BusinessSummary | null> => {
     try {
       const res = await emailGenerationApi.getContactSummary(contactId)
@@ -43,32 +76,20 @@ export default function EmailGenerationPage() {
     }
   }, [])
 
-  // Function to load summaries for all contacts
-  const loadSummariesForRecords = useCallback(async (records: ScrapedRecord[]) => {
+  // Function to fetch email draft ID for a specific contact (only called when View Body is clicked)
+  const fetchEmailDraftIdForContact = useCallback(async (contactId: number): Promise<number | null> => {
     try {
-      console.log('Loading summaries for', records.length, 'records')
-      // Fetch summaries for all contacts in parallel
-      const summaryPromises = records.map(record => 
-        fetchSummaryForContact(record.contactId)
-      )
-      
-      const summaries = await Promise.all(summaryPromises)
-      console.log('Loaded summaries:', summaries.filter(s => s !== null).length, 'out of', summaries.length)
-      
-      // Merge summaries with records
-      const updatedRecords = records.map((record, index) => ({
-        ...record,
-        generatedSummary: summaries[index] || undefined
-      }))
-      
-      setState(prev => ({
-        ...prev,
-        scrapedRecords: updatedRecords
-      }))
+      const res = await emailGenerationApi.getContactEmailDrafts(contactId)
+      if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
+        // Return the most recent draft ID (first one since backend orders by createdAt desc)
+        return res.data[0].id
+      }
+      return null
     } catch (error) {
-      console.error('Error loading summaries:', error)
+      console.log(`No email draft found for contact ${contactId}:`, error)
+      return null
     }
-  }, [fetchSummaryForContact])
+  }, [])
 
   // Load scraped records on component mount
   useEffect(() => {
@@ -141,8 +162,7 @@ export default function EmailGenerationPage() {
           currentPage: 1 // Reset to first page when new data is loaded
         }))
         
-        // Load summaries for all records
-        loadSummariesForRecords(scrapedRecords)
+        // Don't load email drafts on page load - they will be fetched only when View Body is clicked
       } else {
         console.log('History API Error:', historyRes.error)
           setState(prev => ({ 
@@ -161,7 +181,7 @@ export default function EmailGenerationPage() {
     }
     
     loadScrapedRecords()
-  }, [client?.id, loadSummariesForRecords])
+  }, [client?.id])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -205,7 +225,9 @@ export default function EmailGenerationPage() {
                   ? { 
                       ...r, 
                       generatedSummary: res.data as BusinessSummary,
+                      hasSummary: true, // Mark that summary exists
                       generatedEmail: undefined, // Reset email when new summary is generated
+                      emailDraftId: undefined, // Reset email draft ID when new summary is generated
                       isGeneratingSummary: false 
                     } 
                   : r
@@ -255,35 +277,58 @@ export default function EmailGenerationPage() {
     }))
     
     try {
-      const res = await emailGenerationApi.generateEmail(
-        record.contactId, 
-        record.generatedSummary,
-        'sales',
-        'professional'
-      )
-      if (res.success && res.data?.success) {
-        setState(prev => ({
-          ...prev,
-          scrapedRecords: prev.scrapedRecords.map(r => 
-            r.id === recordId 
-              ? { 
-                  ...r, 
-                  generatedEmail: res.data!.data!,
-                  isGeneratingEmail: false 
-                } 
-              : r
-          )
-        }))
+      if (!client?.id) throw new Error('Missing client id')
+      const res = await emailGenerationApi.generateEmailDraft({
+        contactId: record.contactId,
+        summaryId: record.generatedSummary.id,
+        clientEmailId: client.id,
+        tone: 'pro_friendly'
+      })
+      
+      console.log('Email generation response:', res)
+      
+      // Backend returns: { contactId, summaryId, emailDraftId, success }
+      // The ApiClient wraps it, so we need to check both the response structure
+      if (res.success) {
+        // Check if response has emailDraftId in data or directly
+        const data = res.data as { emailDraftId?: number; id?: number } | undefined
+        const emailDraftId = data?.emailDraftId || data?.id
+        if (emailDraftId) {
+          setState(prev => ({
+            ...prev,
+            scrapedRecords: prev.scrapedRecords.map(r => 
+              r.id === recordId 
+                ? { 
+                    ...r, 
+                    emailDraftId: emailDraftId,
+                    isGeneratingEmail: false 
+                  } 
+                : r
+            )
+          }))
+        } else {
+          // Response might be in the format returned directly from backend
+          // Try accessing properties directly from data
+          console.warn('Unexpected response structure:', res.data)
+          setState(prev => ({
+            ...prev,
+            scrapedRecords: prev.scrapedRecords.map(r => 
+              r.id === recordId ? { ...r, isGeneratingEmail: false } : r
+            ),
+            error: 'Email generated but could not retrieve draft ID'
+          }))
+        }
       } else {
         setState(prev => ({
           ...prev,
           scrapedRecords: prev.scrapedRecords.map(r => 
             r.id === recordId ? { ...r, isGeneratingEmail: false } : r
           ),
-          error: res.data?.error || res.error || 'Failed to generate email'
+          error: res.error || 'Failed to generate email'
         }))
       }
     } catch (error) {
+      console.error('Error generating email:', error)
       setState(prev => ({
         ...prev,
         scrapedRecords: prev.scrapedRecords.map(r => 
@@ -291,6 +336,218 @@ export default function EmailGenerationPage() {
         ),
         error: error instanceof Error ? error.message : 'Failed to generate email'
       }))
+    }
+  }
+
+  const handleSendEmail = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record || !record.emailDraftId) {
+      setState(prev => ({ ...prev, error: 'Email draft not found. Please generate an email first.' }))
+      return
+    }
+
+    setState(prev => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map(r => 
+        r.id === recordId ? { ...r, isSendingEmail: true } : r
+      ),
+      error: null
+    }))
+    
+    try {
+      const res = await emailGenerationApi.sendEmailDraft(record.emailDraftId)
+      if (res.success) {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isSendingEmail: false } : r
+          )
+        }))
+        // You could add a success notification here
+        alert('Email sent successfully!')
+      } else {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isSendingEmail: false } : r
+          ),
+          error: res.error || 'Failed to send email'
+        }))
+      }
+    } catch (error) {
+      console.error('Error sending email:', error)
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(r => 
+          r.id === recordId ? { ...r, isSendingEmail: false } : r
+        ),
+        error: error instanceof Error ? error.message : 'Failed to send email'
+      }))
+    }
+  }
+
+  // Handler to view email body (fetches email draft ONLY when View Body button is clicked)
+  const handleViewEmailBody = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record) return
+
+    // If email is already loaded, just show it
+    if (record.generatedEmail) {
+      setEmailBodyOverlay({
+        isOpen: true,
+        subject: record.generatedEmail.subject,
+        body: record.generatedEmail.body
+      })
+      return
+    }
+
+    // Set loading state
+    setState(prev => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map(r => 
+        r.id === recordId ? { ...r, isLoadingEmailDraft: true } : r
+      )
+    }))
+
+    try {
+      let draftId = record.emailDraftId
+
+      // If we don't have emailDraftId, fetch it first
+      if (!draftId) {
+        const fetchedDraftId = await fetchEmailDraftIdForContact(record.contactId)
+        
+        if (!fetchedDraftId) {
+          setState(prev => ({
+            ...prev,
+            scrapedRecords: prev.scrapedRecords.map(r => 
+              r.id === recordId ? { ...r, isLoadingEmailDraft: false } : r
+            ),
+            error: 'No email draft found for this contact'
+          }))
+          return
+        }
+
+        draftId = fetchedDraftId
+
+        // Update record with emailDraftId
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, emailDraftId: draftId } : r
+          )
+        }))
+      }
+
+      // Now fetch the email draft content
+      const res = await emailGenerationApi.getEmailDraft(draftId)
+      if (res.success && res.data) {
+        const emailDraft = res.data
+        
+        // Update record with fetched email data
+        const updatedRecord = {
+          ...record,
+          emailDraftId: draftId,
+          generatedEmail: {
+            subject: emailDraft.subjectLine || emailDraft.subject || 'No Subject',
+            body: emailDraft.bodyText || emailDraft.body || '',
+            personalization: {
+              businessName: record.businessName || 'Your Company',
+              industry: record.generatedSummary?.industry || 'Your Industry',
+              keyFeatures: record.generatedSummary?.keyFeatures || []
+            },
+            tone: (emailDraft.tone === 'friendly' || emailDraft.tone === 'persuasive') 
+              ? emailDraft.tone 
+              : 'professional' as 'professional' | 'friendly' | 'persuasive',
+            callToAction: 'Review and send',
+            generatedAt: emailDraft.createdAt || new Date().toISOString()
+          },
+          isLoadingEmailDraft: false
+        }
+        
+        // Update state
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? updatedRecord : r
+          )
+        }))
+        
+        // Show email in overlay
+        setEmailBodyOverlay({
+          isOpen: true,
+          subject: updatedRecord.generatedEmail.subject,
+          body: updatedRecord.generatedEmail.body
+        })
+      } else {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isLoadingEmailDraft: false } : r
+          ),
+          error: res.error || 'Failed to fetch email draft'
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching email draft:', error)
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(r => 
+          r.id === recordId ? { ...r, isLoadingEmailDraft: false } : r
+        ),
+        error: error instanceof Error ? error.message : 'Failed to fetch email draft'
+      }))
+    }
+  }
+
+  const handleViewEmail = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record || !record.emailDraftId) {
+      // If no emailDraftId but we have generatedEmail, just open drawer
+      if (record && record.generatedEmail) {
+        openDrawer(record)
+      }
+      return
+    }
+    
+    try {
+      const res = await emailGenerationApi.getEmailDraft(record.emailDraftId)
+      if (res.success && res.data) {
+        const emailDraft = res.data
+        // Update the record with the fetched email data
+        const updatedRecord: ScrapedRecord = {
+          ...record,
+          generatedEmail: {
+            subject: emailDraft.subjectLine || emailDraft.subject || 'No Subject',
+            body: emailDraft.bodyText || emailDraft.body || '',
+            personalization: {
+              businessName: record.businessName || 'Your Company',
+              industry: record.generatedSummary?.industry || 'Your Industry',
+              keyFeatures: record.generatedSummary?.keyFeatures || []
+            },
+            tone: (emailDraft.tone === 'friendly' || emailDraft.tone === 'persuasive') 
+              ? emailDraft.tone 
+              : 'professional' as 'professional' | 'friendly' | 'persuasive',
+            callToAction: 'Review and send',
+            generatedAt: emailDraft.createdAt || new Date().toISOString()
+          }
+        }
+        
+        // Update state
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? updatedRecord : r
+          )
+        }))
+        
+        // Open drawer with updated record
+        openDrawer(updatedRecord)
+      } else {
+        setState(prev => ({ ...prev, error: res.error || 'Failed to fetch email draft' }))
+      }
+    } catch (error) {
+      console.error('Error fetching email draft:', error)
+      setState(prev => ({ ...prev, error: error instanceof Error ? error.message : 'Failed to fetch email draft' }))
     }
   }
 
@@ -327,6 +584,67 @@ export default function EmailGenerationPage() {
     }
   }
 
+  // Handler to view summary (fetches summary data ONLY when View button is clicked)
+  const handleViewSummary = async (recordId: number) => {
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (!record) return
+
+    // If summary is already loaded, just open drawer
+    if (record.generatedSummary) {
+      openDrawer(record)
+      return
+    }
+
+    // Set loading state
+    setState(prev => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map(r => 
+        r.id === recordId ? { ...r, isLoadingSummary: true } : r
+      )
+    }))
+
+    try {
+      // NOW fetch the summary (this is the ONLY place we call the API)
+      const summary = await fetchSummaryForContact(record.contactId)
+      if (summary) {
+        // Update record with fetched summary
+        const updatedRecord = {
+          ...record,
+          generatedSummary: summary,
+          hasSummary: true,
+          isLoadingSummary: false
+        }
+        
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? updatedRecord : r
+          )
+        }))
+        
+        // Open drawer with updated record
+        openDrawer(updatedRecord)
+      } else {
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(r => 
+            r.id === recordId ? { ...r, isLoadingSummary: false, hasSummary: false } : r
+          ),
+          error: 'Summary not found for this contact'
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching summary:', error)
+      setState(prev => ({
+        ...prev,
+        scrapedRecords: prev.scrapedRecords.map(r => 
+          r.id === recordId ? { ...r, isLoadingSummary: false, hasSummary: false } : r
+        ),
+        error: 'Failed to load summary. Summary may not exist for this contact.'
+      }))
+    }
+  }
+
   // Drawer handlers
   const openDrawer = (record: ScrapedRecord) => {
     setSelectedRecord(record)
@@ -350,21 +668,54 @@ export default function EmailGenerationPage() {
             {/* Page Header */}
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-lg">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1">
                   <Link href="/dashboard" className="text-white/80 hover:text-white text-sm mb-2 inline-flex items-center">
                     <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                     </svg>
                     Back to Dashboard
                   </Link>
-                  <h1 className="text-3xl font-bold mb-2">Email Generation</h1>
-                  <p className="text-indigo-100 text-lg">Generate business summaries and personalized emails for your scraped contacts.</p>
+                  <h1 className="text-3xl font-bold mb-2">{mode === 'email' ? 'Email Generation' : 'SMS Generation'}</h1>
+                  <p className="text-indigo-100 text-lg">
+                    {mode === 'email' 
+                      ? 'Generate business summaries and personalized emails for your scraped contacts.'
+                      : 'Generate business summaries and personalized SMS for your scraped contacts.'}
+                  </p>
                 </div>
-                <div className="hidden md:block">
-                  <div className="h-20 w-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30">
-                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
+                <div className="flex items-center space-x-4">
+                  {/* Mode Toggle */}
+                  <div className="flex items-center space-x-3 bg-white/10 backdrop-blur-sm rounded-lg p-2 border border-white/20">
+                    <span className={`text-sm font-medium px-3 py-1 rounded transition-colors ${mode === 'email' ? 'bg-white text-indigo-600' : 'text-white/70'}`}>
+                      Email
+                    </span>
+                    <button
+                      onClick={() => setMode(mode === 'email' ? 'sms' : 'email')}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-indigo-600 ${
+                        mode === 'sms' ? 'bg-white' : 'bg-white/30'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-indigo-600 transition-transform ${
+                          mode === 'sms' ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                    <span className={`text-sm font-medium px-3 py-1 rounded transition-colors ${mode === 'sms' ? 'bg-white text-indigo-600' : 'text-white/70'}`}>
+                      SMS
+                    </span>
+                  </div>
+                  <div className="hidden md:block">
+                    <div className="h-20 w-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30">
+                      {mode === 'email' ? (
+                        <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -424,7 +775,7 @@ export default function EmailGenerationPage() {
                             Summary
                           </th>
                           <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-                            Email
+                            {mode === 'email' ? 'Email' : 'SMS'}
                           </th>
                           <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[140px]">
                             Actions
@@ -470,58 +821,140 @@ export default function EmailGenerationPage() {
                                </div>
                              </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
-                              {record.generatedSummary ? (
-                                <div className="flex items-center space-x-1">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    ✓ Generated
-                                  </span>
-                                  <Button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      copyToClipboard(record.generatedSummary!.summaryText || record.generatedSummary!.summary || '')
-                                    }}
-                                    variant="outline"
-                                    size="xs"
-                                  >
-                                    Copy
-                                  </Button>
-                                  <Button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      openDrawer(record)
-                                    }}
-                                    variant="outline"
-                                    size="xs"
-                                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                  >
-                                    View
-                                  </Button>
-                                </div>
-                              ) : (
-                                <span className="text-gray-400 text-xs">Not generated</span>
-                              )}
+                              <div className="flex items-center space-x-1">
+                                {record.generatedSummary ? (
+                                  <>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                      ✓ Generated
+                                    </span>
+                                    <Button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        await handleViewSummary(record.id)
+                                      }}
+                                      disabled={record.isLoadingSummary}
+                                      variant="outline"
+                                      size="xs"
+                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    >
+                                      {record.isLoadingSummary ? 'Loading...' : 'View'}
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                      {record.isLoadingSummary ? 'Checking...' : '?'}
+                                    </span>
+                                    <Button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        await handleViewSummary(record.id)
+                                      }}
+                                      disabled={record.isLoadingSummary}
+                                      variant="outline"
+                                      size="xs"
+                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    >
+                                      {record.isLoadingSummary ? 'Loading...' : 'View'}
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
-                              {record.generatedEmail ? (
+                              {mode === 'email' ? (
                                 <div className="flex items-center space-x-1">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                    ✓ Generated
-                                  </span>
-                                  <Button
-                                    onClick={() => copyToClipboard(record.generatedEmail!.body)}
-                                    variant="outline"
-                                    size="xs"
-                                  >
-                                    Copy
-                                  </Button>
+                                  {record.generatedEmail ? (
+                                    <>
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        ✓ Generated
+                                      </span>
+                                      <Button
+                                        onClick={async (e) => {
+                                          e.stopPropagation()
+                                          setEmailBodyOverlay({
+                                            isOpen: true,
+                                            subject: record.generatedEmail!.subject,
+                                            body: record.generatedEmail!.body
+                                          })
+                                        }}
+                                        variant="outline"
+                                        size="xs"
+                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                      >
+                                        View Body
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                        {record.isLoadingEmailDraft ? 'Checking...' : '?'}
+                                      </span>
+                                      <Button
+                                        onClick={async (e) => {
+                                          e.stopPropagation()
+                                          await handleViewEmailBody(record.id)
+                                        }}
+                                        disabled={record.isLoadingEmailDraft}
+                                        variant="outline"
+                                        size="xs"
+                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                      >
+                                        {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
+                                      </Button>
+                                    </>
+                                  )}
                                 </div>
                               ) : (
-                                <span className="text-gray-400 text-xs">Not generated</span>
+                                <div className="flex items-center space-x-1">
+                                  {/* SMS mode - same structure as Email */}
+                                  {record.generatedSMS ? (
+                                    <>
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        ✓ Generated
+                                      </span>
+                                      <Button
+                                        onClick={async (e) => {
+                                          e.stopPropagation()
+                                          setEmailBodyOverlay({
+                                            isOpen: true,
+                                            subject: record.generatedSMS!.subject,
+                                            body: record.generatedSMS!.body
+                                          })
+                                        }}
+                                        variant="outline"
+                                        size="xs"
+                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                      >
+                                        View SMS
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                        {record.isLoadingSMSDraft ? 'Checking...' : '?'}
+                                      </span>
+                                      <Button
+                                        onClick={async (e) => {
+                                          e.stopPropagation()
+                                          // TODO: Implement handleViewSMSBody when SMS APIs are ready
+                                          console.log('View SMS - API to be implemented')
+                                        }}
+                                        disabled={record.isLoadingSMSDraft}
+                                        variant="outline"
+                                        size="xs"
+                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                      >
+                                        {record.isLoadingSMSDraft ? 'Loading...' : 'View SMS'}
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
                               )}
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap text-sm font-medium min-w-[140px]">
                               <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
-                                {!record.generatedSummary ? (
+                                {(!record.hasSummary && !record.generatedSummary) ? (
                                   <Button
                                     onClick={() => handleGenerateSummary(record.id)}
                                     disabled={record.isGeneratingSummary}
@@ -530,37 +963,55 @@ export default function EmailGenerationPage() {
                                   >
                                     {record.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
                                   </Button>
-                                ) : !record.generatedEmail ? (
-                                  <Button
-                                    onClick={() => handleGenerateEmail(record.id)}
-                                    disabled={record.isGeneratingEmail}
-                                    isLoading={record.isGeneratingEmail}
-                                    size="sm"
-                                    variant="success"
-                                  >
-                                    {record.isGeneratingEmail ? 'Generating...' : 'Generate Email'}
-                                  </Button>
-                                ) : (
-                                  <div className="flex space-x-1">
-                                    <Button
-                                      onClick={() => handleGenerateSummary(record.id)}
-                                      disabled={record.isGeneratingSummary}
-                                      isLoading={record.isGeneratingSummary}
-                                      size="sm"
-                                      variant="outline"
-                                    >
-                                      Regenerate Summary
-                                    </Button>
+                                ) : mode === 'email' ? (
+                                  !record.generatedEmail && !record.emailDraftId ? (
                                     <Button
                                       onClick={() => handleGenerateEmail(record.id)}
                                       disabled={record.isGeneratingEmail}
                                       isLoading={record.isGeneratingEmail}
                                       size="sm"
-                                      variant="outline"
+                                      variant="success"
                                     >
-                                      Regenerate Email
+                                      {record.isGeneratingEmail ? 'Generating...' : 'Generate Email'}
                                     </Button>
-                                  </div>
+                                  ) : (
+                                    <Button
+                                      onClick={() => handleSendEmail(record.id)}
+                                      disabled={record.isSendingEmail}
+                                      isLoading={record.isSendingEmail}
+                                      size="sm"
+                                      variant="primary"
+                                    >
+                                      {record.isSendingEmail ? 'Sending...' : 'Send Email'}
+                                    </Button>
+                                  )
+                                ) : (
+                                  // SMS mode - similar structure, will be connected to SMS APIs later
+                                  !record.generatedSMS && !record.smsDraftId ? (
+                                    <Button
+                                      onClick={() => {
+                                        // TODO: Implement handleGenerateSMS when SMS APIs are ready
+                                        console.log('Generate SMS - API to be implemented')
+                                      }}
+                                      disabled={false}
+                                      size="sm"
+                                      variant="success"
+                                    >
+                                      Generate SMS
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      onClick={() => {
+                                        // TODO: Implement handleSendSMS when SMS APIs are ready
+                                        console.log('Send SMS - API to be implemented')
+                                      }}
+                                      disabled={false}
+                                      size="sm"
+                                      variant="primary"
+                                    >
+                                      Send SMS
+                                    </Button>
+                                  )
                                 )}
                               </div>
                             </td>
@@ -912,6 +1363,20 @@ export default function EmailGenerationPage() {
                             <div className="text-sm text-blue-700 mt-1 whitespace-pre-wrap bg-white p-3 rounded border max-h-24 overflow-hidden">
                               {selectedRecord.generatedEmail.body}
                             </div>
+                            <Button
+                              onClick={() => {
+                                setEmailBodyOverlay({
+                                  isOpen: true,
+                                  subject: selectedRecord.generatedEmail!.subject,
+                                  body: selectedRecord.generatedEmail!.body
+                                })
+                              }}
+                              variant="outline"
+                              size="sm"
+                              className="mt-2"
+                            >
+                              View Full Body
+                            </Button>
                           </div>
                           <div className="text-xs text-blue-600">
                             <span className="font-medium">Tone:</span> {selectedRecord.generatedEmail.tone} • 
@@ -980,6 +1445,84 @@ export default function EmailGenerationPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Body Overlay */}
+      {emailBodyOverlay && emailBodyOverlay.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setEmailBodyOverlay(null)}
+          />
+          
+          {/* Overlay Content */}
+          <div className="relative w-full max-w-3xl h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 transform transition-transform overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 rounded-t-2xl flex-shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Email Preview</h2>
+                <p className="text-sm text-gray-500 mt-1">Full email body content</p>
+              </div>
+              <button
+                onClick={() => setEmailBodyOverlay(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="p-6 space-y-6">
+                {/* Subject */}
+                <div>
+                  <label className="text-sm font-semibold text-gray-700 mb-2 block">Subject:</label>
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <p className="text-base font-medium text-gray-900">{emailBodyOverlay.subject}</p>
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-semibold text-gray-700">Email Body:</label>
+                    <Button
+                      onClick={() => copyToClipboard(emailBodyOverlay.body)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Copy Body
+                    </Button>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                    <div className="text-base text-gray-800 whitespace-pre-wrap leading-relaxed">
+                      {emailBodyOverlay.body}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end p-6 border-t border-gray-200 rounded-b-2xl flex-shrink-0 space-x-3 bg-white">
+              <Button
+                onClick={() => copyToClipboard(emailBodyOverlay.body)}
+                variant="outline"
+              >
+                Copy Body
+              </Button>
+              <Button
+                onClick={() => setEmailBodyOverlay(null)}
+                variant="primary"
+              >
+                Close
+              </Button>
             </div>
           </div>
         </div>
