@@ -14,7 +14,7 @@ const EmailGenerationHeaderComponent: React.FC<EmailGenerationHeaderProps> = ({
     <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-lg">
       <div className="flex items-center justify-between">
         <div className="flex-1">
-          <Link href="/dashboard" className="text-white/80 hover:text-white text-sm mb-2 inline-flex items-center">
+          <Link href="/dashboard" className="text-white/80 hover:text-white text-sm mb-2 inline-flex items-center cursor-pointer">
             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
             </svg>
@@ -30,12 +30,12 @@ const EmailGenerationHeaderComponent: React.FC<EmailGenerationHeaderProps> = ({
         <div className="flex items-center space-x-4">
           {/* Mode Toggle */}
           <div className="flex items-center space-x-3 bg-white/10 backdrop-blur-sm rounded-lg p-2 border border-white/20">
-            <span className={`text-sm font-medium px-3 py-1 rounded transition-colors ${mode === 'email' ? 'bg-white text-indigo-600' : 'text-white/70'}`}>
+            <span className={`text-sm font-medium px-3 py-1 rounded transition-colors cursor-pointer ${mode === 'email' ? 'bg-white text-indigo-600' : 'text-white/70'}`}>
               Email
             </span>
             <button
               onClick={() => onModeChange(mode === 'email' ? 'sms' : 'email')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-indigo-600 ${
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-indigo-600 cursor-pointer ${
                 mode === 'sms' ? 'bg-white' : 'bg-white/30'
               }`}
             >
@@ -45,7 +45,7 @@ const EmailGenerationHeaderComponent: React.FC<EmailGenerationHeaderProps> = ({
                 }`}
               />
             </button>
-            <span className={`text-sm font-medium px-3 py-1 rounded transition-colors ${mode === 'sms' ? 'bg-white text-indigo-600' : 'text-white/70'}`}>
+            <span className={`text-sm font-medium px-3 py-1 rounded transition-colors cursor-pointer ${mode === 'sms' ? 'bg-white text-indigo-600' : 'text-white/70'}`}>
               SMS
             </span>
           </div>

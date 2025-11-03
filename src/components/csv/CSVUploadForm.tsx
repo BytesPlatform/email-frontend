@@ -286,12 +286,12 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
         <div className="space-y-6">
           {/* File Upload Area */}
           <div
-            className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${
+            className={`relative border-2 border-dashed rounded-xl p-10 text-center transition-all duration-200 ${
               dragActive 
-                ? 'border-indigo-400 bg-indigo-50' 
+                ? 'border-indigo-500 bg-gradient-to-br from-indigo-50 to-purple-50 shadow-md' 
                 : file 
-                  ? 'border-green-400 bg-green-50' 
-                  : 'border-slate-300 hover:border-slate-400'
+                  ? 'border-green-400 bg-gradient-to-br from-green-50 to-emerald-50' 
+                  : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'
             }`}
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
@@ -302,35 +302,35 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
               type="file"
               accept=".csv"
               onChange={handleFileChange}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
             />
             
             {!file ? (
               <div className="space-y-4">
-                <div className="mx-auto w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className={`mx-auto w-16 h-16 ${dragActive ? 'bg-gradient-to-br from-indigo-500 to-purple-600' : 'bg-slate-100'} rounded-xl flex items-center justify-center transition-all duration-200 shadow-sm`}>
+                  <svg className={`w-8 h-8 ${dragActive ? 'text-white' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-lg font-medium text-slate-900">
+                  <p className={`text-lg font-semibold ${dragActive ? 'text-indigo-700' : 'text-slate-900'}`}>
                     {dragActive ? 'Drop your CSV file here' : 'Choose CSV file or drag and drop'}
                   </p>
-                  <p className="text-sm text-slate-500 mt-1">
+                  <p className="text-sm text-slate-500 mt-2">
                     CSV files up to 10MB
                   </p>
                 </div>
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="mx-auto w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="mx-auto w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-lg font-medium text-slate-900">{file.name}</p>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-lg font-semibold text-slate-900">{file.name}</p>
+                  <p className="text-sm text-slate-500 mt-1">
                     {(file.size / 1024).toFixed(2)} KB
                   </p>
                 </div>
@@ -341,16 +341,16 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
           {/* Upload Progress */}
           {isUploading && (
             <div className="space-y-3">
-              <div className="flex justify-between text-sm text-slate-600">
+              <div className="flex justify-between text-sm text-slate-700">
                 <span className="flex items-center">
-                  <span className="-ml-1 mr-2 h-4 w-4 rounded bg-slate-200 animate-pulse"></span>
-                  Uploading...
+                  <span className="mr-2 h-4 w-4 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 animate-pulse"></span>
+                  <span className="font-medium">Uploading...</span>
                 </span>
-                <span className="font-medium">{uploadProgress}%</span>
+                <span className="font-semibold text-indigo-600">{uploadProgress}%</span>
               </div>
-              <div className="w-full bg-slate-200 rounded-full h-2">
+              <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
                 <div 
-                  className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-2 rounded-full transition-all duration-300"
+                  className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2.5 rounded-full transition-all duration-300 shadow-sm"
                   style={{ width: `${uploadProgress}%` }}
                 ></div>
               </div>

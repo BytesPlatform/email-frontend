@@ -60,7 +60,7 @@ export const EmailBodyOverlay: React.FC<EmailBodyOverlayProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"
         onClick={onClose}
       />
       
@@ -78,7 +78,7 @@ export const EmailBodyOverlay: React.FC<EmailBodyOverlayProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
           >
             <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
