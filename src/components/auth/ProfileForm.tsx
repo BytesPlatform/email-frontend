@@ -261,7 +261,7 @@ export function ProfileForm() {
 
       {/* Account Info Cards */}
       {profile && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
             <div className="flex items-center">
               <div className="flex-shrink-0">

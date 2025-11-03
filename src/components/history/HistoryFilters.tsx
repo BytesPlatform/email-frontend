@@ -54,7 +54,7 @@ export function HistoryFilters({ filters, onFilterChange }: HistoryFiltersProps)
             <select
               value={filters.status || 'all'}
               onChange={(e) => handleStatusChange(e.target.value)}
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
             >
               <option value="all">All Status</option>
               <option value="success">Success</option>
@@ -69,7 +69,7 @@ export function HistoryFilters({ filters, onFilterChange }: HistoryFiltersProps)
             <select
               value={filters.method || 'all'}
               onChange={(e) => handleMethodChange(e.target.value)}
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
             >
               <option value="all">All Methods</option>
               <option value="direct_url">Direct URL</option>
@@ -119,7 +119,7 @@ export function HistoryFilters({ filters, onFilterChange }: HistoryFiltersProps)
             <Button
               onClick={clearFilters}
               variant="outline"
-              className="w-full"
+              className="w-full cursor-pointer"
             >
               Clear Filters
             </Button>

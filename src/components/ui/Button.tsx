@@ -21,7 +21,7 @@ export function Button({
   rightIcon,
   ...props 
 }: ButtonProps) {
-  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden'
+  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transform hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden'
   
   const variantClasses = {
     primary: 'bg-gradient-to-r from-indigo-600 via-indigo-700 to-indigo-800 text-white hover:from-indigo-700 hover:via-indigo-800 hover:to-indigo-900 focus:ring-indigo-500 shadow-lg hover:shadow-xl border border-indigo-700',

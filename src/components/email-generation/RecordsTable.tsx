@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { getCurrentPageRecords } from './utils/emailGenerationUtils'
 import { RecordTableRow } from './RecordTableRow'
+import { Skeleton } from '@/components/common/Skeleton'
 import type { ScrapedRecord } from '@/types/emailGeneration'
 
 interface RecordsTableProps {
@@ -61,9 +62,58 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
       />
       <CardContent>
         {isLoading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading scraped records...</p>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
+                    Business
+                  </th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                    Contact Info
+                  </th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                    Summary
+                  </th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                    {mode === 'email' ? 'Email' : 'SMS'}
+                  </th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[140px]">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {Array.from({ length: recordsPerPage }).map((_, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-2 py-3">
+                      <div className="flex items-center space-x-3">
+                        <Skeleton className="h-8 w-8 rounded-full" />
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-32" />
+                          <Skeleton className="h-3 w-20" />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-2 py-3">
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-3 w-32" />
+                      </div>
+                    </td>
+                    <td className="px-2 py-3">
+                      <Skeleton className="h-8 w-20 rounded-md" />
+                    </td>
+                    <td className="px-2 py-3">
+                      <Skeleton className="h-8 w-24 rounded-md" />
+                    </td>
+                    <td className="px-2 py-3">
+                      <Skeleton className="h-8 w-32 rounded-md" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : records.length === 0 ? (
           <div className="text-center py-12">
@@ -74,7 +124,7 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
             <p className="text-gray-500 mb-6">No successfully scraped records found. You need to scrape some contacts first before generating emails.</p>
             <Link 
               href="/dashboard/scraping" 
-              className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 shadow-md font-medium"
+              className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 shadow-md font-medium cursor-pointer"
             >
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />

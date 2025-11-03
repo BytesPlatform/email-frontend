@@ -84,13 +84,13 @@ export default function HistoryPage() {
   return (
     <AuthGuard>
       <div className="bg-gray-50 min-h-screen">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 pb-34">
           <div className="space-y-6">
             {/* Page Header */}
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-lg">
               <div className="flex items-center justify-between">
                 <div>
-                  <Link href="/dashboard" className="text-white/80 hover:text-white text-sm mb-2 inline-flex items-center">
+                  <Link href="/dashboard" className="text-white/80 hover:text-white text-sm mb-2 inline-flex items-center cursor-pointer">
                     <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                     </svg>
@@ -114,7 +114,7 @@ export default function HistoryPage() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {historyData && (
                   <>
-                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-md">
+                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-md cursor-pointer">
                       <div className="flex items-center justify-between mb-2">
                         <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -124,7 +124,7 @@ export default function HistoryPage() {
                       <div className="text-sm text-blue-100 mt-1">Total Scrapes</div>
                     </div>
                     
-                    <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-md">
+                    <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-md cursor-pointer">
                       <div className="flex items-center justify-between mb-2">
                         <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -134,7 +134,7 @@ export default function HistoryPage() {
                       <div className="text-sm text-green-100 mt-1">Successful</div>
                     </div>
                     
-                    <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-5 text-white shadow-md">
+                    <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-5 text-white shadow-md cursor-pointer">
                       <div className="flex items-center justify-between mb-2">
                         <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -147,7 +147,7 @@ export default function HistoryPage() {
                 )}
                 
                 {analytics && (
-                  <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white shadow-md">
+                  <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white shadow-md cursor-pointer">
                     <div className="flex items-center justify-between mb-2">
                       <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -169,17 +169,17 @@ export default function HistoryPage() {
                 <div className="mb-6">
                   <h4 className="text-sm font-semibold text-gray-700 mb-3">Method Breakdown</h4>
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-green-50 rounded-lg p-4 border border-green-100">
+                    <div className="bg-green-50 rounded-lg p-4 border border-green-100 cursor-pointer">
                       <p className="text-xs text-gray-600 mb-1">Direct URL</p>
                       <p className="text-2xl font-bold text-green-700">{analytics.methodBreakdown.direct_url.count}</p>
                       <p className="text-xs text-green-600 mt-1">{analytics.methodBreakdown.direct_url.successRate.toFixed(1)}% success</p>
                     </div>
-                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-100 cursor-pointer">
                       <p className="text-xs text-gray-600 mb-1">Email Domain</p>
                       <p className="text-2xl font-bold text-blue-700">{analytics.methodBreakdown.email_domain.count}</p>
                       <p className="text-xs text-blue-600 mt-1">{analytics.methodBreakdown.email_domain.successRate.toFixed(1)}% success</p>
                     </div>
-                    <div className="bg-purple-50 rounded-lg p-4 border border-purple-100">
+                    <div className="bg-purple-50 rounded-lg p-4 border border-purple-100 cursor-pointer">
                       <p className="text-xs text-gray-600 mb-1">Business Search</p>
                       <p className="text-2xl font-bold text-purple-700">{analytics.methodBreakdown.business_search.count}</p>
                       <p className="text-xs text-purple-600 mt-1">{analytics.methodBreakdown.business_search.successRate.toFixed(1)}% success</p>
@@ -193,7 +193,7 @@ export default function HistoryPage() {
                     <h4 className="text-sm font-semibold text-gray-700 mb-3">Top Failed Reasons</h4>
                     <div className="space-y-2">
                       {analytics.topFailedReasons.slice(0, 5).map((reason, index) => (
-                        <div key={index} className="flex items-center justify-between bg-red-50 rounded-lg p-3 border border-red-100">
+                        <div key={index} className="flex items-center justify-between bg-red-50 rounded-lg p-3 border border-red-100 cursor-pointer">
                           <div className="flex items-center space-x-2">
                             <span className="text-red-700 font-bold">#{index + 1}</span>
                             <span className="text-sm text-gray-800">{reason.reason}</span>

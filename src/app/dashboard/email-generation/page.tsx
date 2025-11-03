@@ -806,7 +806,7 @@ export default function EmailGenerationPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop - blurred page background */}
           <div 
-            className="absolute inset-0 backdrop-blur-md"
+            className="absolute inset-0 backdrop-blur-md cursor-pointer"
             onClick={closeDrawer}
           />
           
@@ -830,7 +830,7 @@ export default function EmailGenerationPage() {
                 </div>
                 <button
                   onClick={closeDrawer}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
                 >
                   <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -864,7 +864,7 @@ export default function EmailGenerationPage() {
                         <label className="text-sm font-medium text-gray-500">Website</label>
                         <p className="text-sm text-gray-900 mt-1">
                           {selectedRecord.website ? (
-                            <a href={selectedRecord.website} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800">
+                            <a href={selectedRecord.website} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 cursor-pointer">
                               {selectedRecord.website}
                             </a>
                           ) : 'N/A'}
@@ -904,7 +904,7 @@ export default function EmailGenerationPage() {
                           <label className="text-sm font-medium text-gray-500">Scraped URL</label>
                           <p className="text-sm text-gray-900 mt-1">
                             {selectedRecord.scrapedData.url ? (
-                              <a href={selectedRecord.scrapedData.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 break-all">
+                              <a href={selectedRecord.scrapedData.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 break-all cursor-pointer">
                                 {selectedRecord.scrapedData.url}
                               </a>
                             ) : 'N/A'}

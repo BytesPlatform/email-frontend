@@ -99,7 +99,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
             const methodBadge = getMethodBadge(item.method)
             return (
             <div key={item.id} className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer">
                   <div className="flex items-center space-x-4 flex-1">
                     <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
                       item.success ? 'bg-green-100' : 'bg-red-100'
@@ -163,6 +163,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
                     variant="outline" 
                     size="sm"
                     onClick={() => setShowDetails(showDetails === item.id ? null : item.id)}
+                    className="cursor-pointer"
                   >
                       {showDetails === item.id ? 'Hide' : 'Details'}
                   </Button>
@@ -170,6 +171,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
                       variant="outline" 
                       size="sm"
                       onClick={() => handleViewAttempts(item.contactId)}
+                      className="cursor-pointer"
                     >
                       View Attempts
                     </Button>
@@ -195,7 +197,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
                       {item.discoveredUrl && (
                         <div className="col-span-2">
                           <span className="text-gray-600">Discovered URL:</span>
-                          <a href={item.discoveredUrl} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-600 hover:underline">
+                          <a href={item.discoveredUrl} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-600 hover:underline cursor-pointer">
                             {item.discoveredUrl}
                           </a>
                         </div>
@@ -235,6 +237,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
                 size="sm"
                 onClick={() => onPageChange((filters.page || 1) - 1)}
                 disabled={filters.page === 1}
+                className="cursor-pointer"
               >
                 Previous
               </Button>
@@ -243,6 +246,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
                 size="sm"
                 onClick={() => onPageChange((filters.page || 1) + 1)}
                 disabled={filters.page === pagination.totalPages}
+                className="cursor-pointer"
               >
                 Next
               </Button>
@@ -269,7 +273,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
                   </div>
                   <button
                     onClick={closeModal}
-                    className="text-white hover:text-gray-200"
+                    className="text-white hover:text-gray-200 cursor-pointer"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -300,7 +304,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
                       <h4 className="text-lg font-semibold mb-4">Scraping Attempts ({contactHistory.scrapingAttempts.length})</h4>
                       <div className="space-y-3">
                         {contactHistory.scrapingAttempts.map((attempt, index) => (
-                          <div key={index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                          <div key={index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer">
                             <div className="flex items-start justify-between mb-3">
                               <div className="flex items-center space-x-3">
                                 <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
@@ -340,7 +344,7 @@ export function HistoryList({ historyData, isLoading, filters, onPageChange }: H
                               {attempt.discoveredUrl && (
                                 <div className="col-span-2">
                                   <span className="text-gray-600">URL: </span>
-                                  <a href={attempt.discoveredUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
+                                  <a href={attempt.discoveredUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all cursor-pointer">
                                     {attempt.discoveredUrl}
                                   </a>
                                 </div>

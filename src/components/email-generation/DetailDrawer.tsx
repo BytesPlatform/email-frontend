@@ -21,7 +21,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div 
-        className="absolute inset-0 backdrop-blur-md"
+        className="absolute inset-0 backdrop-blur-md cursor-pointer"
         onClick={onClose}
       />
       <div className="relative w-full max-w-5xl h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 transform transition-transform overflow-hidden">
@@ -42,7 +42,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
             </div>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
             >
               <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />

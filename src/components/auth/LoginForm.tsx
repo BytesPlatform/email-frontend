@@ -135,10 +135,10 @@ export function LoginForm() {
                 <div className="flex justify-between items-center">
                   <span className="text-slate-500">Email:</span>
                   <button
-                    onClick={() => setEmail('bytes@test.com')}
+                    onClick={() => setEmail('bytes@gmail.com')}
                     className="font-mono text-slate-900 bg-white px-2 py-1 rounded border text-xs hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 transition-colors cursor-pointer"
                   >
-                    bytes@test.com
+                    bytes@gmail.com
                   </button>
                 </div>
                 <div className="flex justify-between items-center">
@@ -154,7 +154,7 @@ export function LoginForm() {
             </div>
             <button
               onClick={() => {
-                setEmail('bytes@test.com')
+                setEmail('bytes@gmail.com')
                 setPassword('Aq123456')
               }}
               className="mt-3 text-xs text-indigo-600 hover:text-indigo-500 font-medium transition-colors"

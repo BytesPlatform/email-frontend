@@ -135,7 +135,7 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
         )}
       </td>
       <td className="px-2 py-2 whitespace-nowrap text-sm font-medium min-w-[140px]">
-        <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex space-x-1 cursor-pointer" onClick={(e) => e.stopPropagation()}>
           {(!record.hasSummary && !record.generatedSummary) ? (
             <Button
               onClick={() => onGenerateSummary(record.id)}

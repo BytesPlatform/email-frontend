@@ -5,6 +5,7 @@ import { AuthGuard } from '@/components/auth/AuthGuard'
  
 import Link from 'next/link'
 import { ScrapeStatusBrowser } from '@/components/scraping/ScrapeStatusBrowser'
+import { ScrapingStats } from '@/components/scraping/ScrapingStats'
 import { scrapingApi } from '@/api/scraping'
 import { ingestionApi } from '@/api/ingestion'
 import { useAuthContext } from '@/contexts/AuthContext'
@@ -25,7 +26,7 @@ export default function ScrapingPage() {
   const [isBatching, setIsBatching] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
   const [isLoadingUploads, setIsLoadingUploads] = useState(false)
-  const [availableUploads, setAvailableUploads] = useState<Array<{ id: number; totalRecords: number; successfulRecords: number }>>([])
+  const [availableUploads, setAvailableUploads] = useState<Array<{ id: number; fileName: string; totalRecords: number; successfulRecords: number }>>([])
   const [selectedContactIds, setSelectedContactIds] = useState<number[]>([])
   const [scrapingStatus, setScrapingStatus] = useState<Record<number, 'scraping' | 'scraped' | 'failed' | null>>({})
   const [scrapedContactDetails, setScrapedContactDetails] = useState<Record<number, ScrapeSingleResponseData>>({})
@@ -35,6 +36,7 @@ export default function ScrapingPage() {
   // Status modal
   const [isStatusOpen, setIsStatusOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'all' | 'ready_to_scrape' | 'scraping' | 'scraped' | 'scrape_failed'>('all')
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 
   // Tentatively read last uploadId (will be validated against the logged-in client's uploads)
   useEffect(() => {
@@ -42,7 +44,6 @@ export default function ScrapingPage() {
       const lastUploadId = localStorage.getItem('lastUploadId')
       if (lastUploadId) {
         setCurrentUploadId(Number(lastUploadId))
-        console.log('[SCRAPING] Tentative uploadId from localStorage:', lastUploadId)
       }
     }
   }, [])
@@ -56,11 +57,10 @@ export default function ScrapingPage() {
       if (res.success && res.data) {
         const uploads = res.data
         // Store for optional UI selection later
-        setAvailableUploads(uploads.map(u => ({ id: u.id, totalRecords: u.totalRecords, successfulRecords: u.successfulRecords })))
+        setAvailableUploads(uploads.map(u => ({ id: u.id, fileName: u.fileName || `upload_${u.id}.csv`, totalRecords: u.totalRecords, successfulRecords: u.successfulRecords })))
         const allowedIds = new Set(uploads.map(u => u.id))
         // If current uploadId is not owned by this client, clear it
         if (currentUploadId && !allowedIds.has(currentUploadId)) {
-          console.warn('[SCRAPING] Clearing uploadId from another account:', currentUploadId)
           setCurrentUploadId(null)
           if (typeof window !== 'undefined') {
             localStorage.removeItem('lastUploadId')
@@ -73,10 +73,7 @@ export default function ScrapingPage() {
           if (typeof window !== 'undefined') {
             localStorage.setItem('lastUploadId', String(latest.id))
           }
-          console.log('[SCRAPING] Auto-selected latest uploadId from DB:', latest.id)
         }
-      } else if (!res.success) {
-        console.log('[SCRAPING] Failed to load uploads:', res.error)
       }
       setIsLoadingUploads(false)
     }
@@ -117,12 +114,9 @@ export default function ScrapingPage() {
     const res = await scrapingApi.getStats(currentUploadId)
     if (res.success && res.data) {
       setStats(res.data.stats)
-      console.log('[SCRAPING] Stats fetched:', res.data.stats)
     } else {
       setApiError(res.error || 'Failed to fetch stats')
-      console.log('[SCRAPING] Stats fetch failed:', res.error)
     }
-    
   }
 
   const fetchReadyContacts = async (limit?: number) => {
@@ -131,15 +125,9 @@ export default function ScrapingPage() {
     const res = await scrapingApi.getReadyContacts(currentUploadId, limit)
     if (res.success && res.data) {
       setReadyContacts(res.data.contacts)
-      console.log('[SCRAPING] Ready contacts:', {
-        count: res.data.count,
-        ids: res.data.contacts.map(c => c.id).slice(0, 10)
-      })
     } else {
       setApiError(res.error || 'Failed to fetch ready contacts')
-      console.log('[SCRAPING] Ready contacts fetch failed:', res.error)
     }
-    
   }
 
   // Fetch stats and selected upload's contacts together, then reveal records and actions
@@ -205,7 +193,6 @@ export default function ScrapingPage() {
     try {
       // If specific contacts are selected, scrape them individually
       if (selectedContactIds.length > 0) {
-        console.log('[SCRAPING] Scraping selected contacts individually')
         const results = await Promise.allSettled(
           selectedContactIds.map(async (contactId) => {
             const res = await scrapingApi.scrapeSingle(contactId)
@@ -232,14 +219,12 @@ export default function ScrapingPage() {
         // Use batch API for unselected scraping
         const res = await scrapingApi.scrapeBatch(currentUploadId, limit)
         if (res.success && res.data) {
-          console.log('[SCRAPING] Batch summary:', res.data.summary)
           res.data.results.forEach(item => {
             const status = item.success ? 'scraped' : 'failed'
             setScrapingStatus(prev => ({ ...prev, [item.contactId]: status }))
             if (item.success && 'scrapedData' in item && item.scrapedData) {
               setScrapedContactDetails(prev => ({ ...prev, [item.contactId]: item.scrapedData as ScrapeSingleResponseData }))
             }
-            console.log(`[SCRAPING] Contact ${item.contactId}: ${status}`)
           })
         } else {
           // Mark all contacts as failed on API error
@@ -247,14 +232,12 @@ export default function ScrapingPage() {
             setScrapingStatus(prev => ({ ...prev, [id]: 'failed' }))
           })
           setApiError(res.error || 'Batch scrape failed')
-          console.log('[SCRAPING] Batch scrape failed:', res.error)
         }
       }
       
       // Refresh stats only, keep contacts visible
       await fetchStats()
     } catch (error) {
-      console.error('[SCRAPING] Batch scrape exception:', error)
       contactsToScrape.forEach(id => {
         setScrapingStatus(prev => ({ ...prev, [id]: 'failed' }))
       })
@@ -275,20 +258,13 @@ export default function ScrapingPage() {
         if (res.data.data) {
           setScrapedContactDetails(prev => ({ ...prev, [contactId]: res.data!.data! }))
         }
-        console.log('[SCRAPING] Single contact scraped:', {
-          contactId: res.data.contactId,
-          success: res.data.success,
-          message: res.data.message
-        })
         // Refresh stats only, keep contacts visible
         await fetchStats()
       } else {
         setScrapingStatus(prev => ({ ...prev, [contactId]: 'failed' }))
         setApiError(res.error || `Failed to scrape contact ${contactId}`)
-        console.log('[SCRAPING] Single contact scrape failed:', res.error)
       }
     } catch (error) {
-      console.error('[SCRAPING] Single contact scrape exception:', error)
       setScrapingStatus(prev => ({ ...prev, [contactId]: 'failed' }))
       setApiError(error instanceof Error ? error.message : `Failed to scrape contact ${contactId}`)
     }
@@ -343,49 +319,151 @@ export default function ScrapingPage() {
               <div className="space-y-3">
                 <div className="text-sm text-gray-700">
                   {currentUploadId ? (
-                    <>Active upload: <span className="font-medium">{currentUploadId}</span></>
+                    <>
+                      Active file: <span className="font-medium text-gray-900">
+                        {availableUploads.find(u => u.id === currentUploadId)?.fileName || `File #${currentUploadId}`}
+                      </span>
+                    </>
                   ) : (
-                    <span>Select an upload to enable actions</span>
+                    <span>Select a CSV file to enable actions</span>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Choose an upload</label>
-                  <select
-                    value={currentUploadId ?? ''}
-                    onChange={async (e) => {
-                      const val = Number(e.target.value)
-                      if (!Number.isFinite(val)) return
-                      setCurrentUploadId(val)
-                      if (typeof window !== 'undefined') {
-                        localStorage.setItem('lastUploadId', String(val))
-                      }
-                      // Reset; fetching happens when user clicks the button
-                      setStats(null)
-                      setReadyContacts([])
-                      setHasFetchedReadyAndStats(false)
-                    }}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white"
-                    disabled={isLoadingUploads || availableUploads.length === 0}
-                  >
-                    <option value="" disabled>{isLoadingUploads ? 'Loading uploads…' : 'Select an upload'}</option>
-                    {availableUploads.map(u => (
-                      <option key={u.id} value={u.id}>
-                        Upload #{u.id} • {u.totalRecords} records • {u.successfulRecords} successful
-                      </option>
-                    ))}
-                  </select>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select CSV File</label>
+                  <div className="relative">
+                    {isLoadingUploads ? (
+                      <div className="space-y-2 border border-gray-300 rounded-lg bg-white p-4">
+                        <div className="h-10 bg-gray-200 rounded-lg animate-pulse"></div>
+                        <div className="h-10 bg-gray-200 rounded-lg animate-pulse"></div>
+                        <div className="h-10 bg-gray-200 rounded-lg animate-pulse"></div>
+                      </div>
+                    ) : availableUploads.length === 0 ? (
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center bg-white">
+                        <p className="text-sm text-gray-500">No CSV files uploaded yet</p>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                          className="w-full flex items-center justify-between border border-gray-300 rounded-lg px-4 py-3 bg-white text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all hover:border-gray-400 cursor-pointer"
+                        >
+                          <div className="flex items-center space-x-2 flex-1 min-w-0">
+                            {currentUploadId ? (
+                              <>
+                                <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span className="truncate">
+                                  {availableUploads.find(u => u.id === currentUploadId)?.fileName || 'Select a file'}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-gray-500">Select a CSV file</span>
+                            )}
+                          </div>
+                          <svg
+                            className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isDropdownOpen ? 'transform rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        
+                        {isDropdownOpen && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-10"
+                              onClick={() => setIsDropdownOpen(false)}
+                            ></div>
+                            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-hidden">
+                              <div className="overflow-y-auto max-h-64">
+                                {availableUploads.map(u => {
+                                  const isSelected = currentUploadId === u.id
+                                  return (
+                                    <button
+                                      key={u.id}
+                                      type="button"
+                                      onClick={async () => {
+                                        setCurrentUploadId(u.id)
+                                        setIsDropdownOpen(false)
+                                        if (typeof window !== 'undefined') {
+                                          localStorage.setItem('lastUploadId', String(u.id))
+                                        }
+                                        // Reset; fetching happens when user clicks the button
+                                        setStats(null)
+                                        setReadyContacts([])
+                                        setHasFetchedReadyAndStats(false)
+                                      }}
+                                      className={`w-full text-left px-4 py-3 flex items-center justify-between transition-colors cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-indigo-50 text-indigo-900'
+                                          : 'hover:bg-gray-50 text-gray-900'
+                                      } ${u.id !== availableUploads[availableUploads.length - 1].id ? 'border-b border-gray-100' : ''}`}
+                                    >
+                                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                                        <svg className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-indigo-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <div className="flex-1 min-w-0">
+                                          <p className={`text-sm font-medium truncate ${isSelected ? 'text-indigo-900' : 'text-gray-900'}`}>
+                                            {u.fileName}
+                                          </p>
+                                          <p className={`text-xs mt-0.5 ${isSelected ? 'text-indigo-700' : 'text-gray-500'}`}>
+                                            {u.totalRecords} records
+                                          </p>
+                                        </div>
+                                      </div>
+                                      {isSelected && (
+                                        <svg className="w-5 h-5 text-indigo-600 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
               <div className="mt-4 flex items-center flex-wrap gap-3">
                 {!hasFetchedReadyAndStats && (
-                  <button
-                    onClick={() => fetchStatsAndShowRecords(20)}
-                    disabled={!currentUploadId || isLoadingCombined}
-                    className="bg-indigo-700 text-white px-3 py-2 rounded-lg hover:bg-indigo-800 disabled:bg-gray-400 text-sm"
-                  >
-                    {isLoadingCombined ? 'Fetching…' : 'Fetch and show records'}
-                  </button>
+                  <>
+                    {isLoadingCombined ? (
+                      <div className="w-full">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          {[1, 2, 3, 4].map((i) => (
+                            <div key={i} className="bg-gray-200 rounded-xl p-5 animate-pulse">
+                              <div className="h-8 w-8 bg-gray-300 rounded-lg mb-2"></div>
+                              <div className="h-8 bg-gray-300 rounded mb-2"></div>
+                              <div className="h-4 bg-gray-300 rounded w-2/3"></div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-6 space-y-3">
+                          {[1, 2, 3, 4, 5].map((i) => (
+                            <div key={i} className="h-16 bg-gray-200 rounded-lg animate-pulse"></div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => fetchStatsAndShowRecords(20)}
+                        disabled={!currentUploadId}
+                        className="bg-indigo-700 text-white px-4 py-2.5 rounded-lg hover:bg-indigo-800 disabled:bg-gray-400 text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        Fetch and show records
+                      </button>
+                    )}
+                  </>
                 )}
                 {hasFetchedReadyAndStats && null}
               </div>
@@ -401,44 +479,13 @@ export default function ScrapingPage() {
 
               {/* Stats preview */}
               {stats && (
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <button onClick={() => { setStatusFilter('all'); setIsStatusOpen(true) }} className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-md text-left">
-                    <div className="flex items-center justify-between mb-2">
-                      <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                      </svg>
-                    </div>
-                    <div className="text-3xl font-bold">{stats.totalContacts}</div>
-                    <div className="text-sm text-blue-100 mt-1">Total Contacts</div>
-                  </button>
-                  <button onClick={() => { setStatusFilter('scraped'); setIsStatusOpen(true) }} className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-md text-left">
-                    <div className="flex items-center justify-between mb-2">
-                      <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div className="text-3xl font-bold">{stats.scraped}</div>
-                    <div className="text-sm text-green-100 mt-1">Successfully Scraped</div>
-                  </button>
-                  <button onClick={() => { setStatusFilter('ready_to_scrape'); setIsStatusOpen(true) }} className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl p-5 text-white shadow-md text-left">
-                    <div className="flex items-center justify-between mb-2">
-                      <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                  </div>
-                    <div className="text-3xl font-bold">{stats.readyToScrape}</div>
-                    <div className="text-sm text-yellow-100 mt-1">Ready to Scrape</div>
-                  </button>
-                  <button onClick={() => { setStatusFilter('scrape_failed'); setIsStatusOpen(true) }} className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-5 text-white shadow-md text-left">
-                    <div className="flex items-center justify-between mb-2">
-                      <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                  </div>
-                    <div className="text-3xl font-bold">{stats.scrapeFailed}</div>
-                    <div className="text-sm text-red-100 mt-1">Failed</div>
-                  </button>
-                </div>
+                <ScrapingStats 
+                  stats={stats} 
+                  onStatClick={(filter) => {
+                    setStatusFilter(filter)
+                    setIsStatusOpen(true)
+                  }}
+                />
               )}
 
               {/* Ready contacts preview removed - showing full checklist below instead */}
