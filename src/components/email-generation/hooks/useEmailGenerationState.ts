@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { EmailGenerationState, ScrapedRecord } from '@/types/emailGeneration'
+import type { EmailGenerationState, ScrapedRecord, SpamCheckResult, OptimizationSuggestions } from '@/types/emailGeneration'
 
 /**
  * Custom hook for email generation state management
@@ -28,6 +28,9 @@ export const useEmailGenerationState = () => {
     body: string
     isEditMode?: boolean
     smsDraftId?: number
+    emailDraftId?: number
+    spamCheckResult?: SpamCheckResult
+    optimizationSuggestions?: OptimizationSuggestions
   } | null>(null)
 
   // Drawer handlers

@@ -5,6 +5,10 @@ import {
   SummaryGenerationResponse,
   EmailGenerationResponse,
   EmailDraft,
+  SpamCheckResult,
+  CheckSpamDto,
+  OptimizationSuggestions,
+  OptimizeDto,
 } from '@/types/emailGeneration'
 
 export const emailGenerationApi = {
@@ -150,12 +154,121 @@ export const emailGenerationApi = {
   },
 
   /**
+   * Check spam score for an email draft
+   * POST /emails/optimization/check
+   */
+  async checkSpam(dto: CheckSpamDto): Promise<ApiResponse<SpamCheckResult>> {
+    try {
+      const response = await apiClient.post<SpamCheckResult>('/emails/optimization/check', dto)  
+      // Handle different response structures
+      if (response.success && response.data) {
+        let spamResult: SpamCheckResult
+        
+        // Check if data is nested (response.data.data) or direct
+        type NestedSpamResponse = { data: SpamCheckResult }
+        const responseData = response.data as SpamCheckResult | NestedSpamResponse
+        if ('data' in responseData && typeof responseData.data === 'object') {
+          spamResult = responseData.data as SpamCheckResult
+          console.log('Found nested data structure, extracting:', spamResult)
+        } else {
+          spamResult = responseData as SpamCheckResult
+        }
+        
+        // Ensure all fields are properly typed and have default values
+        const parsedResult: SpamCheckResult = {
+          score: typeof spamResult?.score === 'number' ? spamResult.score : 
+                typeof spamResult?.score === 'string' ? parseFloat(spamResult.score) || 0 : 0,
+          keywords: Array.isArray(spamResult?.keywords) ? spamResult.keywords : [],
+          suggestions: Array.isArray(spamResult?.suggestions) ? spamResult.suggestions : [],
+          blocked: typeof spamResult?.blocked === 'boolean' ? spamResult.blocked : false
+        }
+        
+        return {
+          success: true,
+          data: parsedResult
+        }
+      } else {
+        console.warn('Response error:', response.error)
+        console.warn('Response data:', response.data)
+        
+        return {
+          success: false,
+          error: response.error || 'Spam check failed or returned no data',
+          data: {
+            score: 0,
+            keywords: [],
+            suggestions: [],
+            blocked: false
+          } as SpamCheckResult
+        }
+      }
+    } catch (error) {
+      console.error('=== SPAM CHECK API ERROR ===')
+      console.error('Error checking spam:', error)
+      console.error('Error details:', error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      } : error)
+      throw error
+    }
+  },
+
+  /**
+   * Get optimization suggestions for an email
+   * POST /emails/optimization/suggest
+   */
+  async getOptimizationSuggestions(dto: OptimizeDto): Promise<ApiResponse<OptimizationSuggestions>> {
+    try {
+      
+      const response = await apiClient.post<OptimizationSuggestions>('/emails/optimization/suggest', dto)
+      
+      if (response.success && response.data) {
+        let suggestions: OptimizationSuggestions
+        
+        // Handle nested response structure
+        type NestedOptimizationResponse = { data: OptimizationSuggestions }
+        const responseData = response.data as OptimizationSuggestions | NestedOptimizationResponse
+        if ('data' in responseData && typeof responseData.data === 'object') {
+          suggestions = responseData.data as OptimizationSuggestions
+        } else {
+          suggestions = responseData as OptimizationSuggestions
+        }
+        
+        // Ensure proper typing
+        const parsedSuggestions: OptimizationSuggestions = {
+          suggestions: Array.isArray(suggestions?.suggestions) ? suggestions.suggestions : [],
+          optimizedContent: typeof suggestions?.optimizedContent === 'string' ? suggestions.optimizedContent : undefined
+        }
+          
+        return {
+          success: true,
+          data: parsedSuggestions
+        }
+      } else {
+        console.warn('Response success:', response.success)
+        console.warn('Response error:', response.error)
+        
+        return {
+          success: false,
+          error: response.error || 'Failed to get optimization suggestions',
+          data: {
+            suggestions: []
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error getting optimization suggestions:', error)
+      throw error
+    }
+  },
+  /**
    * Send an email draft
-   * POST /emails/send-draft
+   * POST /emails/generation/send-draft/:draftId
    */
   async sendEmailDraft(draftId: number): Promise<ApiResponse<{ success: boolean; message?: string }>> {
     try {
-      return await apiClient.post<{ success: boolean; message?: string }>('/emails/send-draft', { draftId })
+      return await apiClient.post<{ success: boolean; message?: string }>(`/emails/generation/send-draft/${draftId}`)
     } catch (error) {
       console.error('Error sending email draft:', error)
       throw error

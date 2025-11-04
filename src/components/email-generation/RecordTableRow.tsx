@@ -15,7 +15,14 @@ interface RecordTableRowProps {
     subject: string
     body: string
     smsDraftId?: number
+    emailDraftId?: number
     isEditMode?: boolean
+    spamCheckResult?: {
+      score: number
+      keywords: string[]
+      suggestions: string[]
+      blocked: boolean
+    }
   }) => void
   onGenerateSummary: (recordId: number) => void
   onGenerateEmail: (recordId: number) => void
@@ -93,7 +100,9 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
                   onSetEmailBodyOverlay({
                     isOpen: true,
                     subject: record.generatedEmail.subject,
-                    body: record.generatedEmail.body
+                    body: record.generatedEmail.body,
+                    emailDraftId: record.emailDraftId,
+                    spamCheckResult: record.spamCheckResult
                   })
                 } else {
                   await onViewEmailBody(record.id)

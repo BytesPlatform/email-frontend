@@ -89,6 +89,31 @@ export interface SummaryGenerationResponse {
   message?: string
 }
 
+// Spam check types
+export interface SpamCheckResult {
+  score: number
+  keywords: string[]
+  suggestions: string[]
+  blocked: boolean
+}
+
+export interface CheckSpamDto {
+  draftId?: number
+  content?: string
+  subjectLine?: string
+}
+
+export interface OptimizationSuggestions {
+  suggestions: string[]
+  optimizedContent?: string
+}
+
+export interface OptimizeDto {
+  draftId?: number
+  content?: string
+  subjectLine?: string
+}
+
 // Scraped record interface (reusing from scraping types)
 export interface ScrapedRecord {
   id: number
@@ -104,7 +129,7 @@ export interface ScrapedRecord {
   generatedEmail?: GeneratedEmail
   emailDraftId?: number
   smsDraftId?: number // SMS draft ID (similar to emailDraftId)
-  generatedSMS?: GeneratedEmail // SMS content (reusing GeneratedEmail structure for now)
+  generatedSMS?: GeneratedEmail
   smsStatus?: string // SMS status: 'draft', 'sent', 'failed'
   hasSummary?: boolean // Flag to indicate summary exists (without loading full data)
   hasEmailDraft?: boolean // Flag to indicate email draft exists (without loading full data)
@@ -114,9 +139,11 @@ export interface ScrapedRecord {
   isGeneratingSMS?: boolean
   isSendingEmail?: boolean
   isSendingSMS?: boolean
-  isLoadingSummary?: boolean // Flag for when fetching summary on View click
-  isLoadingEmailDraft?: boolean // Flag for when fetching email draft on View Body click
-  isLoadingSMSDraft?: boolean // Flag for when fetching SMS draft on View SMS click
+  isCheckingSpam?: boolean
+  spamCheckResult?: SpamCheckResult // Spam check result for email drafts
+  isLoadingEmailDraft?: boolean
+  isLoadingSummary?: boolean
+  isLoadingSMSDraft?: boolean
 }
 
 // Component state types
