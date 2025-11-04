@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { historyApi } from '@/api/history'
@@ -44,6 +44,9 @@ export default function EmailGenerationPage() {
     fetchEmailDraftIdForContact,
     fetchSMSDraftIdForContact,
   } = useEmailGenerationAPI()
+
+  // Optimization suggestions state
+  const [isLoadingOptimization, setIsLoadingOptimization] = useState(false)
 
   // Load scraped records on component mount
   useEffect(() => {
@@ -259,11 +262,55 @@ export default function EmailGenerationPage() {
                     ...r, 
                     emailDraftId: emailDraftId,
                     hasEmailDraft: true,
-                    isGeneratingEmail: false 
+                    isGeneratingEmail: false,
+                    isCheckingSpam: true  // Start spam check loading
                   } 
                 : r
             )
           }))
+
+          // Automatically check spam after email generation
+          try {
+            console.log('=== AUTOMATIC SPAM CHECK AFTER EMAIL GENERATION ===')
+            const spamRes = await emailGenerationApi.checkSpam({
+              draftId: emailDraftId
+            })
+
+            console.log('Spam check response in handleGenerateEmail:', spamRes)
+            
+            // Always reset isCheckingSpam flag, regardless of success/failure
+            setState(prev => ({
+              ...prev,
+              scrapedRecords: prev.scrapedRecords.map(r => 
+                r.id === recordId 
+                  ? { 
+                      ...r,
+                      isCheckingSpam: false,
+                      // Store spam check result if successful, otherwise keep existing or undefined
+                      ...(spamRes.success && spamRes.data ? { spamCheckResult: spamRes.data } : {})
+                    } 
+                  : r
+              )
+            }))
+
+            // Log if spam check failed
+            if (!spamRes.success || !spamRes.data) {
+              console.warn('Spam check failed or returned no data:', {
+                success: spamRes.success,
+                error: spamRes.error,
+                data: spamRes.data
+              })
+            }
+          } catch (spamError) {
+            // If spam check fails, don't block the email - just log error
+            console.error('Spam check failed:', spamError)
+            setState(prev => ({
+              ...prev,
+              scrapedRecords: prev.scrapedRecords.map(r => 
+                r.id === recordId ? { ...r, isCheckingSpam: false } : r
+              )
+            }))
+          }
         } else {
           // Response might be in the format returned directly from backend
           // Try accessing properties directly from data
@@ -458,6 +505,61 @@ export default function EmailGenerationPage() {
     }
   }
 
+  // Handler to get optimization suggestions
+  const handleGetOptimizationSuggestions = async () => {
+    if (!emailBodyOverlay) {
+      console.error('No email overlay available for optimization')
+      return
+    }
+
+    setIsLoadingOptimization(true)
+    try {
+      console.log('=== CALLING OPTIMIZATION API ===')
+      
+              // Build the DTO - use draftId if available, otherwise use content and subjectLine
+        const dto: { draftId?: number; content?: string; subjectLine?: string } = emailBodyOverlay.emailDraftId
+          ? {
+              draftId: emailBodyOverlay.emailDraftId,
+              ...(emailBodyOverlay.subject && { subjectLine: emailBodyOverlay.subject })
+            }
+          : {
+              content: emailBodyOverlay.body,
+              subjectLine: emailBodyOverlay.subject
+            }
+        
+        if (emailBodyOverlay.emailDraftId) {
+          console.log('Using Draft ID:', dto.draftId, 'with subjectLine:', dto.subjectLine)
+        } else {
+          console.log('Using content and subjectLine directly')
+        }
+      
+      const res = await emailGenerationApi.getOptimizationSuggestions(dto)
+
+      if (res.success && res.data) {
+        setEmailBodyOverlay({
+          ...emailBodyOverlay,
+          optimizationSuggestions: res.data
+        })
+        console.log('Optimization suggestions loaded:', res.data)
+      } else {
+        alert('Failed to get optimization suggestions: ' + (res.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Error getting optimization suggestions:', error)
+      alert('Error getting optimization suggestions: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsLoadingOptimization(false)
+    }
+  }
+
+  // Handler to accept optimized content
+  const handleAcceptOptimizedContent = async () => {
+    if (!emailBodyOverlay?.emailDraftId || !emailBodyOverlay?.optimizationSuggestions?.optimizedContent) {
+      console.error('Missing email draft ID or optimized content')
+      return
+    }
+  }
+
   // Handler to view email body (fetches email draft ONLY when View Body button is clicked)
   const handleViewEmailBody = async (recordId: number) => {
     const record = state.scrapedRecords.find(r => r.id === recordId)
@@ -468,7 +570,9 @@ export default function EmailGenerationPage() {
       setEmailBodyOverlay({
         isOpen: true,
         subject: record.generatedEmail.subject,
-        body: record.generatedEmail.body
+        body: record.generatedEmail.body,
+        emailDraftId: record.emailDraftId,
+        spamCheckResult: record.spamCheckResult
       })
       return
     }
@@ -511,7 +615,15 @@ export default function EmailGenerationPage() {
       }
 
       // Now fetch the email draft content
+      console.log('=== FETCHING EMAIL DRAFT ===')
+      console.log('Draft ID:', draftId)
       const res = await emailGenerationApi.getEmailDraft(draftId)
+      console.log('=== EMAIL DRAFT API RESPONSE ===')
+      console.log('Full response:', JSON.stringify(res, null, 2))
+      console.log('Response success:', res.success)
+      console.log('Response data:', res.data)
+      console.log('Response error:', res.error)
+      
       if (res.success && res.data) {
         const emailDraft = res.data
         
@@ -545,12 +657,69 @@ export default function EmailGenerationPage() {
           )
         }))
         
-        // Show email in overlay
-        setEmailBodyOverlay({
-          isOpen: true,
-          subject: updatedRecord.generatedEmail.subject,
-          body: updatedRecord.generatedEmail.body
-        })
+        // Check if we need to fetch spam check result
+        let spamCheckResult = updatedRecord.spamCheckResult
+        
+        // If spam check result doesn't exist, fetch it
+        if (!spamCheckResult && draftId) {
+          console.log('=== FETCHING SPAM CHECK RESULT IN handleViewEmailBody ===')
+          console.log('Draft ID for spam check:', draftId)
+          
+          try {
+            setState(prev => ({
+              ...prev,
+              scrapedRecords: prev.scrapedRecords.map(r => 
+                r.id === recordId ? { ...r, isCheckingSpam: true } : r
+              )
+            }))
+            
+            const spamRes = await emailGenerationApi.checkSpam({
+              draftId: draftId
+            })
+            
+            console.log('=== SPAM CHECK RESULT IN handleViewEmailBody ===')
+            console.log('Spam check response:', JSON.stringify(spamRes, null, 2))
+            
+            if (spamRes.success && spamRes.data) {
+              spamCheckResult = spamRes.data
+              
+              // Update state with spam check result
+              setState(prev => ({
+                ...prev,
+                scrapedRecords: prev.scrapedRecords.map(r => 
+                  r.id === recordId 
+                    ? { ...r, spamCheckResult: spamCheckResult, isCheckingSpam: false } 
+                    : r
+                )
+              }))
+            } else {
+              console.warn('Spam check failed or returned no data:', spamRes.error)
+              setState(prev => ({
+                ...prev,
+                scrapedRecords: prev.scrapedRecords.map(r => 
+                  r.id === recordId ? { ...r, isCheckingSpam: false } : r
+                )
+              }))
+            }
+          } catch (spamError) {
+            console.error('Error fetching spam check result:', spamError)
+            setState(prev => ({
+              ...prev,
+              scrapedRecords: prev.scrapedRecords.map(r => 
+                r.id === recordId ? { ...r, isCheckingSpam: false } : r
+              )
+            }))
+          }
+        }
+        
+                  // Show email in overlay with spam check result
+          setEmailBodyOverlay({
+            isOpen: true,
+            subject: updatedRecord.generatedEmail.subject,
+            body: updatedRecord.generatedEmail.body,
+            emailDraftId: draftId,
+            spamCheckResult: spamCheckResult
+          })
       } else {
         setState(prev => ({
           ...prev,
@@ -1093,13 +1262,15 @@ export default function EmailGenerationPage() {
                               {selectedRecord.generatedEmail.body}
                             </div>
                             <Button
-                              onClick={() => {
-                                setEmailBodyOverlay({
-                                  isOpen: true,
-                                  subject: selectedRecord.generatedEmail!.subject,
-                                  body: selectedRecord.generatedEmail!.body
-                                })
-                              }}
+                                                              onClick={() => {
+                                  setEmailBodyOverlay({
+                                    isOpen: true,
+                                    subject: selectedRecord.generatedEmail!.subject,
+                                    body: selectedRecord.generatedEmail!.body,
+                                    emailDraftId: selectedRecord.emailDraftId,
+                                    spamCheckResult: selectedRecord.spamCheckResult
+                                  })
+                                }}
                               variant="outline"
                               size="sm"
                               className="mt-2"
@@ -1181,11 +1352,14 @@ export default function EmailGenerationPage() {
         </div>
       )}
 
-      {/* Email/SMS Body Overlay */}
-      {emailBodyOverlay && (
-        <EmailBodyOverlay
-          overlay={emailBodyOverlay}
-          onClose={() => setEmailBodyOverlay(null)}
+              {/* Email/SMS Body Overlay */}
+        {emailBodyOverlay && (
+          <EmailBodyOverlay
+            overlay={emailBodyOverlay}
+            onClose={() => setEmailBodyOverlay(null)}
+            onGetOptimizationSuggestions={handleGetOptimizationSuggestions}
+            onAcceptOptimizedContent={handleAcceptOptimizedContent}
+            isLoadingOptimization={isLoadingOptimization}
           onToggleEdit={() => {
             if (emailBodyOverlay.smsDraftId) {
               setEmailBodyOverlay({

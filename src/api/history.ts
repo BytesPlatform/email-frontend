@@ -30,7 +30,7 @@ export const historyApi = {
     const url = `/scraping/history/client/${clientId}${query ? `?${query}` : ''}`
     
     // Increase timeout for potentially heavier history queries
-    return apiClient.getWithTimeout<ClientScrapingHistoryResponse>(url, 20000)
+    return apiClient.getWithTimeout<ClientScrapingHistoryResponse>(url, 60000)
   },
 
   /**
