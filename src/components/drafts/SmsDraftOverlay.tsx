@@ -2,17 +2,11 @@
 
 import React, { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
-import type { EmailDraft as ComponentEmailDraft } from './EmailDraftsList'
+import type { SmsDraft } from './SmsDraftsList'
 
-interface EmailDraftOverlayProps {
+interface SmsDraftOverlayProps {
   isOpen: boolean
-  emailDraft: ComponentEmailDraft | null
-  spamCheckResult?: {
-    score: number
-    keywords: string[]
-    suggestions: string[]
-    blocked: boolean
-  }
+  smsDraft: SmsDraft | null
   onClose: () => void
   onEdit?: (draftId: number) => void
   onSend?: (draftId: number) => void
@@ -28,10 +22,9 @@ interface EmailDraftOverlayProps {
   onSendAll?: () => void
 }
 
-export function EmailDraftOverlay({
+export function SmsDraftOverlay({
   isOpen,
-  emailDraft,
-  spamCheckResult,
+  smsDraft,
   onClose,
   onEdit,
   onSend,
@@ -45,10 +38,9 @@ export function EmailDraftOverlay({
   isSelected = false,
   onToggleSelect,
   onSendAll,
-}: EmailDraftOverlayProps) {
+}: SmsDraftOverlayProps) {
   const [isMinimized, setIsMinimized] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
-  const [showCcBcc, setShowCcBcc] = useState(false)
 
   // Prevent background scrolling when overlay is open
   useEffect(() => {
@@ -72,7 +64,7 @@ export function EmailDraftOverlay({
     }
   }, [isOpen, isMinimized])
 
-  if (!isOpen || !emailDraft) return null
+  if (!isOpen || !smsDraft) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -82,7 +74,7 @@ export function EmailDraftOverlay({
         onClick={onClose}
       />
       
-      {/* Gmail-style Email Window */}
+      {/* Gmail-style SMS Window */}
       <div className={`relative bg-white rounded-lg shadow-2xl border border-gray-200 flex flex-col transition-all duration-300 ${
         isMinimized 
           ? 'w-96 h-16' 
@@ -124,9 +116,9 @@ export function EmailDraftOverlay({
                 {currentIndex + 1} of {totalCount}
               </span>
             )}
-            {/* Subject */}
+            {/* Contact Name */}
             <h3 className="text-sm font-medium truncate flex-1 min-w-0">
-              {emailDraft.subject || 'New Message'}
+              {smsDraft.contactName || smsDraft.contactPhone || 'SMS Message'}
             </h3>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
@@ -136,7 +128,7 @@ export function EmailDraftOverlay({
                 <input
                   type="checkbox"
                   checked={isSelected}
-                  onChange={(e) => onToggleSelect(emailDraft.id, e.target.checked)}
+                  onChange={(e) => onToggleSelect(smsDraft.id, e.target.checked)}
                   className="w-4 h-4 cursor-pointer"
                   onClick={(e) => e.stopPropagation()}
                 />
@@ -174,40 +166,51 @@ export function EmailDraftOverlay({
                   <span className="text-sm text-gray-500 font-normal mr-3 min-w-[60px]">To</span>
                   <div className="flex-1">
                     <input
-                      type="email"
-                      value={emailDraft.contactEmail || ''}
+                      type="tel"
+                      value={smsDraft.contactPhone || ''}
                       readOnly
                       className="w-full text-sm text-gray-900 outline-none bg-transparent border-none"
-                      placeholder="Recipients"
+                      placeholder="Phone number"
                     />
                   </div>
                   <div className="flex items-center gap-2 ml-2">
-                    <button
-                      onClick={() => setShowCcBcc(!showCcBcc)}
-                      className="text-xs text-gray-600 hover:text-gray-900 transition-colors"
-                    >
-                      Cc
-                    </button>
-                    <span className="text-gray-400">Bcc</span>
+                    <span className="text-xs text-gray-400">
+                      {smsDraft.contactName || 'Contact'}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* Subject Field - Clean Style */}
-              <div className="px-4 py-3 border-b border-gray-200">
-                <input
-                  type="text"
-                  value={emailDraft.subject || ''}
-                  readOnly
-                  className="w-full text-sm text-gray-900 outline-none bg-transparent border-none"
-                  placeholder="Subject"
-                />
+              {/* Status Badge */}
+              <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
+                <div className="flex items-center gap-2">
+                  {smsDraft.status === 'sent' && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                      Sent
+                    </span>
+                  )}
+                  {smsDraft.status === 'delivered' && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                      Delivered
+                    </span>
+                  )}
+                  {smsDraft.status === 'draft' && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                      Draft
+                    </span>
+                  )}
+                  {smsDraft.characterCount !== undefined && (
+                    <span className="text-xs text-gray-500 ml-auto">
+                      {smsDraft.characterCount} / 160 characters
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {/* Email Body - Large Clean Area */}
+              {/* SMS Body - Large Clean Area */}
               <div className="flex-1 overflow-y-auto px-4 py-4">
                 <div className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed min-h-full">
-                  {emailDraft.body || ''}
+                  {smsDraft.message || ''}
                 </div>
               </div>
 
@@ -219,17 +222,17 @@ export function EmailDraftOverlay({
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={() => onSend && onSend(emailDraft.id)}
-                      disabled={emailDraft.status !== 'draft'}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
+                      onClick={() => onSend && onSend(smsDraft.id)}
+                      disabled={smsDraft.status !== 'draft'}
+                      className="bg-green-600 hover:bg-green-700 text-white px-6 py-2"
                     >
                       Send
                     </Button>
-                    {emailDraft.status === 'draft' && onEdit && (
+                    {smsDraft.status === 'draft' && onEdit && (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => onEdit(emailDraft.id)}
+                        onClick={() => onEdit(smsDraft.id)}
                         className="text-gray-700 border-gray-300 hover:bg-gray-50"
                       >
                         Edit

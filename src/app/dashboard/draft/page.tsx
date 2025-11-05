@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { AuthGuard } from '@/components/auth/AuthGuard'
-import { DraftsToggle } from '@/components/drafts/DraftsToggle'
+import { DraftsSidebar, type DraftViewType } from '@/components/drafts/DraftsSidebar'
 import { EmailDraftsList, type EmailDraft } from '@/components/drafts/EmailDraftsList'
 import { SmsDraftsList, type SmsDraft } from '@/components/drafts/SmsDraftsList'
-import { DraftsFilters } from '@/components/drafts/DraftsFilters'
+import { CombinedDraftsList } from '@/components/drafts/CombinedDraftsList'
 import { EmailDraftOverlay } from '@/components/drafts/EmailDraftOverlay'
+import { SmsDraftOverlay } from '@/components/drafts/SmsDraftOverlay'
 import { Button } from '@/components/ui/Button'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { smsGenerationApi } from '@/api/smsGeneration'
@@ -14,13 +15,23 @@ import type { EmailDraft as ApiEmailDraft } from '@/types/emailGeneration'
 import type { SMSDraft } from '@/types/smsGeneration'
 
 export default function DraftsPage() {
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [activeView, setActiveView] = useState<DraftViewType>('all')
   const [activeTab, setActiveTab] = useState<'email' | 'sms'>('email')
   const [emailDrafts, setEmailDrafts] = useState<EmailDraft[]>([])
   const [smsDrafts, setSmsDrafts] = useState<SmsDraft[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [filters, setFilters] = useState<{ status?: string; search?: string }>({})
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [selectedEmailDraftIds, setSelectedEmailDraftIds] = useState<Set<number>>(new Set())
+  const [selectedSmsDraftIds, setSelectedSmsDraftIds] = useState<Set<number>>(new Set())
+  const [starredEmailDraftIds, setStarredEmailDraftIds] = useState<Set<number>>(new Set())
+  const [starredSmsDraftIds, setStarredSmsDraftIds] = useState<Set<number>>(new Set())
+  const [isBulkSending, setIsBulkSending] = useState(false)
   const [selectedEmailDraft, setSelectedEmailDraft] = useState<EmailDraft | null>(null)
+  const [selectedSmsDraft, setSelectedSmsDraft] = useState<SmsDraft | null>(null)
   const [isEmailOverlayOpen, setIsEmailOverlayOpen] = useState(false)
+  const [isSmsOverlayOpen, setIsSmsOverlayOpen] = useState(false)
   const [emailSpamCheckResult, setEmailSpamCheckResult] = useState<{
     score: number
     keywords: string[]
@@ -28,7 +39,11 @@ export default function DraftsPage() {
     blocked: boolean
   } | undefined>()
   const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 5
+  const itemsPerPage = 25 // Reduced from 50 to make pagination more visible
+  const [selectedDraftsNavigationIndex, setSelectedDraftsNavigationIndex] = useState(0)
+  const [selectedDraftsForNavigation, setSelectedDraftsForNavigation] = useState<EmailDraft[]>([])
+  const [selectedSmsDraftsForNavigation, setSelectedSmsDraftsForNavigation] = useState<SmsDraft[]>([])
+  const [selectedSmsDraftsNavigationIndex, setSelectedSmsDraftsNavigationIndex] = useState(0)
 
   // Transform API EmailDraft to component EmailDraft
   const transformEmailDraft = (apiDraft: ApiEmailDraft): EmailDraft => {
@@ -101,26 +116,141 @@ export default function DraftsPage() {
     }
   }
 
-  // Fetch drafts when tab changes
+  // Load starred drafts from localStorage
   useEffect(() => {
-    if (activeTab === 'email') {
+    const savedStarredEmails = localStorage.getItem('starredEmailDrafts')
+    const savedStarredSms = localStorage.getItem('starredSmsDrafts')
+    
+    if (savedStarredEmails) {
+      try {
+        const ids = JSON.parse(savedStarredEmails)
+        setStarredEmailDraftIds(new Set(ids))
+      } catch (e) {
+        console.error('Error loading starred emails:', e)
+      }
+    }
+    
+    if (savedStarredSms) {
+      try {
+        const ids = JSON.parse(savedStarredSms)
+        setStarredSmsDraftIds(new Set(ids))
+      } catch (e) {
+        console.error('Error loading starred SMS:', e)
+      }
+    }
+  }, [])
+
+  // Fetch drafts when view/tab changes
+  useEffect(() => {
+    // Fetch both types when view needs both (all, starred, sent, not-delivered)
+    if (activeView === 'all' || activeView === 'starred' || activeView === 'sent' || activeView === 'not-delivered') {
       fetchEmailDrafts()
-    } else {
       fetchSmsDrafts()
+    } else if (activeView === 'email') {
+      fetchEmailDrafts()
+    } else if (activeView === 'sms') {
+      fetchSmsDrafts()
+    } else {
+      // Fallback: fetch based on activeTab
+      if (activeTab === 'email') {
+        fetchEmailDrafts()
+      } else {
+        fetchSmsDrafts()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab])
+  }, [activeTab, activeView])
+
+  const handleViewChange = (view: DraftViewType) => {
+    setActiveView(view)
+    // Set active tab based on view
+    if (view === 'email') {
+      setActiveTab('email')
+    } else if (view === 'sms') {
+      setActiveTab('sms')
+    }
+    // Reset selection when changing views
+    setSelectedEmailDraftIds(new Set())
+    setSelectedSmsDraftIds(new Set())
+    setCurrentPage(1)
+  }
 
   const handleTabChange = (tab: 'email' | 'sms') => {
     setActiveTab(tab)
-    setFilters({}) // Reset filters on tab change
+    setSearchQuery('')
+    setStatusFilter('all')
+    setSelectedEmailDraftIds(new Set())
+    setSelectedSmsDraftIds(new Set())
+  }
+
+  // Toggle starred state for email drafts
+  const handleToggleEmailStar = (draftId: number) => {
+    const newStarred = new Set(starredEmailDraftIds)
+    if (newStarred.has(draftId)) {
+      newStarred.delete(draftId)
+    } else {
+      newStarred.add(draftId)
+    }
+    setStarredEmailDraftIds(newStarred)
+    // Save to localStorage
+    localStorage.setItem('starredEmailDrafts', JSON.stringify(Array.from(newStarred)))
+  }
+
+  // Toggle starred state for SMS drafts
+  const handleToggleSmsStar = (draftId: number) => {
+    const newStarred = new Set(starredSmsDraftIds)
+    if (newStarred.has(draftId)) {
+      newStarred.delete(draftId)
+    } else {
+      newStarred.add(draftId)
+    }
+    setStarredSmsDraftIds(newStarred)
+    // Save to localStorage
+    localStorage.setItem('starredSmsDrafts', JSON.stringify(Array.from(newStarred)))
   }
 
   const [currentDraftIndex, setCurrentDraftIndex] = useState<number>(0)
 
-  const handleViewDraft = async (draftId: number) => {
-    if (activeTab === 'email') {
-      // Find the draft from the list
+  const handleViewDraft = async (draftId: number, type?: 'email' | 'sms') => {
+    // Determine type from draftId if not provided
+    let draftType: 'email' | 'sms' = type || activeTab
+    if (!type) {
+      // Try to find in email drafts first
+      const emailDraft = filteredEmailDrafts.find(d => d.id === draftId)
+      const smsDraft = filteredSmsDrafts.find(d => d.id === draftId)
+      if (emailDraft) draftType = 'email'
+      else if (smsDraft) draftType = 'sms'
+    }
+
+    if (draftType === 'email') {
+      // Check if viewing from selected drafts
+      const selectedDrafts = filteredEmailDrafts.filter(d => selectedEmailDraftIds.has(d.id))
+      
+      if (selectedDrafts.length > 0) {
+        // Navigate through selected drafts
+        const draftIndex = selectedDrafts.findIndex(d => d.id === draftId)
+        if (draftIndex !== -1) {
+          setSelectedDraftsForNavigation(selectedDrafts)
+          setSelectedDraftsNavigationIndex(draftIndex)
+          const draft = selectedDrafts[draftIndex]
+          setCurrentDraftIndex(draftIndex)
+          setSelectedEmailDraft(draft)
+          setIsEmailOverlayOpen(true)
+          
+          // Fetch spam check result
+          try {
+            const spamRes = await emailGenerationApi.checkSpam({ draftId })
+            if (spamRes.success && spamRes.data) {
+              setEmailSpamCheckResult(spamRes.data)
+            }
+          } catch (err) {
+            console.error('Error fetching draft details:', err)
+          }
+          return
+        }
+      }
+      
+      // Fallback to filtered drafts navigation
       const draftIndex = filteredEmailDrafts.findIndex(d => d.id === draftId)
       const draft = filteredEmailDrafts[draftIndex]
       if (draft) {
@@ -128,14 +258,8 @@ export default function DraftsPage() {
         setSelectedEmailDraft(draft)
         setIsEmailOverlayOpen(true)
         
-        // Optionally fetch full draft details and spam check
+        // Fetch spam check result
         try {
-          const fullDraftRes = await emailGenerationApi.getEmailDraft(draftId)
-          if (fullDraftRes.success && fullDraftRes.data) {
-            // Update draft with full details if needed
-          }
-          
-          // Fetch spam check result
           const spamRes = await emailGenerationApi.checkSpam({ draftId })
           if (spamRes.success && spamRes.data) {
             setEmailSpamCheckResult(spamRes.data)
@@ -145,26 +269,65 @@ export default function DraftsPage() {
         }
       }
     } else {
-      // SMS view logic (to be implemented)
-      console.log(`View SMS draft:`, draftId)
+      // SMS view logic
+      // Check if viewing from selected drafts
+      const selectedDrafts = filteredSmsDrafts.filter(d => selectedSmsDraftIds.has(d.id))
+      
+      if (selectedDrafts.length > 0) {
+        // Navigate through selected drafts
+        const draftIndex = selectedDrafts.findIndex(d => d.id === draftId)
+        if (draftIndex !== -1) {
+          setSelectedSmsDraftsForNavigation(selectedDrafts)
+          setSelectedSmsDraftsNavigationIndex(draftIndex)
+          const draft = selectedDrafts[draftIndex]
+          setSelectedSmsDraft(draft)
+          setIsSmsOverlayOpen(true)
+          return
+        }
+      }
+      
+      // Fallback to filtered drafts navigation
+      const draftIndex = filteredSmsDrafts.findIndex(d => d.id === draftId)
+      const draft = filteredSmsDrafts[draftIndex]
+      if (draft) {
+        setSelectedSmsDraft(draft)
+        setIsSmsOverlayOpen(true)
+      }
     }
   }
 
   const handleNextEmailDraft = async () => {
+    // Navigate through selected drafts if available
+    if (selectedDraftsForNavigation.length > 0) {
+      const nextIndex = selectedDraftsNavigationIndex + 1
+      if (nextIndex < selectedDraftsForNavigation.length) {
+        const nextDraft = selectedDraftsForNavigation[nextIndex]
+        setSelectedDraftsNavigationIndex(nextIndex)
+        setCurrentDraftIndex(nextIndex)
+        setSelectedEmailDraft(nextDraft)
+        
+        // Fetch spam check result
+        try {
+          const spamRes = await emailGenerationApi.checkSpam({ draftId: nextDraft.id })
+          if (spamRes.success && spamRes.data) {
+            setEmailSpamCheckResult(spamRes.data)
+          }
+        } catch (err) {
+          console.error('Error fetching draft details:', err)
+        }
+      }
+      return
+    }
+    
+    // Fallback to filtered drafts
     const nextIndex = currentDraftIndex + 1
     if (nextIndex < filteredEmailDrafts.length) {
       const nextDraft = filteredEmailDrafts[nextIndex]
       setCurrentDraftIndex(nextIndex)
       setSelectedEmailDraft(nextDraft)
       
-      // Fetch full draft details and spam check for next draft
+      // Fetch spam check result
       try {
-        const fullDraftRes = await emailGenerationApi.getEmailDraft(nextDraft.id)
-        if (fullDraftRes.success && fullDraftRes.data) {
-          // Update draft with full details if needed
-        }
-        
-        // Fetch spam check result
         const spamRes = await emailGenerationApi.checkSpam({ draftId: nextDraft.id })
         if (spamRes.success && spamRes.data) {
           setEmailSpamCheckResult(spamRes.data)
@@ -175,10 +338,104 @@ export default function DraftsPage() {
     }
   }
 
+  const handlePreviousEmailDraft = async () => {
+    // Navigate through selected drafts if available
+    if (selectedDraftsForNavigation.length > 0) {
+      const prevIndex = selectedDraftsNavigationIndex - 1
+      if (prevIndex >= 0) {
+        const prevDraft = selectedDraftsForNavigation[prevIndex]
+        setSelectedDraftsNavigationIndex(prevIndex)
+        setCurrentDraftIndex(prevIndex)
+        setSelectedEmailDraft(prevDraft)
+        
+        // Fetch spam check result
+        try {
+          const spamRes = await emailGenerationApi.checkSpam({ draftId: prevDraft.id })
+          if (spamRes.success && spamRes.data) {
+            setEmailSpamCheckResult(spamRes.data)
+          }
+        } catch (err) {
+          console.error('Error fetching draft details:', err)
+        }
+      }
+      return
+    }
+    
+    // Fallback to filtered drafts
+    const prevIndex = currentDraftIndex - 1
+    if (prevIndex >= 0) {
+      const prevDraft = filteredEmailDrafts[prevIndex]
+      setCurrentDraftIndex(prevIndex)
+      setSelectedEmailDraft(prevDraft)
+      
+      // Fetch spam check result
+      try {
+        const spamRes = await emailGenerationApi.checkSpam({ draftId: prevDraft.id })
+        if (spamRes.success && spamRes.data) {
+          setEmailSpamCheckResult(spamRes.data)
+        }
+      } catch (err) {
+        console.error('Error fetching draft details:', err)
+      }
+    }
+  }
+
+  // SMS draft navigation handlers
+  const handleNextSmsDraft = async () => {
+    // Navigate through selected drafts if available
+    if (selectedSmsDraftsForNavigation.length > 0) {
+      const nextIndex = selectedSmsDraftsNavigationIndex + 1
+      if (nextIndex < selectedSmsDraftsForNavigation.length) {
+        const nextDraft = selectedSmsDraftsForNavigation[nextIndex]
+        setSelectedSmsDraftsNavigationIndex(nextIndex)
+        setSelectedSmsDraft(nextDraft)
+      }
+      return
+    }
+    
+    // Fallback to filtered drafts
+    const currentIndex = filteredSmsDrafts.findIndex(d => d.id === selectedSmsDraft?.id)
+    const nextIndex = currentIndex + 1
+    if (nextIndex < filteredSmsDrafts.length) {
+      const nextDraft = filteredSmsDrafts[nextIndex]
+      setSelectedSmsDraft(nextDraft)
+    }
+  }
+
+  const handlePreviousSmsDraft = async () => {
+    // Navigate through selected drafts if available
+    if (selectedSmsDraftsForNavigation.length > 0) {
+      const prevIndex = selectedSmsDraftsNavigationIndex - 1
+      if (prevIndex >= 0) {
+        const prevDraft = selectedSmsDraftsForNavigation[prevIndex]
+        setSelectedSmsDraftsNavigationIndex(prevIndex)
+        setSelectedSmsDraft(prevDraft)
+      }
+      return
+    }
+    
+    // Fallback to filtered drafts
+    const currentIndex = filteredSmsDrafts.findIndex(d => d.id === selectedSmsDraft?.id)
+    const prevIndex = currentIndex - 1
+    if (prevIndex >= 0) {
+      const prevDraft = filteredSmsDrafts[prevIndex]
+      setSelectedSmsDraft(prevDraft)
+    }
+  }
+
   const handleCloseEmailOverlay = () => {
     setIsEmailOverlayOpen(false)
     setSelectedEmailDraft(null)
     setEmailSpamCheckResult(undefined)
+    setSelectedDraftsForNavigation([])
+    setSelectedDraftsNavigationIndex(0)
+  }
+
+  const handleCloseSmsOverlay = () => {
+    setIsSmsOverlayOpen(false)
+    setSelectedSmsDraft(null)
+    setSelectedSmsDraftsForNavigation([])
+    setSelectedSmsDraftsNavigationIndex(0)
   }
 
   const handleEditEmailDraft = (draftId: number) => {
@@ -217,119 +474,798 @@ export default function DraftsPage() {
     if (activeTab === 'email') {
       handleSendEmailDraft(draftId)
     } else {
-      console.log(`Send ${activeTab} draft:`, draftId)
-      // TODO: Implement SMS send
+      handleSendSmsDraft(draftId)
     }
   }
 
-  // Filter drafts based on filters
-  const filteredEmailDrafts = emailDrafts.filter(draft => {
-    if (filters.status && draft.status !== filters.status) {
-      return false
+  const handleSendSmsDraft = async (draftId: number) => {
+    try {
+      const res = await smsGenerationApi.sendSmsDraft(draftId)
+      if (res.success) {
+        alert('SMS sent successfully!')
+        handleCloseSmsOverlay()
+        // Refresh SMS drafts
+        fetchSmsDrafts()
+      } else {
+        alert('Failed to send SMS: ' + (res.error || 'Unknown error'))
+      }
+    } catch (err) {
+      console.error('Error sending SMS:', err)
+      alert('Error sending SMS: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase()
-      return (
+  }
+
+  // Filter drafts based on active view, search, and status
+  const getFilteredEmailDrafts = () => {
+    let drafts = emailDrafts
+
+    // Filter by active view from sidebar
+    if (activeView === 'email') {
+      // Already filtered by activeTab
+    } else if (activeView === 'sms') {
+      return [] // Don't show email drafts when SMS view is active
+    } else if (activeView === 'starred') {
+      drafts = drafts.filter(d => starredEmailDraftIds.has(d.id))
+    } else if (activeView === 'sent') {
+      drafts = drafts.filter(d => d.status === 'sent')
+    } else if (activeView === 'not-delivered') {
+      // Filter drafts that haven't been sent or failed delivery
+      drafts = drafts.filter(d => d.status === 'draft')
+    }
+
+    // Filter by status filter (from dropdown)
+    if (statusFilter === 'starred' && !starredEmailDraftIds.has(drafts[0]?.id || 0)) {
+      // Already handled by activeView
+    } else if (statusFilter !== 'all' && statusFilter !== 'starred') {
+      drafts = drafts.filter(d => d.status === statusFilter)
+    }
+
+    // Filter by search query
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase()
+      drafts = drafts.filter(draft =>
         draft.contactName?.toLowerCase().includes(searchLower) ||
         draft.contactEmail?.toLowerCase().includes(searchLower) ||
         draft.subject?.toLowerCase().includes(searchLower) ||
         draft.body?.toLowerCase().includes(searchLower)
       )
     }
-    return true
-  })
 
-  const filteredSmsDrafts = smsDrafts.filter(draft => {
-    if (filters.status && draft.status !== filters.status) {
-      return false
+    return drafts
+  }
+
+  const getFilteredSmsDrafts = () => {
+    let drafts = smsDrafts
+
+    // Filter by active view from sidebar
+    if (activeView === 'sms') {
+      // Already filtered by activeTab
+    } else if (activeView === 'email') {
+      return [] // Don't show SMS drafts when email view is active
+    } else if (activeView === 'starred') {
+      drafts = drafts.filter(d => starredSmsDraftIds.has(d.id))
+    } else if (activeView === 'sent') {
+      drafts = drafts.filter(d => d.status === 'sent')
+    } else if (activeView === 'not-delivered') {
+      // Filter drafts that haven't been sent
+      drafts = drafts.filter(d => d.status === 'draft')
     }
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase()
-      return (
+
+    // Filter by status filter (from dropdown)
+    if (statusFilter === 'starred') {
+      // Already handled by activeView
+    } else if (statusFilter !== 'all' && statusFilter !== 'starred') {
+      drafts = drafts.filter(d => d.status === statusFilter)
+    }
+
+    // Filter by search query
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase()
+      drafts = drafts.filter(draft =>
         draft.contactName?.toLowerCase().includes(searchLower) ||
         draft.contactPhone?.toLowerCase().includes(searchLower) ||
         draft.message?.toLowerCase().includes(searchLower)
       )
     }
-    return true
-  })
+
+    return drafts
+  }
+
+  const filteredEmailDrafts = getFilteredEmailDrafts()
+  const filteredSmsDrafts = getFilteredSmsDrafts()
+
+  // Calculate counts for sidebar - use ALL drafts (not filtered) for accurate sidebar counts
+  // These counts should reflect the total available, not what's currently filtered or visible
+  // "All Drafts" should show ALL drafts regardless of status (draft, sent, delivered)
+  const allDraftsCount = emailDrafts.length + smsDrafts.length
+  const emailDraftCount = emailDrafts.filter(d => d.status === 'draft').length
+  const smsDraftCount = smsDrafts.filter(d => d.status === 'draft').length
+  const sentCount = emailDrafts.filter(d => d.status === 'sent').length + smsDrafts.filter(d => d.status === 'sent').length
+  const notDeliveredCount = emailDrafts.filter(d => d.status === 'draft').length + smsDrafts.filter(d => d.status === 'draft').length
+  const starredCount = starredEmailDraftIds.size + starredSmsDraftIds.size
+
+  // For "all" view, combine both email and SMS drafts together
+  // Group by contactId to show both email and SMS for same person
+  type CombinedDraft = {
+    type: 'email' | 'sms'
+    draft: EmailDraft | SmsDraft
+    contactId: number
+  }
+
+  let displayDrafts: (EmailDraft | SmsDraft)[]
+  let combinedDrafts: CombinedDraft[] = []
+  let isEmailView: boolean
+  let showCombinedView = false
+
+  if (activeView === 'all') {
+    // Combine both email and SMS drafts for "all" view
+    showCombinedView = true
+    combinedDrafts = [
+      ...filteredEmailDrafts.map(d => ({ type: 'email' as const, draft: d, contactId: d.contactId })),
+      ...filteredSmsDrafts.map(d => ({ type: 'sms' as const, draft: d, contactId: d.contactId }))
+    ]
+    // Sort by contactId, then by type (email first), then by date
+    combinedDrafts.sort((a, b) => {
+      if (a.contactId !== b.contactId) return a.contactId - b.contactId
+      if (a.type !== b.type) return a.type === 'email' ? -1 : 1
+      const aDate = new Date(a.draft.createdAt).getTime()
+      const bDate = new Date(b.draft.createdAt).getTime()
+      return bDate - aDate
+    })
+    displayDrafts = combinedDrafts.map(c => c.draft)
+    isEmailView = true // Default to email view for rendering
+  } else if (activeView === 'starred') {
+    // Combine starred email and SMS drafts
+    showCombinedView = true
+    combinedDrafts = [
+      ...filteredEmailDrafts.map(d => ({ type: 'email' as const, draft: d, contactId: d.contactId })),
+      ...filteredSmsDrafts.map(d => ({ type: 'sms' as const, draft: d, contactId: d.contactId }))
+    ]
+    combinedDrafts.sort((a, b) => {
+      if (a.contactId !== b.contactId) return a.contactId - b.contactId
+      if (a.type !== b.type) return a.type === 'email' ? -1 : 1
+      const aDate = new Date(a.draft.createdAt).getTime()
+      const bDate = new Date(b.draft.createdAt).getTime()
+      return bDate - aDate
+    })
+    displayDrafts = combinedDrafts.map(c => c.draft)
+    isEmailView = true
+  } else if (activeView === 'email') {
+    displayDrafts = filteredEmailDrafts
+    isEmailView = true
+  } else if (activeView === 'sms') {
+    displayDrafts = filteredSmsDrafts
+    isEmailView = false
+  } else if (activeView === 'sent' || activeView === 'not-delivered') {
+    // For sent/not-delivered, combine both types
+    showCombinedView = true
+    combinedDrafts = [
+      ...filteredEmailDrafts.map(d => ({ type: 'email' as const, draft: d, contactId: d.contactId })),
+      ...filteredSmsDrafts.map(d => ({ type: 'sms' as const, draft: d, contactId: d.contactId }))
+    ]
+    combinedDrafts.sort((a, b) => {
+      if (a.contactId !== b.contactId) return a.contactId - b.contactId
+      if (a.type !== b.type) return a.type === 'email' ? -1 : 1
+      const aDate = new Date(a.draft.createdAt).getTime()
+      const bDate = new Date(b.draft.createdAt).getTime()
+      return bDate - aDate
+    })
+    displayDrafts = combinedDrafts.map(c => c.draft)
+    isEmailView = true
+  } else {
+    displayDrafts = filteredEmailDrafts
+    isEmailView = true
+  }
+
+  // Selection handlers for email drafts
+  const handleEmailDraftSelect = (draftId: number, selected: boolean) => {
+    const newSelected = new Set(selectedEmailDraftIds)
+    if (selected) {
+      newSelected.add(draftId)
+    } else {
+      newSelected.delete(draftId)
+    }
+    setSelectedEmailDraftIds(newSelected)
+    
+    // If we're in navigation mode, update the navigation array and index
+    if (selectedDraftsForNavigation.length > 0) {
+      const updatedNavDrafts = selectedDraftsForNavigation.filter(d => newSelected.has(d.id))
+      setSelectedDraftsForNavigation(updatedNavDrafts)
+      
+      // If current draft was unselected, move to next available or previous
+      if (!selected && selectedEmailDraft?.id === draftId) {
+        const currentIndexInNav = updatedNavDrafts.findIndex(d => d.id === draftId)
+        if (currentIndexInNav >= 0 && currentIndexInNav < updatedNavDrafts.length) {
+          // Draft still in list, update index
+          setSelectedDraftsNavigationIndex(currentIndexInNav)
+          setCurrentDraftIndex(currentIndexInNav)
+          setSelectedEmailDraft(updatedNavDrafts[currentIndexInNav])
+        } else if (updatedNavDrafts.length > 0) {
+          // Draft was removed, move to first available or last
+          const newIndex = Math.min(selectedDraftsNavigationIndex, updatedNavDrafts.length - 1)
+          setSelectedDraftsNavigationIndex(newIndex)
+          setCurrentDraftIndex(newIndex)
+          setSelectedEmailDraft(updatedNavDrafts[newIndex])
+        } else {
+          // No more drafts selected, close overlay
+          handleCloseEmailOverlay()
+        }
+      } else {
+        // Update index if needed to stay within bounds
+        const newIndex = Math.min(selectedDraftsNavigationIndex, updatedNavDrafts.length - 1)
+        if (newIndex !== selectedDraftsNavigationIndex) {
+          setSelectedDraftsNavigationIndex(newIndex)
+          setCurrentDraftIndex(newIndex)
+          if (updatedNavDrafts[newIndex]) {
+            setSelectedEmailDraft(updatedNavDrafts[newIndex])
+          }
+        }
+      }
+    }
+  }
+
+  const handleEmailDraftSelectAll = (selected: boolean) => {
+    if (selected) {
+      const emailDraftsInPage = paginatedDrafts.filter((d): d is EmailDraft => 'subject' in d)
+      setSelectedEmailDraftIds(new Set(emailDraftsInPage.map(d => d.id)))
+    } else {
+      setSelectedEmailDraftIds(new Set())
+    }
+  }
+
+  // Selection handlers for SMS drafts
+  const handleSmsDraftSelect = (draftId: number, selected: boolean) => {
+    const newSelected = new Set(selectedSmsDraftIds)
+    if (selected) {
+      newSelected.add(draftId)
+    } else {
+      newSelected.delete(draftId)
+    }
+    setSelectedSmsDraftIds(newSelected)
+    
+    // If we're in navigation mode, update the navigation array and index
+    if (selectedSmsDraftsForNavigation.length > 0) {
+      const updatedNavDrafts = selectedSmsDraftsForNavigation.filter(d => newSelected.has(d.id))
+      setSelectedSmsDraftsForNavigation(updatedNavDrafts)
+      
+      // If current draft was unselected, move to next available or previous
+      if (!selected && selectedSmsDraft?.id === draftId) {
+        const currentIndexInNav = updatedNavDrafts.findIndex(d => d.id === draftId)
+        if (currentIndexInNav >= 0 && currentIndexInNav < updatedNavDrafts.length) {
+          // Draft still in list, update index
+          setSelectedSmsDraftsNavigationIndex(currentIndexInNav)
+          setSelectedSmsDraft(updatedNavDrafts[currentIndexInNav])
+        } else if (updatedNavDrafts.length > 0) {
+          // Draft was removed, move to first available or last
+          const newIndex = Math.min(selectedSmsDraftsNavigationIndex, updatedNavDrafts.length - 1)
+          setSelectedSmsDraftsNavigationIndex(newIndex)
+          setSelectedSmsDraft(updatedNavDrafts[newIndex])
+        } else {
+          // No more drafts selected, close overlay
+          handleCloseSmsOverlay()
+        }
+      } else {
+        // Update index if needed to stay within bounds
+        const newIndex = Math.min(selectedSmsDraftsNavigationIndex, updatedNavDrafts.length - 1)
+        if (newIndex !== selectedSmsDraftsNavigationIndex) {
+          setSelectedSmsDraftsNavigationIndex(newIndex)
+          if (updatedNavDrafts[newIndex]) {
+            setSelectedSmsDraft(updatedNavDrafts[newIndex])
+          }
+        }
+      }
+    }
+  }
+
+  const handleSmsDraftSelectAll = (selected: boolean) => {
+    if (selected) {
+      const smsDraftsInPage = paginatedDrafts.filter((d): d is SmsDraft => 'message' in d)
+      setSelectedSmsDraftIds(new Set(smsDraftsInPage.map(d => d.id)))
+    } else {
+      setSelectedSmsDraftIds(new Set())
+    }
+  }
+
+  // Open overlay to review selected email drafts before sending
+  const handleReviewEmailDraftsBeforeSend = async () => {
+    if (selectedEmailDraftIds.size === 0) return
+
+    const selectedDrafts = filteredEmailDrafts.filter(d => selectedEmailDraftIds.has(d.id))
+    if (selectedDrafts.length === 0) return
+
+    // Set up navigation through selected drafts
+    setSelectedDraftsForNavigation(selectedDrafts)
+    setSelectedDraftsNavigationIndex(0)
+    const firstDraft = selectedDrafts[0]
+    setCurrentDraftIndex(0)
+    setSelectedEmailDraft(firstDraft)
+    setIsEmailOverlayOpen(true)
+    
+    // Fetch spam check for first draft
+    try {
+      const spamRes = await emailGenerationApi.checkSpam({ draftId: firstDraft.id })
+      if (spamRes.success && spamRes.data) {
+        setEmailSpamCheckResult(spamRes.data)
+      }
+    } catch (err) {
+      console.error('Error fetching draft details:', err)
+    }
+  }
+
+  // Actual bulk send email drafts (executed from overlay)
+  const handleBulkSendEmailDrafts = async () => {
+    if (selectedEmailDraftIds.size === 0) return
+
+    setIsBulkSending(true)
+    const draftIds = Array.from(selectedEmailDraftIds)
+    const results = { success: 0, failed: 0, errors: [] as string[] }
+
+    try {
+      // Send emails one by one
+      for (const draftId of draftIds) {
+        try {
+          const res = await emailGenerationApi.sendEmailDraft(draftId)
+          if (res.success) {
+            results.success++
+          } else {
+            results.failed++
+            results.errors.push(`Draft ${draftId}: ${res.error || 'Unknown error'}`)
+          }
+        } catch (err) {
+          results.failed++
+          results.errors.push(`Draft ${draftId}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+        }
+      }
+
+      // Show results
+      if (results.failed === 0) {
+        alert(`Successfully sent ${results.success} email(s)!`)
+      } else {
+        alert(`Sent ${results.success} email(s), ${results.failed} failed.\n\nErrors:\n${results.errors.join('\n')}`)
+      }
+
+      // Refresh drafts and clear selection
+      setSelectedEmailDraftIds(new Set())
+      setSelectedDraftsForNavigation([])
+      setSelectedDraftsNavigationIndex(0)
+      handleCloseEmailOverlay()
+      fetchEmailDrafts()
+    } catch (err) {
+      console.error('Error in bulk send:', err)
+      alert('Error sending emails: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setIsBulkSending(false)
+    }
+  }
+
+  // Open overlay to review selected SMS drafts before sending
+  const handleReviewSmsDraftsBeforeSend = async () => {
+    if (selectedSmsDraftIds.size === 0) return
+
+    const selectedDrafts = filteredSmsDrafts.filter(d => selectedSmsDraftIds.has(d.id))
+    if (selectedDrafts.length === 0) return
+
+    // Set up navigation through selected drafts
+    setSelectedSmsDraftsForNavigation(selectedDrafts)
+    setSelectedSmsDraftsNavigationIndex(0)
+    const firstDraft = selectedDrafts[0]
+    setSelectedSmsDraft(firstDraft)
+    setIsSmsOverlayOpen(true)
+  }
+
+  // Actual bulk send SMS drafts (executed from overlay or directly)
+  const handleBulkSendSmsDrafts = async () => {
+    if (selectedSmsDraftIds.size === 0) return
+
+    setIsBulkSending(true)
+    const draftIds = Array.from(selectedSmsDraftIds)
+    const results = { success: 0, failed: 0, errors: [] as string[] }
+
+    try {
+      // Send SMS one by one
+      for (const draftId of draftIds) {
+        try {
+          const res = await smsGenerationApi.sendSmsDraft(draftId)
+          if (res.success) {
+            results.success++
+          } else {
+            results.failed++
+            results.errors.push(`Draft ${draftId}: ${res.error || 'Unknown error'}`)
+          }
+        } catch (err) {
+          results.failed++
+          results.errors.push(`Draft ${draftId}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+        }
+      }
+
+      // Show results
+      if (results.failed === 0) {
+        alert(`Successfully sent ${results.success} SMS(s)!`)
+      } else {
+        alert(`Sent ${results.success} SMS(s), ${results.failed} failed.\n\nErrors:\n${results.errors.join('\n')}`)
+      }
+
+      // Refresh drafts and clear selection
+      setSelectedSmsDraftIds(new Set())
+      fetchSmsDrafts()
+    } catch (err) {
+      console.error('Error in bulk send SMS:', err)
+      alert('Error sending SMS: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setIsBulkSending(false)
+    }
+  }
+
+  // Open overlay to review selected drafts before sending (for combined email + SMS)
+  const handleReviewAllDraftsBeforeSend = async () => {
+    const totalSelected = selectedEmailDraftIds.size + selectedSmsDraftIds.size
+    if (totalSelected === 0) return
+
+    // Prioritize email drafts for review (since we have email overlay)
+    // If there are email drafts, review those first
+    if (selectedEmailDraftIds.size > 0) {
+      await handleReviewEmailDraftsBeforeSend()
+    } else if (selectedSmsDraftIds.size > 0) {
+      // Only SMS drafts, open SMS overlay
+      await handleReviewSmsDraftsBeforeSend()
+    }
+  }
+
+  // Actual bulk send both email and SMS to same person (executed from overlay)
+  const handleBulkSendToSamePerson = async () => {
+    const totalSelected = selectedEmailDraftIds.size + selectedSmsDraftIds.size
+    if (totalSelected === 0) return
+
+    setIsBulkSending(true)
+    const results = { 
+      emailSuccess: 0, 
+      emailFailed: 0, 
+      smsSuccess: 0, 
+      smsFailed: 0,
+      errors: [] as string[] 
+    }
+
+    try {
+      // Send emails
+      for (const draftId of Array.from(selectedEmailDraftIds)) {
+        try {
+          const res = await emailGenerationApi.sendEmailDraft(draftId)
+          if (res.success) {
+            results.emailSuccess++
+          } else {
+            results.emailFailed++
+            results.errors.push(`Email ${draftId}: ${res.error || 'Unknown error'}`)
+          }
+        } catch (err) {
+          results.emailFailed++
+          results.errors.push(`Email ${draftId}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+        }
+      }
+
+      // Send SMS
+      for (const draftId of Array.from(selectedSmsDraftIds)) {
+        try {
+          const res = await smsGenerationApi.sendSmsDraft(draftId)
+          if (res.success) {
+            results.smsSuccess++
+          } else {
+            results.smsFailed++
+            results.errors.push(`SMS ${draftId}: ${res.error || 'Unknown error'}`)
+          }
+        } catch (err) {
+          results.smsFailed++
+          results.errors.push(`SMS ${draftId}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+        }
+      }
+
+      // Show results
+      const allSuccess = results.emailFailed === 0 && results.smsFailed === 0
+      if (allSuccess) {
+        alert(`Successfully sent ${results.emailSuccess} email(s) and ${results.smsSuccess} SMS(s)!`)
+      } else {
+        alert(
+          `Sent ${results.emailSuccess} email(s) (${results.emailFailed} failed) and ${results.smsSuccess} SMS(s) (${results.smsFailed} failed).\n\nErrors:\n${results.errors.join('\n')}`
+        )
+      }
+
+      // Refresh drafts and clear selection
+      setSelectedEmailDraftIds(new Set())
+      setSelectedSmsDraftIds(new Set())
+      setSelectedDraftsForNavigation([])
+      setSelectedDraftsNavigationIndex(0)
+      handleCloseEmailOverlay()
+      fetchEmailDrafts()
+      fetchSmsDrafts()
+    } catch (err) {
+      console.error('Error in bulk send:', err)
+      alert('Error sending messages: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setIsBulkSending(false)
+    }
+  }
 
   // Pagination logic
-  const totalEmailPages = Math.ceil(filteredEmailDrafts.length / itemsPerPage)
-  const totalSmsPages = Math.ceil(filteredSmsDrafts.length / itemsPerPage)
-  const currentTotalPages = activeTab === 'email' ? totalEmailPages : totalSmsPages
-
-  const paginatedEmailDrafts = filteredEmailDrafts.slice(
+  const totalDrafts = showCombinedView ? combinedDrafts.length : displayDrafts.length
+  const totalPages = Math.ceil(totalDrafts / itemsPerPage)
+  const paginatedDrafts = displayDrafts.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   )
 
-  const paginatedSmsDrafts = filteredSmsDrafts.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
+  // isEmailView is now determined above
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
   }
 
-  // Reset to page 1 when filters change or tab changes
+  // Reset to page 1 when filters change, tab changes, or view changes
   useEffect(() => {
     setCurrentPage(1)
-  }, [filters, activeTab])
+  }, [searchQuery, statusFilter, activeTab, activeView])
+
+  const hasSelection = selectedEmailDraftIds.size > 0 || selectedSmsDraftIds.size > 0
+  const hasBothSelected = selectedEmailDraftIds.size > 0 && selectedSmsDraftIds.size > 0
+  const totalSelected = selectedEmailDraftIds.size + selectedSmsDraftIds.size
 
   return (
     <AuthGuard>
-      <div className="bg-gray-50 min-h-screen">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
-          <div className="space-y-4">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Drafts Management</h1>
-                <p className="text-sm text-gray-500 mt-1">
-                  View and manage your email and SMS drafts
-                </p>
+      <div className="flex h-[calc(100vh-64px)] bg-gray-50 overflow-hidden">
+        {/* Sidebar */}
+        <DraftsSidebar
+          isCollapsed={isSidebarCollapsed}
+          activeView={activeView}
+          activeTab={activeTab}
+          onViewChange={handleViewChange}
+          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          allDraftsCount={allDraftsCount}
+          emailDraftCount={emailDraftCount}
+          smsDraftCount={smsDraftCount}
+          sentCount={sentCount}
+          notDeliveredCount={notDeliveredCount}
+          starredCount={starredCount}
+        />
+
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Top Bar */}
+          <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
+            <div className="flex items-center gap-2 px-8 py-3 min-h-[60px]">
+              {/* Logo/Title */}
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-semibold text-gray-900">
+                  {activeView === 'all' ? 'All Drafts' : 
+                   activeView === 'email' ? 'Email Drafts' :
+                   activeView === 'sms' ? 'SMS Drafts' :
+                   activeView === 'starred' ? 'Starred' :
+                   activeView === 'sent' ? 'Sent' :
+                   activeView === 'not-delivered' ? 'Not Delivered' : 'Drafts'}
+                </h1>
               </div>
               
-              <DraftsToggle
-                activeTab={activeTab}
-                onTabChange={handleTabChange}
-                emailCount={emailDrafts.length}
-                smsCount={smsDrafts.length}
-              />
+              {/* Search Bar */}
+              <div className="flex-1 flex items-center gap-3 ml-4">
+                <div className="flex-1 relative max-w-2xl">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search drafts..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  />
+                  <button
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    title="Show search options"
+                  >
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="relative">
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2.5 pr-8 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="draft">Draft</option>
+                    <option value="sent">Sent</option>
+                    <option value="delivered">Delivered</option>
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <DraftsFilters
-              type={activeTab}
-              filters={filters}
-              onFilterChange={setFilters}
-            />
+            </div>
 
-            {activeTab === 'email' ? (
+          {/* Bulk Action Toolbar */}
+          {hasSelection && (
+            <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-700 font-medium">
+                  {totalSelected} selected
+                  {hasBothSelected && (
+                    <span className="ml-2 text-xs text-gray-500">
+                      ({selectedEmailDraftIds.size} email, {selectedSmsDraftIds.size} SMS)
+                    </span>
+                  )}
+                </span>
+                <div className="flex items-center gap-2">
+                  {showCombinedView && hasBothSelected ? (
+                     // Show combined send option when both types are selected
+                     <Button
+                       variant="primary"
+                       size="sm"
+                       onClick={handleReviewAllDraftsBeforeSend}
+                       isLoading={isBulkSending}
+                       disabled={isBulkSending}
+                       leftIcon={
+                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                         </svg>
+                       }
+                     >
+                       Review & Send All ({totalSelected})
+                     </Button>
+                   ) : (
+                     <>
+                       {selectedEmailDraftIds.size > 0 && (
+                         <Button
+                           variant="primary"
+                           size="sm"
+                           onClick={handleReviewEmailDraftsBeforeSend}
+                           isLoading={isBulkSending}
+                           disabled={isBulkSending}
+                           leftIcon={
+                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                             </svg>
+                           }
+                         >
+                           Review & Send Email ({selectedEmailDraftIds.size})
+                         </Button>
+                       )}
+                       {selectedSmsDraftIds.size > 0 && (
+                         <Button
+                           variant="primary"
+                           size="sm"
+                           onClick={handleReviewSmsDraftsBeforeSend}
+                           isLoading={isBulkSending}
+                           disabled={isBulkSending}
+                           leftIcon={
+                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                             </svg>
+                           }
+                         >
+                           Send SMS ({selectedSmsDraftIds.size})
+                         </Button>
+                       )}
+                     </>
+                   )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedEmailDraftIds(new Set())
+                      setSelectedSmsDraftIds(new Set())
+                    }}
+                  >
+                    Clear Selection
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Main Content */}
+          <div className="flex-1 overflow-y-auto bg-white">
+            <div className="px-4 py-4">
+              {showCombinedView ? (
+                <CombinedDraftsList
+                  combinedDrafts={combinedDrafts.slice(
+                    (currentPage - 1) * itemsPerPage,
+                    currentPage * itemsPerPage
+                  )}
+                  isLoading={isLoading}
+                  selectedEmailIds={selectedEmailDraftIds}
+                  selectedSmsIds={selectedSmsDraftIds}
+                  starredEmailIds={starredEmailDraftIds}
+                  starredSmsIds={starredSmsDraftIds}
+                  onEmailSelect={handleEmailDraftSelect}
+                  onSmsSelect={handleSmsDraftSelect}
+                  onSelectAll={(selected) => {
+                    if (selected) {
+                      const paginated = combinedDrafts.slice(
+                        (currentPage - 1) * itemsPerPage,
+                        currentPage * itemsPerPage
+                      )
+                      const emailIds = paginated.filter(c => c.type === 'email').map(c => c.draft.id)
+                      const smsIds = paginated.filter(c => c.type === 'sms').map(c => c.draft.id)
+                      setSelectedEmailDraftIds(new Set(emailIds))
+                      setSelectedSmsDraftIds(new Set(smsIds))
+                    } else {
+                      setSelectedEmailDraftIds(new Set())
+                      setSelectedSmsDraftIds(new Set())
+                    }
+                  }}
+                  onToggleEmailStar={handleToggleEmailStar}
+                  onToggleSmsStar={handleToggleSmsStar}
+                  onView={(draftId, type) => {
+                    handleViewDraft(draftId, type)
+                  }}
+                  onEdit={(draftId, type) => {
+                    handleEditDraft(draftId)
+                  }}
+                  onSend={(draftId, type) => {
+                    handleSendDraft(draftId)
+                  }}
+                />
+              ) : isEmailView ? (
               <EmailDraftsList
-                drafts={paginatedEmailDrafts}
+                  drafts={paginatedDrafts as EmailDraft[]}
                 isLoading={isLoading}
+                  selectedIds={selectedEmailDraftIds}
+                  starredIds={starredEmailDraftIds}
+                  onSelect={handleEmailDraftSelect}
+                  onSelectAll={(selected) => {
+                    if (selected) {
+                      setSelectedEmailDraftIds(new Set(paginatedDrafts.map(d => d.id)))
+                    } else {
+                      setSelectedEmailDraftIds(new Set())
+                    }
+                  }}
+                  onToggleStar={handleToggleEmailStar}
                 onView={handleViewDraft}
                 onEdit={handleEditDraft}
                 onSend={handleSendDraft}
               />
             ) : (
               <SmsDraftsList
-                drafts={paginatedSmsDrafts}
+                  drafts={paginatedDrafts as SmsDraft[]}
                 isLoading={isLoading}
+                  selectedIds={selectedSmsDraftIds}
+                  starredIds={starredSmsDraftIds}
+                  onSelect={handleSmsDraftSelect}
+                  onSelectAll={(selected) => {
+                    if (selected) {
+                      setSelectedSmsDraftIds(new Set(paginatedDrafts.map(d => d.id)))
+                    } else {
+                      setSelectedSmsDraftIds(new Set())
+                    }
+                  }}
+                  onToggleStar={handleToggleSmsStar}
                 onView={handleViewDraft}
                 onEdit={handleEditDraft}
                 onSend={handleSendDraft}
               />
             )}
 
-            {/* Pagination */}
-            {currentTotalPages > 1 && (
-              <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4">
+            {/* Pagination - Always show when there are drafts */}
+            {totalDrafts > 0 && (
+              <div className="flex items-center justify-between mt-4 px-4 py-3 bg-white rounded-lg border border-gray-200">
                 <div className="text-sm text-gray-600">
-                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, activeTab === 'email' ? filteredEmailDrafts.length : filteredSmsDrafts.length)} of {activeTab === 'email' ? filteredEmailDrafts.length : filteredSmsDrafts.length} drafts
+                  {totalPages > 1 ? (
+                    <>
+                      Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalDrafts)} of {totalDrafts} drafts
+                    </>
+                  ) : (
+                    <>
+                      Showing {totalDrafts} {totalDrafts === 1 ? 'draft' : 'drafts'}
+                    </>
+                  )}
                 </div>
+                {totalPages > 1 && (
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
@@ -340,31 +1276,45 @@ export default function DraftsPage() {
                     Previous
                   </Button>
                   <div className="flex items-center gap-1">
-                    {Array.from({ length: currentTotalPages }, (_, i) => i + 1).map((page) => (
+                      {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
+                        let page: number
+                        if (totalPages <= 10) {
+                          page = i + 1
+                        } else if (currentPage <= 5) {
+                          page = i + 1
+                        } else if (currentPage >= totalPages - 4) {
+                          page = totalPages - 9 + i
+                        } else {
+                          page = currentPage - 5 + i
+                        }
+                        return (
                       <button
                         key={page}
                         onClick={() => handlePageChange(page)}
-                        className={`px-3 py-1 text-sm rounded ${
+                            className={`px-3 py-1 text-sm rounded transition-colors ${
                           currentPage === page
-                            ? 'bg-indigo-600 text-white'
+                                ? 'bg-indigo-600 text-white font-medium'
                             : 'text-gray-700 hover:bg-gray-100'
                         }`}
                       >
                         {page}
                       </button>
-                    ))}
+                        )
+                      })}
                   </div>
                   <Button
                     variant="outline"
                     size="xs"
                     onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === currentTotalPages}
+                      disabled={currentPage === totalPages}
                   >
                     Next
                   </Button>
                 </div>
+                )}
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>
@@ -378,7 +1328,102 @@ export default function DraftsPage() {
         onEdit={handleEditEmailDraft}
         onSend={handleSendEmailDraft}
         onNext={handleNextEmailDraft}
-        hasNext={currentDraftIndex < filteredEmailDrafts.length - 1}
+        onPrevious={handlePreviousEmailDraft}
+        hasNext={
+          selectedDraftsForNavigation.length > 0
+            ? selectedDraftsNavigationIndex < selectedDraftsForNavigation.length - 1
+            : currentDraftIndex < filteredEmailDrafts.length - 1
+        }
+        hasPrevious={
+          selectedDraftsForNavigation.length > 0
+            ? selectedDraftsNavigationIndex > 0
+            : currentDraftIndex > 0
+        }
+        currentIndex={
+          selectedDraftsForNavigation.length > 0
+            ? selectedDraftsNavigationIndex
+            : currentDraftIndex
+        }
+        totalCount={
+          selectedDraftsForNavigation.length > 0
+            ? selectedDraftsForNavigation.length // Show count in navigation array for counter
+            : filteredEmailDrafts.length
+        }
+        selectedCount={
+          selectedDraftsForNavigation.length > 0
+            ? selectedEmailDraftIds.size + selectedSmsDraftIds.size // Actual selected count for Send All button
+            : undefined
+        }
+        isSelected={selectedEmailDraft ? selectedEmailDraftIds.has(selectedEmailDraft.id) : false}
+        onToggleSelect={(draftId, selected) => {
+          handleEmailDraftSelect(draftId, selected)
+        }}
+        onSendAll={async () => {
+          if (selectedDraftsForNavigation.length > 0) {
+            // If we have both email and SMS selected, use combined send
+            if (selectedSmsDraftIds.size > 0) {
+              await handleBulkSendToSamePerson()
+            } else {
+              // Only email drafts
+              await handleBulkSendEmailDrafts()
+            }
+          }
+        }}
+      />
+
+      {/* SMS Draft Overlay */}
+      <SmsDraftOverlay
+        isOpen={isSmsOverlayOpen}
+        smsDraft={selectedSmsDraft}
+        onClose={handleCloseSmsOverlay}
+        onEdit={(draftId) => {
+          console.log(`Edit SMS draft:`, draftId)
+          // TODO: Implement SMS edit functionality
+          handleCloseSmsOverlay()
+        }}
+        onSend={handleSendSmsDraft}
+        onNext={handleNextSmsDraft}
+        onPrevious={handlePreviousSmsDraft}
+        hasNext={
+          selectedSmsDraftsForNavigation.length > 0
+            ? selectedSmsDraftsNavigationIndex < selectedSmsDraftsForNavigation.length - 1
+            : selectedSmsDraft ? filteredSmsDrafts.findIndex(d => d.id === selectedSmsDraft.id) < filteredSmsDrafts.length - 1 : false
+        }
+        hasPrevious={
+          selectedSmsDraftsForNavigation.length > 0
+            ? selectedSmsDraftsNavigationIndex > 0
+            : selectedSmsDraft ? filteredSmsDrafts.findIndex(d => d.id === selectedSmsDraft.id) > 0 : false
+        }
+        currentIndex={
+          selectedSmsDraftsForNavigation.length > 0
+            ? selectedSmsDraftsNavigationIndex
+            : selectedSmsDraft ? filteredSmsDrafts.findIndex(d => d.id === selectedSmsDraft.id) : 0
+        }
+        totalCount={
+          selectedSmsDraftsForNavigation.length > 0
+            ? selectedSmsDraftsForNavigation.length
+            : filteredSmsDrafts.length
+        }
+        selectedCount={
+          selectedSmsDraftsForNavigation.length > 0
+            ? selectedEmailDraftIds.size + selectedSmsDraftIds.size
+            : undefined
+        }
+        isSelected={selectedSmsDraft ? selectedSmsDraftIds.has(selectedSmsDraft.id) : false}
+        onToggleSelect={(draftId, selected) => {
+          handleSmsDraftSelect(draftId, selected)
+        }}
+        onSendAll={async () => {
+          if (selectedSmsDraftsForNavigation.length > 0) {
+            // If we have both email and SMS selected, use combined send
+            if (selectedEmailDraftIds.size > 0) {
+              await handleBulkSendToSamePerson()
+            } else {
+              // Only SMS drafts
+              await handleBulkSendSmsDrafts()
+            }
+          }
+        }}
       />
     </AuthGuard>
   )
