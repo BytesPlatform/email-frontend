@@ -21,7 +21,6 @@ interface SmsDraftsListProps {
   onView?: (draftId: number) => void
   onEdit?: (draftId: number) => void
   onSend?: (draftId: number) => void
-  onDelete?: (draftId: number) => void
 }
 
 export function SmsDraftsList({ 
@@ -29,8 +28,7 @@ export function SmsDraftsList({
   isLoading, 
   onView, 
   onEdit, 
-  onSend, 
-  onDelete 
+  onSend
 }: SmsDraftsListProps) {
   if (isLoading) {
     return (
@@ -123,16 +121,6 @@ export function SmsDraftsList({
                   onClick={() => onSend(draft.id)}
                 >
                   Send
-                </Button>
-              )}
-              {onDelete && (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={() => onDelete(draft.id)}
-                  className="text-red-600 hover:text-red-700 hover:border-red-300"
-                >
-                  Delete
                 </Button>
               )}
             </div>

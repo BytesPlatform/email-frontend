@@ -61,6 +61,26 @@ export interface EmailDraft {
   subject?: string
   body?: string
   tone?: string
+  // Related data (included in getAllEmailDrafts response)
+  contact?: {
+    id?: number
+    businessName?: string
+    email?: string
+    phone?: string
+    website?: string
+  }
+  summary?: {
+    id?: number
+    summaryText?: string
+    painPoints?: string[]
+    strengths?: string[]
+    opportunities?: string[]
+    keywords?: string[]
+  }
+  clientEmail?: {
+    id?: number
+    emailAddress?: string
+  }
 }
 
 export interface SummaryGenerationRequest {
