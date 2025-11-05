@@ -154,6 +154,55 @@ export const emailGenerationApi = {
   },
 
   /**
+   * Get all email drafts for the current client
+   * GET /emails/generation/drafts
+   */
+  async getAllEmailDrafts(): Promise<ApiResponse<EmailDraft[]>> {
+    try {
+      interface GetAllEmailDraftsResponse {
+        message?: string
+        success?: boolean
+        count?: number
+        data?: EmailDraft[]
+      }
+      const res = await apiClient.get<GetAllEmailDraftsResponse>(`/emails/drafts`)
+      
+      console.log(`[Email API] Response for getAllEmailDrafts:`, res)
+      
+      // Backend returns: { message, success, count, data: [...] }
+      if (res.success && res.data) {
+        // Check if res.data is already an array (unwrapped by ApiClient)
+        if (Array.isArray(res.data)) {
+          console.log(`[Email API] Extracted ${res.data.length} drafts (direct array)`)
+          return {
+            success: true,
+            data: res.data as EmailDraft[]
+          }
+        }
+        
+        // Otherwise, check if it's wrapped in the response structure
+        const data = res.data as GetAllEmailDraftsResponse
+        const drafts = data.data && Array.isArray(data.data) ? data.data : []
+        console.log(`[Email API] Extracted ${drafts.length} drafts (from wrapped data)`)
+        return {
+          success: true,
+          data: drafts
+        } as ApiResponse<EmailDraft[]>
+      }
+      
+      console.log('[Email API] No drafts found')
+      return {
+        success: false,
+        error: 'Failed to fetch email drafts',
+        data: []
+      }
+    } catch (error) {
+      console.error('Error fetching all email drafts:', error)
+      throw error
+    }
+  },
+
+  /**
    * Check spam score for an email draft
    * POST /emails/optimization/check
    */

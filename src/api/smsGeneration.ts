@@ -128,6 +128,55 @@ export const smsGenerationApi = {
       console.error('Error updating SMS draft:', error)
       throw error
     }
+  },
+
+  /**
+   * Get all SMS drafts for the current client
+   * GET /sms/drafts
+   */
+  async getAllSmsDrafts(): Promise<ApiResponse<SMSDraft[]>> {
+    try {
+      interface GetAllSmsDraftsResponse {
+        message?: string
+        success?: boolean
+        count?: number
+        data?: SMSDraft[]
+      }
+      const res = await apiClient.get<GetAllSmsDraftsResponse>(`/sms/drafts`)
+      
+      console.log(`[SMS API] Response for getAllSmsDrafts:`, res)
+      
+      // Backend returns: { message, success, count, data: [...] }
+      if (res.success && res.data) {
+        // Check if res.data is already an array (unwrapped by ApiClient)
+        if (Array.isArray(res.data)) {
+          console.log(`[SMS API] Extracted ${res.data.length} drafts (direct array)`)
+          return {
+            success: true,
+            data: res.data as SMSDraft[]
+          }
+        }
+        
+        // Otherwise, check if it's wrapped in the response structure
+        const data = res.data as GetAllSmsDraftsResponse
+        const drafts = data.data && Array.isArray(data.data) ? data.data : []
+        console.log(`[SMS API] Extracted ${drafts.length} drafts (from wrapped data)`)
+        return {
+          success: true,
+          data: drafts
+        } as ApiResponse<SMSDraft[]>
+      }
+      
+      console.log('[SMS API] No drafts found')
+      return {
+        success: false,
+        error: 'Failed to fetch SMS drafts',
+        data: []
+      }
+    } catch (error) {
+      console.error('Error fetching all SMS drafts:', error)
+      throw error
+    }
   }
 }
 
