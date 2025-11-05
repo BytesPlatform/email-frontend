@@ -1,6 +1,6 @@
 import React from 'react'
 import { Button } from '@/components/ui/Button'
-import { truncateBusinessName } from './utils/emailGenerationUtils'
+import { truncateBusinessName } from '@/lib/utils'
 import type { ScrapedRecord } from '@/types/emailGeneration'
 
 interface RecordTableRowProps {
@@ -90,59 +90,6 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
           </Button>
         </div>
       </td>
-      <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
-        {mode === 'email' ? (
-          <div className="flex items-center space-x-1">
-            <Button
-              onClick={async (e) => {
-                e.stopPropagation()
-                if (record.generatedEmail) {
-                  onSetEmailBodyOverlay({
-                    isOpen: true,
-                    subject: record.generatedEmail.subject,
-                    body: record.generatedEmail.body,
-                    emailDraftId: record.emailDraftId,
-                    spamCheckResult: record.spamCheckResult
-                  })
-                } else {
-                  await onViewEmailBody(record.id)
-                }
-              }}
-              disabled={record.isLoadingEmailDraft}
-              variant="outline"
-              size="xs"
-              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-            >
-              {record.isLoadingEmailDraft ? 'Loading...' : 'View Body'}
-            </Button>
-          </div>
-        ) : (
-          <div className="flex items-center space-x-1">
-            <Button
-              onClick={async (e) => {
-                e.stopPropagation()
-                if (record.generatedSMS) {
-                  onSetEmailBodyOverlay({
-                    isOpen: true,
-                    subject: record.generatedSMS.subject,
-                    body: record.generatedSMS.body,
-                    smsDraftId: record.smsDraftId,
-                    isEditMode: false
-                  })
-                } else {
-                  await onViewSMSBody(record.id)
-                }
-              }}
-              disabled={record.isLoadingSMSDraft}
-              variant="outline"
-              size="xs"
-              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-            >
-              {record.isLoadingSMSDraft ? 'Loading...' : 'View SMS'}
-            </Button>
-          </div>
-        )}
-      </td>
       <td className="px-2 py-2 whitespace-nowrap text-sm font-medium min-w-[140px]">
         <div className="flex space-x-1 cursor-pointer" onClick={(e) => e.stopPropagation()}>
           {(!record.hasSummary && !record.generatedSummary) ? (
@@ -167,13 +114,14 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
               </Button>
             ) : (
               <Button
-                onClick={() => onSendEmail(record.id)}
-                disabled={record.isSendingEmail}
-                isLoading={record.isSendingEmail}
+                onClick={() => {
+                  // TODO: Navigate to draft page when implemented
+                  console.log('View Draft clicked for email draft:', record.emailDraftId)
+                }}
                 size="sm"
                 variant="primary"
               >
-                {record.isSendingEmail ? 'Sending...' : 'Send Email'}
+                View Draft
               </Button>
             )
           ) : (
@@ -187,17 +135,16 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
               >
                 {record.isGeneratingSMS ? 'Generating...' : 'Generate SMS'}
               </Button>
-            ) : record.smsStatus === 'sent' ? (
-              <span className="text-sm text-green-600 font-medium">SMS Sent ✓</span>
             ) : (
               <Button
-                onClick={() => onSendSMS(record.id)}
-                disabled={record.isSendingSMS}
-                isLoading={record.isSendingSMS}
+                onClick={() => {
+                  // TODO: Navigate to draft page when implemented
+                  console.log('View Draft clicked for SMS draft:', record.smsDraftId)
+                }}
                 size="sm"
                 variant="primary"
               >
-                {record.isSendingSMS ? 'Sending...' : 'Send SMS'}
+                View Draft
               </Button>
             )
           )}

@@ -273,5 +273,82 @@ export const emailGenerationApi = {
       console.error('Error sending email draft:', error)
       throw error
     }
+  },
+
+  /**
+   * Get bulk status for multiple contacts (summary, email draft, SMS draft status)
+   * POST /emails/generation/bulk-status
+   * Body: { contactIds: number[] }
+   */
+  async getBulkStatus(contactIds: number[]): Promise<ApiResponse<Array<{
+    contactId: number
+    hasSummary: boolean
+    hasEmailDraft: boolean
+    hasSMSDraft: boolean
+    emailDraftId: number | null
+    smsDraftId: number | null
+    smsStatus: string | null
+  }>>> {
+    try {
+      const response = await apiClient.post<{
+        success: boolean
+        data: Array<{
+          contactId: number
+          hasSummary: boolean
+          hasEmailDraft: boolean
+          hasSMSDraft: boolean
+          emailDraftId: number | null
+          smsDraftId: number | null
+          smsStatus: string | null
+        }>
+      }>('/emails/generation/bulk-status', { contactIds })
+      
+      if (response.success && response.data) {
+        // Handle nested response structure
+        type NestedBulkStatusResponse = { data: Array<{
+          contactId: number
+          hasSummary: boolean
+          hasEmailDraft: boolean
+          hasSMSDraft: boolean
+          emailDraftId: number | null
+          smsDraftId: number | null
+          smsStatus: string | null
+        }> }
+        const responseData = response.data as Array<{
+          contactId: number
+          hasSummary: boolean
+          hasEmailDraft: boolean
+          hasSMSDraft: boolean
+          emailDraftId: number | null
+          smsDraftId: number | null
+          smsStatus: string | null
+        }> | NestedBulkStatusResponse
+        
+        if (Array.isArray(responseData)) {
+          return {
+            success: true,
+            data: responseData
+          }
+        } else if ('data' in responseData && Array.isArray(responseData.data)) {
+          return {
+            success: true,
+            data: responseData.data
+          }
+        }
+      }
+      
+      return {
+        success: false,
+        error: response.error || 'Failed to get bulk status',
+        data: []
+      }
+    } catch (error) {
+      console.error('Error getting bulk status:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get bulk status',
+        data: []
+      }
+    }
   }
 }

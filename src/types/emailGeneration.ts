@@ -150,6 +150,7 @@ export interface ScrapedRecord {
 export interface EmailGenerationState {
   scrapedRecords: ScrapedRecord[]
   isLoadingRecords: boolean
+  isLoadingBulkStatus: boolean // Track bulk status API loading
   error: string | null
   currentPage: number
   recordsPerPage: number

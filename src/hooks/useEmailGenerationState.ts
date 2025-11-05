@@ -8,6 +8,7 @@ export const useEmailGenerationState = () => {
   const [state, setState] = useState<EmailGenerationState>({
     scrapedRecords: [],
     isLoadingRecords: false,
+    isLoadingBulkStatus: false,
     error: null,
     currentPage: 1,
     recordsPerPage: 8
@@ -95,3 +96,4 @@ export const useEmailGenerationState = () => {
     handleNextPage,
   }
 }
+

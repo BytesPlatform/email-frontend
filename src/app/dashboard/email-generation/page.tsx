@@ -13,9 +13,9 @@ import { RecordsTable } from '@/components/email-generation/RecordsTable'
 import { PaginationControls } from '@/components/email-generation/PaginationControls'
 import { ErrorMessage } from '@/components/email-generation/ErrorMessage'
 import { EmailBodyOverlay } from '@/components/email-generation/EmailBodyOverlay'
-import { useEmailGenerationState } from '@/components/email-generation/hooks/useEmailGenerationState'
-import { useEmailGenerationAPI } from '@/components/email-generation/hooks/useEmailGenerationAPI'
-import { copyToClipboard } from '@/components/email-generation/utils/emailGenerationUtils'
+import { useEmailGenerationState } from '@/hooks/useEmailGenerationState'
+import { useEmailGenerationAPI } from '@/hooks/useEmailGenerationAPI'
+import { copyToClipboard } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 
 export default function EmailGenerationPage() {
@@ -120,8 +120,55 @@ export default function EmailGenerationPage() {
           currentPage: 1 // Reset to first page when new data is loaded
         }))
         
-          // Don't check summaries, email drafts, or SMS drafts on page load
-          // They will be fetched only when user clicks View buttons
+          // Fetch bulk status for all contacts to update action buttons
+          if (scrapedRecords.length > 0) {
+            const contactIds = scrapedRecords.map(r => r.contactId)
+            
+            // Set loading state for bulk status
+            setState(prev => ({ ...prev, isLoadingBulkStatus: true }))
+            
+            try {
+              const statusRes = await emailGenerationApi.getBulkStatus(contactIds)
+              if (statusRes.success && statusRes.data) {
+                // Create a map for quick lookup
+                const statusMap = new Map(
+                  statusRes.data.map(s => [s.contactId, s])
+                )
+                
+                // Update records with status information
+                setState(prev => ({
+                  ...prev,
+                  scrapedRecords: prev.scrapedRecords.map(record => {
+                    const status = statusMap.get(record.contactId)
+                    if (status) {
+                      return {
+                        ...record,
+                        hasSummary: status.hasSummary,
+                        hasEmailDraft: status.hasEmailDraft,
+                        hasSMSDraft: status.hasSMSDraft,
+                        emailDraftId: status.emailDraftId || undefined,
+                        smsDraftId: status.smsDraftId || undefined,
+                        smsStatus: status.smsStatus || undefined, // Include SMS status from bulk API
+                      }
+                    }
+                    return record
+                  }),
+                  isLoadingBulkStatus: false // Clear loading state after update
+                }))
+              } else {
+                // Clear loading state even if API fails
+                setState(prev => ({ ...prev, isLoadingBulkStatus: false }))
+              }
+            } catch (error) {
+              console.error('Error fetching bulk status:', error)
+              // Clear loading state on error
+              setState(prev => ({ ...prev, isLoadingBulkStatus: false }))
+              // Don't show error to user, just log it - action buttons will work when View is clicked
+            }
+          } else {
+            // No records, clear loading state
+            setState(prev => ({ ...prev, isLoadingBulkStatus: false }))
+          }
       } else {
         console.log('History API Error:', historyRes.error)
           setState(prev => ({ 
@@ -802,6 +849,10 @@ export default function EmailGenerationPage() {
       if (res.success && res.data) {
         const smsDraft = res.data
         
+        // Don't update smsStatus when just viewing - preserve existing status
+        // Status should only be updated when SMS is actually sent (in handleSendSMS)
+        // This prevents the UI from incorrectly showing "SMS Sent" when just viewing
+        
         // Update record with fetched SMS data
         const updatedRecord = {
           ...record,
@@ -818,7 +869,9 @@ export default function EmailGenerationPage() {
             callToAction: 'Review and send',
             generatedAt: smsDraft.createdAt || new Date().toISOString()
           },
-          smsStatus: smsDraft.status || 'draft',
+          // Preserve existing smsStatus - don't update from draft status when viewing
+          // Only handleSendSMS should update this status
+          smsStatus: record.smsStatus, // Keep existing status, don't overwrite
           hasSMSDraft: true,
           isLoadingSMSDraft: false
         }
@@ -939,6 +992,7 @@ export default function EmailGenerationPage() {
             <RecordsTable
               records={state.scrapedRecords}
               isLoading={state.isLoadingRecords}
+              isLoadingBulkStatus={state.isLoadingBulkStatus}
               mode={mode}
               currentPage={state.currentPage}
               recordsPerPage={state.recordsPerPage}

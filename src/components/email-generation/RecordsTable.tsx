@@ -1,7 +1,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
-import { getCurrentPageRecords } from './utils/emailGenerationUtils'
+import { getCurrentPageRecords } from '@/lib/utils'
 import { RecordTableRow } from './RecordTableRow'
 import { Skeleton } from '@/components/common/Skeleton'
 import type { ScrapedRecord } from '@/types/emailGeneration'
@@ -9,6 +9,7 @@ import type { ScrapedRecord } from '@/types/emailGeneration'
 interface RecordsTableProps {
   records: ScrapedRecord[]
   isLoading: boolean
+  isLoadingBulkStatus: boolean
   mode: 'email' | 'sms'
   currentPage: number
   recordsPerPage: number
@@ -33,6 +34,7 @@ interface RecordsTableProps {
 export const RecordsTable: React.FC<RecordsTableProps> = ({
   records,
   isLoading,
+  isLoadingBulkStatus,
   mode,
   currentPage,
   recordsPerPage,
@@ -75,9 +77,6 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                     Summary
                   </th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-                    {mode === 'email' ? 'Email' : 'SMS'}
-                  </th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[140px]">
                     Actions
                   </th>
@@ -105,9 +104,6 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
                       <Skeleton className="h-8 w-20 rounded-md" />
                     </td>
                     <td className="px-2 py-3">
-                      <Skeleton className="h-8 w-24 rounded-md" />
-                    </td>
-                    <td className="px-2 py-3">
                       <Skeleton className="h-8 w-32 rounded-md" />
                     </td>
                   </tr>
@@ -132,6 +128,55 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
               Go to Scraping
             </Link>
           </div>
+        ) : isLoadingBulkStatus ? (
+          // Show skeleton loaders for entire table while bulk status is loading
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
+                    Business
+                  </th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                    Contact Info
+                  </th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                    Summary
+                  </th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[140px]">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {Array.from({ length: currentRecords.length || recordsPerPage }).map((_, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-2 py-3">
+                      <div className="flex items-center space-x-3">
+                        <Skeleton className="h-8 w-8 rounded-full" />
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-32" />
+                          <Skeleton className="h-3 w-20" />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-2 py-3">
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-3 w-32" />
+                      </div>
+                    </td>
+                    <td className="px-2 py-3">
+                      <Skeleton className="h-8 w-20 rounded-md" />
+                    </td>
+                    <td className="px-2 py-3">
+                      <Skeleton className="h-8 w-32 rounded-md" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <div className="overflow-x-auto relative">
             <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-gray-300 to-transparent opacity-50 pointer-events-none"></div>
@@ -146,9 +191,6 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
                   </th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                     Summary
-                  </th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-                    {mode === 'email' ? 'Email' : 'SMS'}
                   </th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[140px]">
                     Actions

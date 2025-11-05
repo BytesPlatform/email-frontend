@@ -1,6 +1,6 @@
 import React from 'react'
 import { Button } from '@/components/ui/Button'
-import { getTotalPages } from './utils/emailGenerationUtils'
+import { getTotalPages } from '@/lib/utils'
 
 interface PaginationControlsProps {
   currentPage: number
