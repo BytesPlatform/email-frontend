@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
-import { copyToClipboard } from './utils/emailGenerationUtils'
+import { copyToClipboard } from '@/lib/utils'
 
 interface EmailBodyOverlayProps {
   overlay: {
