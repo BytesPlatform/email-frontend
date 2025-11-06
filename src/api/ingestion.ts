@@ -1,5 +1,5 @@
 import { apiClient, ApiResponse } from './ApiClient'
-import { CsvUploadResponse, CsvUpload } from '@/types/ingestion'
+import { CsvUploadResponse, CsvUpload, AllClientContactsResponse } from '@/types/ingestion'
 
 export const ingestionApi = {
   /**
@@ -73,6 +73,35 @@ export const ingestionApi = {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to fetch upload details'
+      }
+    }
+  },
+
+  /**
+   * Get all client contacts (from all CSV uploads)
+   */
+  async getAllClientContacts(
+    limit?: number,
+    status?: string,
+    valid?: boolean
+  ): Promise<ApiResponse<AllClientContactsResponse>> {
+    try {
+      const params = new URLSearchParams()
+      if (limit) params.append('limit', limit.toString())
+      if (status) params.append('status', status)
+      if (valid !== undefined) params.append('valid', valid.toString())
+      
+      const query = params.toString() ? `?${params.toString()}` : ''
+      const response = await apiClient.get<AllClientContactsResponse>(`/ingestion/contacts/all${query}`)
+      
+      if (response.success && response.data) {
+        return { success: true, data: response.data }
+      }
+      return { success: false, error: response.error || 'Failed to fetch all client contacts' }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch all client contacts'
       }
     }
   }

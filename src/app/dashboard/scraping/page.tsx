@@ -10,6 +10,7 @@ import { scrapingApi } from '@/api/scraping'
 import { ingestionApi } from '@/api/ingestion'
 import { useAuthContext } from '@/contexts/AuthContext'
 import type { ReadyContact, StatsResponse, ScrapeSingleResponseData } from '@/types/scraping'
+import type { ClientContact } from '@/types/ingestion'
 
  
 
@@ -37,6 +38,8 @@ export default function ScrapingPage() {
   const [isStatusOpen, setIsStatusOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'all' | 'ready_to_scrape' | 'scraping' | 'scraped' | 'scrape_failed'>('all')
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [isFetchingAllContacts, setIsFetchingAllContacts] = useState(false)
+  const [showAllContacts, setShowAllContacts] = useState(false)
 
   // Tentatively read last uploadId (will be validated against the logged-in client's uploads)
   useEffect(() => {
@@ -130,11 +133,48 @@ export default function ScrapingPage() {
     }
   }
 
+  // Fetch all client contacts (from all CSV uploads)
+  const fetchAllClientContacts = async (limit?: number) => {
+    setIsFetchingAllContacts(true)
+    setApiError(null)
+    setShowAllContacts(true)
+    try {
+      const res = await ingestionApi.getAllClientContacts(limit || 50)
+      if (res.success && res.data) {
+        // Transform ClientContact[] to ReadyContact[]
+        const transformed: ReadyContact[] = res.data.contacts.map((c: ClientContact): ReadyContact => ({
+          id: c.id,
+          csvUploadId: c.csvUploadId,
+          businessName: c.businessName,
+          website: c.website,
+          email: c.email,
+          state: c.state,
+          zipCode: c.zipCode,
+          status: (c.status || 'ready_to_scrape') as ReadyContact['status'],
+          scrapeMethod: undefined,
+          scrapePriority: undefined,
+        }))
+        setReadyContacts(transformed)
+        setHasFetchedReadyAndStats(true)
+        // Auto-open modal to manage records
+        setStatusFilter('all')
+        setIsStatusOpen(true)
+      } else {
+        setApiError(res.error || 'Failed to fetch all client contacts')
+      }
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : 'Failed to fetch all client contacts')
+    } finally {
+      setIsFetchingAllContacts(false)
+    }
+  }
+
   // Fetch stats and selected upload's contacts together, then reveal records and actions
   const fetchStatsAndShowRecords = async (limit: number = 20) => {
     if (!currentUploadId) return
     setIsLoadingCombined(true)
     setApiError(null)
+    setShowAllContacts(false)
     try {
       await Promise.all([
         (async () => {
@@ -176,7 +216,6 @@ export default function ScrapingPage() {
   }
 
   const startBatchScraping = async (limit: number = 20) => {
-    if (!currentUploadId) return
     setIsBatching(true)
     setApiError(null)
     
@@ -191,7 +230,7 @@ export default function ScrapingPage() {
     })
     
     try {
-      // If specific contacts are selected, scrape them individually
+      // If specific contacts are selected, scrape them individually (works with or without currentUploadId)
       if (selectedContactIds.length > 0) {
         const results = await Promise.allSettled(
           selectedContactIds.map(async (contactId) => {
@@ -216,7 +255,15 @@ export default function ScrapingPage() {
         // Clear selection after scraping
         setSelectedContactIds([])
       } else {
-        // Use batch API for unselected scraping
+        // Use batch API for unselected scraping (requires currentUploadId)
+        if (!currentUploadId) {
+          setApiError('Please select a CSV file to use batch scraping')
+          contactsToScrape.forEach(id => {
+            setScrapingStatus(prev => ({ ...prev, [id]: null }))
+          })
+          return
+        }
+        
         const res = await scrapingApi.scrapeBatch(currentUploadId, limit)
         if (res.success && res.data) {
           res.data.results.forEach(item => {
@@ -235,8 +282,10 @@ export default function ScrapingPage() {
         }
       }
       
-      // Refresh stats only, keep contacts visible
-      await fetchStats()
+      // Refresh stats only if we have a currentUploadId
+      if (currentUploadId && !showAllContacts) {
+        await fetchStats()
+      }
     } catch (error) {
       contactsToScrape.forEach(id => {
         setScrapingStatus(prev => ({ ...prev, [id]: 'failed' }))
@@ -437,7 +486,7 @@ export default function ScrapingPage() {
               <div className="mt-4 flex items-center flex-wrap gap-3">
                 {!hasFetchedReadyAndStats && (
                   <>
-                    {isLoadingCombined ? (
+                    {isLoadingCombined || isFetchingAllContacts ? (
                       <div className="w-full">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           {[1, 2, 3, 4].map((i) => (
@@ -455,17 +504,33 @@ export default function ScrapingPage() {
                         </div>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => fetchStatsAndShowRecords(20)}
-                        disabled={!currentUploadId}
-                        className="bg-indigo-700 text-white px-4 py-2.5 rounded-lg hover:bg-indigo-800 disabled:bg-gray-400 text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed"
-                      >
-                        Fetch and show records
-                      </button>
+                      <>
+                        <button
+                          onClick={() => fetchStatsAndShowRecords(20)}
+                          disabled={!currentUploadId}
+                          className="bg-indigo-700 text-white px-4 py-2.5 rounded-lg hover:bg-indigo-800 disabled:bg-gray-400 text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed"
+                        >
+                          Fetch and show records
+                        </button>
+                        <button
+                          onClick={() => fetchAllClientContacts(50)}
+                          disabled={isFetchingAllContacts}
+                          className="bg-purple-700 text-white px-4 py-2.5 rounded-lg hover:bg-purple-800 disabled:bg-gray-400 text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed flex items-center space-x-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                          </svg>
+                          <span>Get All Contacts</span>
+                        </button>
+                      </>
                     )}
                   </>
                 )}
-                {hasFetchedReadyAndStats && null}
+                {hasFetchedReadyAndStats && showAllContacts && (
+                  <div className="text-sm text-gray-600 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+                    Showing all contacts from all CSV uploads
+                  </div>
+                )}
               </div>
 
               {apiError && (

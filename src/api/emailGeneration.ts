@@ -206,62 +206,62 @@ export const emailGenerationApi = {
    * Check spam score for an email draft
    * POST /emails/optimization/check
    */
-  async checkSpam(dto: CheckSpamDto): Promise<ApiResponse<SpamCheckResult>> {
-    try {
-      const response = await apiClient.post<SpamCheckResult>('/emails/optimization/check', dto)  
-      // Handle different response structures
-      if (response.success && response.data) {
-        let spamResult: SpamCheckResult
+  // async checkSpam(dto: CheckSpamDto): Promise<ApiResponse<SpamCheckResult>> {
+  //   try {
+  //     const response = await apiClient.post<SpamCheckResult>('/emails/optimization/check', dto)  
+  //     // Handle different response structures
+  //     if (response.success && response.data) {
+  //       let spamResult: SpamCheckResult
         
-        // Check if data is nested (response.data.data) or direct
-        type NestedSpamResponse = { data: SpamCheckResult }
-        const responseData = response.data as SpamCheckResult | NestedSpamResponse
-        if ('data' in responseData && typeof responseData.data === 'object') {
-          spamResult = responseData.data as SpamCheckResult
-          console.log('Found nested data structure, extracting:', spamResult)
-        } else {
-          spamResult = responseData as SpamCheckResult
-        }
+  //       // Check if data is nested (response.data.data) or direct
+  //       type NestedSpamResponse = { data: SpamCheckResult }
+  //       const responseData = response.data as SpamCheckResult | NestedSpamResponse
+  //       if ('data' in responseData && typeof responseData.data === 'object') {
+  //         spamResult = responseData.data as SpamCheckResult
+  //         console.log('Found nested data structure, extracting:', spamResult)
+  //       } else {
+  //         spamResult = responseData as SpamCheckResult
+  //       }
         
-        // Ensure all fields are properly typed and have default values
-        const parsedResult: SpamCheckResult = {
-          score: typeof spamResult?.score === 'number' ? spamResult.score : 
-                typeof spamResult?.score === 'string' ? parseFloat(spamResult.score) || 0 : 0,
-          keywords: Array.isArray(spamResult?.keywords) ? spamResult.keywords : [],
-          suggestions: Array.isArray(spamResult?.suggestions) ? spamResult.suggestions : [],
-          blocked: typeof spamResult?.blocked === 'boolean' ? spamResult.blocked : false
-        }
+  //       // Ensure all fields are properly typed and have default values
+  //       const parsedResult: SpamCheckResult = {
+  //         score: typeof spamResult?.score === 'number' ? spamResult.score : 
+  //               typeof spamResult?.score === 'string' ? parseFloat(spamResult.score) || 0 : 0,
+  //         keywords: Array.isArray(spamResult?.keywords) ? spamResult.keywords : [],
+  //         suggestions: Array.isArray(spamResult?.suggestions) ? spamResult.suggestions : [],
+  //         blocked: typeof spamResult?.blocked === 'boolean' ? spamResult.blocked : false
+  //       }
         
-        return {
-          success: true,
-          data: parsedResult
-        }
-      } else {
-        console.warn('Response error:', response.error)
-        console.warn('Response data:', response.data)
+  //       return {
+  //         success: true,
+  //         data: parsedResult
+  //       }
+  //     } else {
+  //       console.warn('Response error:', response.error)
+  //       console.warn('Response data:', response.data)
         
-        return {
-          success: false,
-          error: response.error || 'Spam check failed or returned no data',
-          data: {
-            score: 0,
-            keywords: [],
-            suggestions: [],
-            blocked: false
-          } as SpamCheckResult
-        }
-      }
-    } catch (error) {
-      console.error('=== SPAM CHECK API ERROR ===')
-      console.error('Error checking spam:', error)
-      console.error('Error details:', error instanceof Error ? {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      } : error)
-      throw error
-    }
-  },
+  //       return {
+  //         success: false,
+  //         error: response.error || 'Spam check failed or returned no data',
+  //         data: {
+  //           score: 0,
+  //           keywords: [],
+  //           suggestions: [],
+  //           blocked: false
+  //         } as SpamCheckResult
+  //       }
+  //     }
+  //   } catch (error) {
+  //     console.error('=== SPAM CHECK API ERROR ===')
+  //     console.error('Error checking spam:', error)
+  //     console.error('Error details:', error instanceof Error ? {
+  //       message: error.message,
+  //       stack: error.stack,
+  //       name: error.name
+  //     } : error)
+  //     throw error
+  //   }
+  // },
 
   /**
    * Get optimization suggestions for an email
@@ -313,13 +313,55 @@ export const emailGenerationApi = {
   },
   /**
    * Send an email draft
-   * POST /emails/generation/send-draft/:draftId
+   * POST /emails/send-draft
+   * Body: { draftId: number }
+   * 
+   * This API:
+   * - Validates draft and contact
+   * - Checks spam score and auto-optimizes if needed
+   * - Generates tracking pixel token automatically
+   * - Sends via SendGrid with tracking
+   * - Creates EmailLog entry
+   * - Updates draft status to 'sent'
    */
-  async sendEmailDraft(draftId: number): Promise<ApiResponse<{ success: boolean; message?: string }>> {
+  async sendEmailDraft(draftId: number): Promise<ApiResponse<{
+    success: boolean
+    emailLogId?: number
+    messageId?: string
+    spamScore?: number
+    message?: string
+  }>> {
     try {
-      return await apiClient.post<{ success: boolean; message?: string }>(`/emails/generation/send-draft/${draftId}`)
+      return await apiClient.post<{
+        success: boolean
+        emailLogId?: number
+        messageId?: string
+        spamScore?: number
+        message?: string
+      }>(`/emails/send-draft`, { draftId })
     } catch (error) {
       console.error('Error sending email draft:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Update an email draft
+   * PUT /emails/generation/drafts/:id
+   */
+  async updateEmailDraft(
+    draftId: number,
+    updates: {
+      subjectLine?: string
+      bodyText?: string
+      icebreaker?: string
+      productsRelevant?: string
+    }
+  ): Promise<ApiResponse<EmailDraft>> {
+    try {
+      return await apiClient.put<EmailDraft>(`/emails/generation/drafts/${draftId}`, updates)
+    } catch (error) {
+      console.error('Error updating email draft:', error)
       throw error
     }
   },

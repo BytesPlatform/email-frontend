@@ -8,6 +8,7 @@ export interface EmailDraft {
   contactId: number
   contactName?: string
   contactEmail?: string
+  fromEmail?: string
   subject: string
   body?: string
   status: 'draft' | 'sent' | 'delivered'

@@ -31,3 +31,28 @@ export interface CSVRecord {
   [key: string]: string | undefined
 }
 
+export interface ClientContact {
+  id: number
+  csvUploadId: number
+  businessName?: string
+  website?: string
+  email?: string
+  state?: string
+  zipCode?: string
+  status?: string
+  valid?: boolean
+  createdAt?: string
+  csvUpload?: {
+    id: number
+    fileName: string
+    createdAt: string
+  }
+  [key: string]: unknown
+}
+
+export interface AllClientContactsResponse {
+  message: string
+  count: number
+  contacts: ClientContact[]
+}
+
