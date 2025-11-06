@@ -310,54 +310,54 @@ export default function EmailGenerationPage() {
                     emailDraftId: emailDraftId,
                     hasEmailDraft: true,
                     isGeneratingEmail: false,
-                    isCheckingSpam: true  // Start spam check loading
+                    // isCheckingSpam: true  // Start spam check loading - COMMENTED OUT
                   } 
                 : r
             )
           }))
 
-          // Automatically check spam after email generation
-          try {
-            console.log('=== AUTOMATIC SPAM CHECK AFTER EMAIL GENERATION ===')
-            const spamRes = await emailGenerationApi.checkSpam({
-              draftId: emailDraftId
-            })
+          // Automatically check spam after email generation - COMMENTED OUT
+          // try {
+          //   console.log('=== AUTOMATIC SPAM CHECK AFTER EMAIL GENERATION ===')
+          //   const spamRes = await emailGenerationApi.checkSpam({
+          //     draftId: emailDraftId
+          //   })
 
-            console.log('Spam check response in handleGenerateEmail:', spamRes)
+          //   console.log('Spam check response in handleGenerateEmail:', spamRes)
             
-            // Always reset isCheckingSpam flag, regardless of success/failure
-            setState(prev => ({
-              ...prev,
-              scrapedRecords: prev.scrapedRecords.map(r => 
-                r.id === recordId 
-                  ? { 
-                      ...r,
-                      isCheckingSpam: false,
-                      // Store spam check result if successful, otherwise keep existing or undefined
-                      ...(spamRes.success && spamRes.data ? { spamCheckResult: spamRes.data } : {})
-                    } 
-                  : r
-              )
-            }))
+          //   // Always reset isCheckingSpam flag, regardless of success/failure
+          //   setState(prev => ({
+          //     ...prev,
+          //     scrapedRecords: prev.scrapedRecords.map(r => 
+          //       r.id === recordId 
+          //         ? { 
+          //             ...r,
+          //             isCheckingSpam: false,
+          //             // Store spam check result if successful, otherwise keep existing or undefined
+          //             ...(spamRes.success && spamRes.data ? { spamCheckResult: spamRes.data } : {})
+          //           } 
+          //         : r
+          //     )
+          //   }))
 
-            // Log if spam check failed
-            if (!spamRes.success || !spamRes.data) {
-              console.warn('Spam check failed or returned no data:', {
-                success: spamRes.success,
-                error: spamRes.error,
-                data: spamRes.data
-              })
-            }
-          } catch (spamError) {
-            // If spam check fails, don't block the email - just log error
-            console.error('Spam check failed:', spamError)
-            setState(prev => ({
-              ...prev,
-              scrapedRecords: prev.scrapedRecords.map(r => 
-                r.id === recordId ? { ...r, isCheckingSpam: false } : r
-              )
-            }))
-          }
+          //   // Log if spam check failed
+          //   if (!spamRes.success || !spamRes.data) {
+          //     console.warn('Spam check failed or returned no data:', {
+          //       success: spamRes.success,
+          //       error: spamRes.error,
+          //       data: spamRes.data
+          //     })
+          //   }
+          // } catch (spamError) {
+          //   // If spam check fails, don't block the email - just log error
+          //   console.error('Spam check failed:', spamError)
+          //   setState(prev => ({
+          //     ...prev,
+          //     scrapedRecords: prev.scrapedRecords.map(r => 
+          //       r.id === recordId ? { ...r, isCheckingSpam: false } : r
+          //     )
+          //   }))
+          // }
         } else {
           // Response might be in the format returned directly from backend
           // Try accessing properties directly from data
@@ -704,60 +704,60 @@ export default function EmailGenerationPage() {
           )
         }))
         
-        // Check if we need to fetch spam check result
-        let spamCheckResult = updatedRecord.spamCheckResult
+        // Check if we need to fetch spam check result - COMMENTED OUT
+        const spamCheckResult = updatedRecord.spamCheckResult
         
-        // If spam check result doesn't exist, fetch it
-        if (!spamCheckResult && draftId) {
-          console.log('=== FETCHING SPAM CHECK RESULT IN handleViewEmailBody ===')
-          console.log('Draft ID for spam check:', draftId)
+        // If spam check result doesn't exist, fetch it - COMMENTED OUT
+        // if (!spamCheckResult && draftId) {
+        //   console.log('=== FETCHING SPAM CHECK RESULT IN handleViewEmailBody ===')
+        //   console.log('Draft ID for spam check:', draftId)
           
-          try {
-            setState(prev => ({
-              ...prev,
-              scrapedRecords: prev.scrapedRecords.map(r => 
-                r.id === recordId ? { ...r, isCheckingSpam: true } : r
-              )
-            }))
+        //   try {
+        //     setState(prev => ({
+        //       ...prev,
+        //       scrapedRecords: prev.scrapedRecords.map(r => 
+        //         r.id === recordId ? { ...r, isCheckingSpam: true } : r
+        //       )
+        //     }))
             
-            const spamRes = await emailGenerationApi.checkSpam({
-              draftId: draftId
-            })
+        //     const spamRes = await emailGenerationApi.checkSpam({
+        //       draftId: draftId
+        //     })
             
-            console.log('=== SPAM CHECK RESULT IN handleViewEmailBody ===')
-            console.log('Spam check response:', JSON.stringify(spamRes, null, 2))
+        //     console.log('=== SPAM CHECK RESULT IN handleViewEmailBody ===')
+        //     console.log('Spam check response:', JSON.stringify(spamRes, null, 2))
             
-            if (spamRes.success && spamRes.data) {
-              spamCheckResult = spamRes.data
+        //     if (spamRes.success && spamRes.data) {
+        //       spamCheckResult = spamRes.data
               
-              // Update state with spam check result
-              setState(prev => ({
-                ...prev,
-                scrapedRecords: prev.scrapedRecords.map(r => 
-                  r.id === recordId 
-                    ? { ...r, spamCheckResult: spamCheckResult, isCheckingSpam: false } 
-                    : r
-                )
-              }))
-            } else {
-              console.warn('Spam check failed or returned no data:', spamRes.error)
-              setState(prev => ({
-                ...prev,
-                scrapedRecords: prev.scrapedRecords.map(r => 
-                  r.id === recordId ? { ...r, isCheckingSpam: false } : r
-                )
-              }))
-            }
-          } catch (spamError) {
-            console.error('Error fetching spam check result:', spamError)
-            setState(prev => ({
-              ...prev,
-              scrapedRecords: prev.scrapedRecords.map(r => 
-                r.id === recordId ? { ...r, isCheckingSpam: false } : r
-              )
-            }))
-          }
-        }
+        //       // Update state with spam check result
+        //       setState(prev => ({
+        //         ...prev,
+        //         scrapedRecords: prev.scrapedRecords.map(r => 
+        //           r.id === recordId 
+        //             ? { ...r, spamCheckResult: spamCheckResult, isCheckingSpam: false } 
+        //             : r
+        //         )
+        //       }))
+        //     } else {
+        //       console.warn('Spam check failed or returned no data:', spamRes.error)
+        //       setState(prev => ({
+        //         ...prev,
+        //         scrapedRecords: prev.scrapedRecords.map(r => 
+        //           r.id === recordId ? { ...r, isCheckingSpam: false } : r
+        //         )
+        //       }))
+        //     }
+        //   } catch (spamError) {
+        //     console.error('Error fetching spam check result:', spamError)
+        //     setState(prev => ({
+        //       ...prev,
+        //       scrapedRecords: prev.scrapedRecords.map(r => 
+        //         r.id === recordId ? { ...r, isCheckingSpam: false } : r
+        //       )
+        //     }))
+        //   }
+        // }
         
                   // Show email in overlay with spam check result
           setEmailBodyOverlay({

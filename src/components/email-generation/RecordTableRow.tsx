@@ -1,4 +1,5 @@
 import React from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { truncateBusinessName } from '@/lib/utils'
 import type { ScrapedRecord } from '@/types/emailGeneration'
@@ -45,6 +46,7 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
   onSendEmail,
   onSendSMS,
 }) => {
+  const router = useRouter()
   return (
     <tr key={record.id} className="hover:bg-gray-50 cursor-pointer" onClick={onRowClick}>
       <td className="px-2 py-2 whitespace-nowrap min-w-[150px]">
@@ -114,9 +116,10 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
               </Button>
             ) : (
               <Button
-                onClick={() => {
-                  // TODO: Navigate to draft page when implemented
-                  console.log('View Draft clicked for email draft:', record.emailDraftId)
+                onClick={(e) => {
+                  e.stopPropagation()
+                  // Navigate to drafts page with email draft ID
+                  router.push(`/dashboard/draft?emailDraftId=${record.emailDraftId}`)
                 }}
                 size="sm"
                 variant="primary"
@@ -137,9 +140,10 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
               </Button>
             ) : (
               <Button
-                onClick={() => {
-                  // TODO: Navigate to draft page when implemented
-                  console.log('View Draft clicked for SMS draft:', record.smsDraftId)
+                onClick={(e) => {
+                  e.stopPropagation()
+                  // Navigate to drafts page with SMS draft ID
+                  router.push(`/dashboard/draft?smsDraftId=${record.smsDraftId}`)
                 }}
                 size="sm"
                 variant="primary"

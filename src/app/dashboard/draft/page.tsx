@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { DraftsSidebar, type DraftViewType } from '@/components/drafts/DraftsSidebar'
 import { EmailDraftsList, type EmailDraft } from '@/components/drafts/EmailDraftsList'
@@ -14,7 +15,8 @@ import { smsGenerationApi } from '@/api/smsGeneration'
 import type { EmailDraft as ApiEmailDraft } from '@/types/emailGeneration'
 import type { SMSDraft } from '@/types/smsGeneration'
 
-export default function DraftsPage() {
+function DraftsPageContent() {
+  const searchParams = useSearchParams()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [activeView, setActiveView] = useState<DraftViewType>('all')
   const [activeTab, setActiveTab] = useState<'email' | 'sms'>('email')
@@ -52,6 +54,7 @@ export default function DraftsPage() {
       contactId: apiDraft.contactId || 0,
       contactName: apiDraft.contact?.businessName,
       contactEmail: apiDraft.contact?.email,
+      fromEmail: apiDraft.clientEmail?.emailAddress || '',
       subject: apiDraft.subjectLine || apiDraft.subject || 'No Subject',
       body: apiDraft.bodyText || apiDraft.body || '',
       status: (apiDraft.status as 'draft' | 'sent' | 'delivered') || 'draft',
@@ -161,6 +164,31 @@ export default function DraftsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, activeView])
 
+  // Handle query parameters to open specific draft
+  useEffect(() => {
+    const emailDraftId = searchParams.get('emailDraftId')
+    const smsDraftId = searchParams.get('smsDraftId')
+
+    if (emailDraftId && emailDrafts.length > 0) {
+      const draftId = parseInt(emailDraftId, 10)
+      const draft = emailDrafts.find(d => d.id === draftId)
+      if (draft) {
+        handleViewDraft(draftId, 'email')
+        // Clear the query parameter
+        window.history.replaceState({}, '', '/dashboard/draft')
+      }
+    } else if (smsDraftId && smsDrafts.length > 0) {
+      const draftId = parseInt(smsDraftId, 10)
+      const draft = smsDrafts.find(d => d.id === draftId)
+      if (draft) {
+        handleViewDraft(draftId, 'sms')
+        // Clear the query parameter
+        window.history.replaceState({}, '', '/dashboard/draft')
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, emailDrafts, smsDrafts])
+
   const handleViewChange = (view: DraftViewType) => {
     setActiveView(view)
     // Set active tab based on view
@@ -238,14 +266,15 @@ export default function DraftsPage() {
           setIsEmailOverlayOpen(true)
           
           // Fetch spam check result
-          try {
-            const spamRes = await emailGenerationApi.checkSpam({ draftId })
-            if (spamRes.success && spamRes.data) {
-              setEmailSpamCheckResult(spamRes.data)
-            }
-          } catch (err) {
-            console.error('Error fetching draft details:', err)
-          }
+          // TODO: Commented out spam check API for now
+          // try {
+          //   const spamRes = await emailGenerationApi.checkSpam({ draftId })
+          //   if (spamRes.success && spamRes.data) {
+          //     setEmailSpamCheckResult(spamRes.data)
+          //   }
+          // } catch (err) {
+          //   console.error('Error fetching draft details:', err)
+          // }
           return
         }
       }
@@ -259,14 +288,15 @@ export default function DraftsPage() {
         setIsEmailOverlayOpen(true)
         
         // Fetch spam check result
-        try {
-          const spamRes = await emailGenerationApi.checkSpam({ draftId })
-          if (spamRes.success && spamRes.data) {
-            setEmailSpamCheckResult(spamRes.data)
-          }
-        } catch (err) {
-          console.error('Error fetching draft details:', err)
-        }
+        // TODO: Commented out spam check API for now
+        // try {
+        //   const spamRes = await emailGenerationApi.checkSpam({ draftId })
+        //   if (spamRes.success && spamRes.data) {
+        //     setEmailSpamCheckResult(spamRes.data)
+        //   }
+        // } catch (err) {
+        //   console.error('Error fetching draft details:', err)
+        // }
       }
     } else {
       // SMS view logic
@@ -307,14 +337,15 @@ export default function DraftsPage() {
         setSelectedEmailDraft(nextDraft)
         
         // Fetch spam check result
-        try {
-          const spamRes = await emailGenerationApi.checkSpam({ draftId: nextDraft.id })
-          if (spamRes.success && spamRes.data) {
-            setEmailSpamCheckResult(spamRes.data)
-          }
-        } catch (err) {
-          console.error('Error fetching draft details:', err)
-        }
+        // TODO: Commented out spam check API for now
+        // try {
+        //   const spamRes = await emailGenerationApi.checkSpam({ draftId: nextDraft.id })
+        //   if (spamRes.success && spamRes.data) {
+        //     setEmailSpamCheckResult(spamRes.data)
+        //   }
+        // } catch (err) {
+        //   console.error('Error fetching draft details:', err)
+        // }
       }
       return
     }
@@ -327,14 +358,15 @@ export default function DraftsPage() {
       setSelectedEmailDraft(nextDraft)
       
       // Fetch spam check result
-      try {
-        const spamRes = await emailGenerationApi.checkSpam({ draftId: nextDraft.id })
-        if (spamRes.success && spamRes.data) {
-          setEmailSpamCheckResult(spamRes.data)
-        }
-      } catch (err) {
-        console.error('Error fetching draft details:', err)
-      }
+      // TODO: Commented out spam check API for now
+      // try {
+      //   const spamRes = await emailGenerationApi.checkSpam({ draftId: nextDraft.id })
+      //   if (spamRes.success && spamRes.data) {
+      //     setEmailSpamCheckResult(spamRes.data)
+      //   }
+      // } catch (err) {
+      //   console.error('Error fetching draft details:', err)
+      // }
     }
   }
 
@@ -349,14 +381,15 @@ export default function DraftsPage() {
         setSelectedEmailDraft(prevDraft)
         
         // Fetch spam check result
-        try {
-          const spamRes = await emailGenerationApi.checkSpam({ draftId: prevDraft.id })
-          if (spamRes.success && spamRes.data) {
-            setEmailSpamCheckResult(spamRes.data)
-          }
-        } catch (err) {
-          console.error('Error fetching draft details:', err)
-        }
+        // TODO: Commented out spam check API for now
+        // try {
+        //   const spamRes = await emailGenerationApi.checkSpam({ draftId: prevDraft.id })
+        //   if (spamRes.success && spamRes.data) {
+        //     setEmailSpamCheckResult(spamRes.data)
+        //   }
+        // } catch (err) {
+        //   console.error('Error fetching draft details:', err)
+        // }
       }
       return
     }
@@ -369,14 +402,15 @@ export default function DraftsPage() {
       setSelectedEmailDraft(prevDraft)
       
       // Fetch spam check result
-      try {
-        const spamRes = await emailGenerationApi.checkSpam({ draftId: prevDraft.id })
-        if (spamRes.success && spamRes.data) {
-          setEmailSpamCheckResult(spamRes.data)
-        }
-      } catch (err) {
-        console.error('Error fetching draft details:', err)
-      }
+      // TODO: Commented out spam check API for now
+      // try {
+      //   const spamRes = await emailGenerationApi.checkSpam({ draftId: prevDraft.id })
+      //   if (spamRes.success && spamRes.data) {
+      //     setEmailSpamCheckResult(spamRes.data)
+      //   }
+      // } catch (err) {
+      //   console.error('Error fetching draft details:', err)
+      // }
     }
   }
 
@@ -438,35 +472,131 @@ export default function DraftsPage() {
     setSelectedSmsDraftsNavigationIndex(0)
   }
 
-  const handleEditEmailDraft = (draftId: number) => {
-    console.log(`Edit email draft:`, draftId)
-    // TODO: Implement edit functionality
-    handleCloseEmailOverlay()
+  const handleEditEmailDraft = async (draftId: number, subject: string, body: string) => {
+    try {
+      const res = await emailGenerationApi.updateEmailDraft(draftId, {
+        subjectLine: subject,
+        bodyText: body,
+      })
+      if (res.success && res.data) {
+        // Update the email draft in the local state
+        setEmailDrafts(prevDrafts => 
+          prevDrafts.map(draft => 
+            draft.id === draftId 
+              ? { ...draft, subject, body }
+              : draft
+          )
+        )
+        // Update selected email draft if it's the one being edited
+        if (selectedEmailDraft && selectedEmailDraft.id === draftId) {
+          setSelectedEmailDraft({
+            ...selectedEmailDraft,
+            subject,
+            body
+          })
+        }
+        // Update navigation drafts if they contain this draft
+        if (selectedDraftsForNavigation.length > 0) {
+          setSelectedDraftsForNavigation(prevDrafts =>
+            prevDrafts.map(draft =>
+              draft.id === draftId
+                ? { ...draft, subject, body }
+                : draft
+            )
+          )
+        }
+        // alert('Email draft updated successfully!')
+      } else {
+        alert('Failed to update email draft: ' + (res.error || 'Unknown error'))
+        throw new Error(res.error || 'Failed to update email draft')
+      }
+    } catch (err) {
+      console.error('Error updating email draft:', err)
+      throw err
+    }
   }
 
   const handleSendEmailDraft = async (draftId: number) => {
     try {
       const res = await emailGenerationApi.sendEmailDraft(draftId)
-      if (res.success) {
-        alert('Email sent successfully!')
+      if (res.success && res.data) {
+        const message = res.data.message || 'Email sent successfully!'
+        const spamScore = res.data.spamScore
+        const emailLogId = res.data.emailLogId
+        
+        // Show success message with spam score if available
+        if (spamScore !== undefined) {
+          alert(`${message}\nSpam Score: ${spamScore}\nEmail Log ID: ${emailLogId || 'N/A'}`)
+        } else {
+          alert(message)
+        }
+        
         handleCloseEmailOverlay()
-        // Refresh email drafts
+        // Refresh email drafts to get updated status
         fetchEmailDrafts()
       } else {
         alert('Failed to send email: ' + (res.error || 'Unknown error'))
       }
     } catch (err) {
       console.error('Error sending email:', err)
-      alert('Error sending email: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      // Handle BadRequestException with spam score details
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      if (errorMessage.includes('spam score') || errorMessage.includes('blocked')) {
+        alert(`Email blocked: ${errorMessage}\nPlease optimize the content and try again.`)
+      } else {
+        alert('Error sending email: ' + errorMessage)
+      }
+    }
+  }
+
+  const handleEditSmsDraft = async (draftId: number, messageText: string) => {
+    try {
+      const res = await smsGenerationApi.updateSmsDraft(draftId, { messageText })
+      if (res.success && res.data) {
+        // Update the SMS draft in the local state
+        setSmsDrafts(prevDrafts => 
+          prevDrafts.map(draft => 
+            draft.id === draftId 
+              ? { ...draft, message: messageText, characterCount: messageText.length }
+              : draft
+          )
+        )
+        // Update selected SMS draft if it's the one being edited
+        if (selectedSmsDraft && selectedSmsDraft.id === draftId) {
+          setSelectedSmsDraft({
+            ...selectedSmsDraft,
+            message: messageText,
+            characterCount: messageText.length
+          })
+        }
+        // Update navigation drafts if they contain this draft
+        if (selectedSmsDraftsForNavigation.length > 0) {
+          setSelectedSmsDraftsForNavigation(prevDrafts =>
+            prevDrafts.map(draft =>
+              draft.id === draftId
+                ? { ...draft, message: messageText, characterCount: messageText.length }
+                : draft
+            )
+          )
+        }
+        // alert('SMS draft updated successfully!')
+      } else {
+        alert('Failed to update SMS draft: ' + (res.error || 'Unknown error'))
+        throw new Error(res.error || 'Failed to update SMS draft')
+      }
+    } catch (err) {
+      console.error('Error updating SMS draft:', err)
+      throw err
     }
   }
 
   const handleEditDraft = (draftId: number) => {
     if (activeTab === 'email') {
-      handleEditEmailDraft(draftId)
+      // Email edit is handled directly in the overlay via onEdit prop
+      console.log('Edit email draft:', draftId)
     } else {
+      // SMS edit is handled directly in the overlay via onEdit prop
       console.log(`Edit ${activeTab} draft:`, draftId)
-      // TODO: Implement SMS edit
     }
   }
 
@@ -782,14 +912,15 @@ export default function DraftsPage() {
     setIsEmailOverlayOpen(true)
     
     // Fetch spam check for first draft
-    try {
-      const spamRes = await emailGenerationApi.checkSpam({ draftId: firstDraft.id })
-      if (spamRes.success && spamRes.data) {
-        setEmailSpamCheckResult(spamRes.data)
-      }
-    } catch (err) {
-      console.error('Error fetching draft details:', err)
-    }
+    // TODO: Commented out spam check API for now
+    // try {
+    //   const spamRes = await emailGenerationApi.checkSpam({ draftId: firstDraft.id })
+    //   if (spamRes.success && spamRes.data) {
+    //     setEmailSpamCheckResult(spamRes.data)
+    //   }
+    // } catch (err) {
+    //   console.error('Error fetching draft details:', err)
+    // }
   }
 
   // Actual bulk send email drafts (executed from overlay)
@@ -805,7 +936,7 @@ export default function DraftsPage() {
       for (const draftId of draftIds) {
         try {
           const res = await emailGenerationApi.sendEmailDraft(draftId)
-          if (res.success) {
+          if (res.success && res.data) {
             results.success++
           } else {
             results.failed++
@@ -813,7 +944,13 @@ export default function DraftsPage() {
           }
         } catch (err) {
           results.failed++
-          results.errors.push(`Draft ${draftId}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+          // Handle spam score errors specifically
+          if (errorMessage.includes('spam score') || errorMessage.includes('blocked')) {
+            results.errors.push(`Draft ${draftId}: Blocked - ${errorMessage}`)
+          } else {
+            results.errors.push(`Draft ${draftId}: ${errorMessage}`)
+          }
         }
       }
 
@@ -930,7 +1067,7 @@ export default function DraftsPage() {
       for (const draftId of Array.from(selectedEmailDraftIds)) {
         try {
           const res = await emailGenerationApi.sendEmailDraft(draftId)
-          if (res.success) {
+          if (res.success && res.data) {
             results.emailSuccess++
           } else {
             results.emailFailed++
@@ -938,7 +1075,13 @@ export default function DraftsPage() {
           }
         } catch (err) {
           results.emailFailed++
-          results.errors.push(`Email ${draftId}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+          // Handle spam score errors specifically
+          if (errorMessage.includes('spam score') || errorMessage.includes('blocked')) {
+            results.errors.push(`Email ${draftId}: Blocked - ${errorMessage}`)
+          } else {
+            results.errors.push(`Email ${draftId}: ${errorMessage}`)
+          }
         }
       }
 
@@ -1376,11 +1519,7 @@ export default function DraftsPage() {
         isOpen={isSmsOverlayOpen}
         smsDraft={selectedSmsDraft}
         onClose={handleCloseSmsOverlay}
-        onEdit={(draftId) => {
-          console.log(`Edit SMS draft:`, draftId)
-          // TODO: Implement SMS edit functionality
-          handleCloseSmsOverlay()
-        }}
+        onEdit={handleEditSmsDraft}
         onSend={handleSendSmsDraft}
         onNext={handleNextSmsDraft}
         onPrevious={handlePreviousSmsDraft}
@@ -1426,6 +1565,23 @@ export default function DraftsPage() {
         }}
       />
     </AuthGuard>
+  )
+}
+
+export default function DraftsPage() {
+  return (
+    <Suspense fallback={
+      <AuthGuard>
+        <div className="flex h-[calc(100vh-64px)] bg-gray-50 overflow-hidden items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading drafts...</p>
+          </div>
+        </div>
+      </AuthGuard>
+    }>
+      <DraftsPageContent />
+    </Suspense>
   )
 }
 

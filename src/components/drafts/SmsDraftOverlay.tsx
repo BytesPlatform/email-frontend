@@ -8,7 +8,7 @@ interface SmsDraftOverlayProps {
   isOpen: boolean
   smsDraft: SmsDraft | null
   onClose: () => void
-  onEdit?: (draftId: number) => void
+  onEdit?: (draftId: number, messageText: string) => Promise<void>
   onSend?: (draftId: number) => void
   onNext?: () => void
   onPrevious?: () => void
@@ -41,6 +41,24 @@ export function SmsDraftOverlay({
 }: SmsDraftOverlayProps) {
   const [isMinimized, setIsMinimized] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [editedMessage, setEditedMessage] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Initialize edited message when draft changes or edit mode is enabled
+  useEffect(() => {
+    if (smsDraft) {
+      setEditedMessage(smsDraft.message || '')
+    }
+  }, [smsDraft])
+
+  // Reset edit mode when overlay closes
+  useEffect(() => {
+    if (!isOpen) {
+      setIsEditMode(false)
+      setIsSaving(false)
+    }
+  }, [isOpen])
 
   // Prevent background scrolling when overlay is open
   useEffect(() => {
@@ -63,6 +81,30 @@ export function SmsDraftOverlay({
       }
     }
   }, [isOpen, isMinimized])
+
+  const handleSave = async () => {
+    if (!smsDraft || !onEdit) return
+    
+    setIsSaving(true)
+    try {
+      await onEdit(smsDraft.id, editedMessage)
+      setIsEditMode(false)
+    } catch (error) {
+      console.error('Error saving SMS draft:', error)
+      alert('Failed to save SMS draft: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleCancel = () => {
+    if (smsDraft) {
+      setEditedMessage(smsDraft.message || '')
+    }
+    setIsEditMode(false)
+  }
+
+  const characterCount = editedMessage.length
 
   if (!isOpen || !smsDraft) return null
 
@@ -199,19 +241,39 @@ export function SmsDraftOverlay({
                       Draft
                     </span>
                   )}
-                  {smsDraft.characterCount !== undefined && (
-                    <span className="text-xs text-gray-500 ml-auto">
-                      {smsDraft.characterCount} / 160 characters
-                    </span>
-                  )}
+                  <span className={`text-xs ml-auto ${
+                    isEditMode && characterCount > 160 
+                      ? 'text-red-500 font-semibold' 
+                      : isEditMode && characterCount > 140 
+                      ? 'text-orange-500' 
+                      : 'text-gray-500'
+                  }`}>
+                    {isEditMode ? characterCount : (smsDraft.characterCount ?? 0)} / 160 characters
+                  </span>
                 </div>
               </div>
 
               {/* SMS Body - Large Clean Area */}
-              <div className="flex-1 overflow-y-auto px-4 py-4">
-                <div className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed min-h-full">
-                  {smsDraft.message || ''}
-                </div>
+              <div className="flex-1 overflow-hidden flex flex-col">
+                {isEditMode ? (
+                  <div className="flex-1 px-4 py-4 overflow-y-auto">
+                    <textarea
+                      value={editedMessage}
+                      onChange={(e) => setEditedMessage(e.target.value)}
+                      className="w-full min-h-[200px] text-sm text-gray-900 outline-none resize-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-3 leading-relaxed"
+                      placeholder="Enter your SMS message..."
+                      maxLength={160}
+                      autoFocus
+                      rows={8}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto px-4 py-4">
+                    <div className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed min-h-full">
+                      {smsDraft.message || ''}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Simplified Bottom Toolbar */}
@@ -219,56 +281,85 @@ export function SmsDraftOverlay({
                 <div className="flex items-center justify-between">
                   {/* Left: Action Buttons */}
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => onSend && onSend(smsDraft.id)}
-                      disabled={smsDraft.status !== 'draft'}
-                      className="bg-green-600 hover:bg-green-700 text-white px-6 py-2"
-                    >
-                      Send
-                    </Button>
-                    {smsDraft.status === 'draft' && onEdit && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onEdit(smsDraft.id)}
-                        className="text-gray-700 border-gray-300 hover:bg-gray-50"
-                      >
-                        Edit
-                      </Button>
+                    {isEditMode ? (
+                      <>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={handleSave}
+                          disabled={isSaving || !editedMessage.trim()}
+                          isLoading={isSaving}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCancel}
+                          disabled={isSaving}
+                          className="text-gray-700 border-gray-300 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => onSend && onSend(smsDraft.id)}
+                          disabled={smsDraft.status !== 'draft'}
+                          className="bg-green-600 hover:bg-green-700 text-white px-6 py-2"
+                        >
+                          Send
+                        </Button>
+                        {smsDraft.status === 'draft' && onEdit && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsEditMode(true)}
+                            className="text-gray-700 border-gray-300 hover:bg-gray-50"
+                          >
+                            Edit
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
 
                   {/* Center: Navigation */}
-                  <div className="flex items-center gap-2">
-                    {onPrevious && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onPrevious}
-                        disabled={!hasPrevious}
-                        className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Previous
-                      </Button>
-                    )}
-                    {onNext && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onNext}
-                        disabled={!hasNext}
-                        className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Next
-                      </Button>
-                    )}
-                  </div>
+                  {!isEditMode && (
+                    <div className="flex items-center gap-2">
+                      {onPrevious && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={onPrevious}
+                          disabled={!hasPrevious}
+                          className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Previous
+                        </Button>
+                      )}
+                      {onNext && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={onNext}
+                          disabled={!hasNext}
+                          className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Next
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {isEditMode && <div className="flex-1" />}
 
-                  {/* Right: Send All (if on last item) */}
+                  {/* Right: Send All (if on last item) or Close button */}
                   <div className="flex items-center gap-2">
-                    {onSendAll && !hasNext && currentIndex !== undefined && totalCount !== undefined && totalCount > 0 && (
+                    {!isEditMode && onSendAll && !hasNext && currentIndex !== undefined && totalCount !== undefined && totalCount > 0 && (
                       <Button
                         variant="primary"
                         size="sm"
@@ -278,15 +369,17 @@ export function SmsDraftOverlay({
                         Send All ({selectedCount !== undefined ? selectedCount : totalCount})
                       </Button>
                     )}
-                    <button
-                      onClick={onClose}
-                      className="p-2 hover:bg-gray-100 rounded transition-colors"
-                      title="Close"
-                    >
-                      <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
+                    {!isEditMode && (
+                      <button
+                        onClick={onClose}
+                        className="p-2 hover:bg-gray-100 rounded transition-colors"
+                        title="Close"
+                      >
+                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

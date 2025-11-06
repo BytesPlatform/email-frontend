@@ -14,7 +14,7 @@ interface EmailDraftOverlayProps {
     blocked: boolean
   }
   onClose: () => void
-  onEdit?: (draftId: number) => void
+  onEdit?: (draftId: number, subject: string, body: string) => Promise<void>
   onSend?: (draftId: number) => void
   onNext?: () => void
   onPrevious?: () => void
@@ -49,6 +49,26 @@ export function EmailDraftOverlay({
   const [isMinimized, setIsMinimized] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
   const [showCcBcc, setShowCcBcc] = useState(false)
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [editedSubject, setEditedSubject] = useState('')
+  const [editedBody, setEditedBody] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Initialize edited content when draft changes or edit mode is enabled
+  useEffect(() => {
+    if (emailDraft) {
+      setEditedSubject(emailDraft.subject || '')
+      setEditedBody(emailDraft.body || '')
+    }
+  }, [emailDraft])
+
+  // Reset edit mode when overlay closes
+  useEffect(() => {
+    if (!isOpen) {
+      setIsEditMode(false)
+      setIsSaving(false)
+    }
+  }, [isOpen])
 
   // Prevent background scrolling when overlay is open
   useEffect(() => {
@@ -71,6 +91,29 @@ export function EmailDraftOverlay({
       }
     }
   }, [isOpen, isMinimized])
+
+  const handleSave = async () => {
+    if (!emailDraft || !onEdit) return
+    
+    setIsSaving(true)
+    try {
+      await onEdit(emailDraft.id, editedSubject, editedBody)
+      setIsEditMode(false)
+    } catch (error) {
+      console.error('Error saving email draft:', error)
+      alert('Failed to save email draft: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleCancel = () => {
+    if (emailDraft) {
+      setEditedSubject(emailDraft.subject || '')
+      setEditedBody(emailDraft.body || '')
+    }
+    setIsEditMode(false)
+  }
 
   if (!isOpen || !emailDraft) return null
 
@@ -168,6 +211,22 @@ export function EmailDraftOverlay({
           <>
             {/* Content Area */}
             <div className="flex-1 flex flex-col overflow-hidden bg-white">
+              {/* From Field - Clean Gmail Style */}
+              <div className="px-4 py-3 border-b border-gray-200">
+                <div className="flex items-center">
+                  <span className="text-sm text-gray-500 font-normal mr-3 min-w-[60px]">From</span>
+                  <div className="flex-1">
+                    <input
+                      type="email"
+                      value={emailDraft.fromEmail || ''}
+                      readOnly
+                      className="w-full text-sm text-gray-900 outline-none bg-transparent border-none"
+                      placeholder="Sender email"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* To Field - Clean Gmail Style */}
               <div className="px-4 py-3 border-b border-gray-200">
                 <div className="flex items-center">
@@ -185,6 +244,7 @@ export function EmailDraftOverlay({
                     <button
                       onClick={() => setShowCcBcc(!showCcBcc)}
                       className="text-xs text-gray-600 hover:text-gray-900 transition-colors"
+                      disabled={isEditMode}
                     >
                       Cc
                     </button>
@@ -195,20 +255,46 @@ export function EmailDraftOverlay({
 
               {/* Subject Field - Clean Style */}
               <div className="px-4 py-3 border-b border-gray-200">
-                <input
-                  type="text"
-                  value={emailDraft.subject || ''}
-                  readOnly
-                  className="w-full text-sm text-gray-900 outline-none bg-transparent border-none"
-                  placeholder="Subject"
-                />
+                {isEditMode ? (
+                  <input
+                    type="text"
+                    value={editedSubject}
+                    onChange={(e) => setEditedSubject(e.target.value)}
+                    className="w-full text-sm text-gray-900 outline-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-2"
+                    placeholder="Subject"
+                    autoFocus
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={emailDraft.subject || ''}
+                    readOnly
+                    className="w-full text-sm text-gray-900 outline-none bg-transparent border-none"
+                    placeholder="Subject"
+                  />
+                )}
               </div>
 
               {/* Email Body - Large Clean Area */}
-              <div className="flex-1 overflow-y-auto px-4 py-4">
-                <div className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed min-h-full">
-                  {emailDraft.body || ''}
-                </div>
+              <div className="flex-1 overflow-hidden flex flex-col">
+                {isEditMode ? (
+                  <div className="flex-1 px-4 py-4 overflow-y-auto">
+                    <textarea
+                      value={editedBody}
+                      onChange={(e) => setEditedBody(e.target.value)}
+                      className="w-full min-h-[300px] text-sm text-gray-900 outline-none resize-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-3 leading-relaxed"
+                      placeholder="Enter your email message..."
+                      autoFocus={false}
+                      rows={12}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto px-4 py-4">
+                    <div className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed min-h-full">
+                      {emailDraft.body || ''}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Simplified Bottom Toolbar */}
@@ -216,56 +302,85 @@ export function EmailDraftOverlay({
                 <div className="flex items-center justify-between">
                   {/* Left: Action Buttons */}
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => onSend && onSend(emailDraft.id)}
-                      disabled={emailDraft.status !== 'draft'}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
-                    >
-                      Send
-                    </Button>
-                    {emailDraft.status === 'draft' && onEdit && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onEdit(emailDraft.id)}
-                        className="text-gray-700 border-gray-300 hover:bg-gray-50"
-                      >
-                        Edit
-                      </Button>
+                    {isEditMode ? (
+                      <>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={handleSave}
+                          disabled={isSaving || !editedSubject.trim() || !editedBody.trim()}
+                          isLoading={isSaving}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCancel}
+                          disabled={isSaving}
+                          className="text-gray-700 border-gray-300 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => onSend && onSend(emailDraft.id)}
+                          disabled={emailDraft.status !== 'draft'}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
+                        >
+                          Send
+                        </Button>
+                        {emailDraft.status === 'draft' && onEdit && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsEditMode(true)}
+                            className="text-gray-700 border-gray-300 hover:bg-gray-50"
+                          >
+                            Edit
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
 
                   {/* Center: Navigation */}
-                  <div className="flex items-center gap-2">
-                    {onPrevious && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onPrevious}
-                        disabled={!hasPrevious}
-                        className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Previous
-                      </Button>
-                    )}
-                    {onNext && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onNext}
-                        disabled={!hasNext}
-                        className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Next
-                      </Button>
-                    )}
-                  </div>
+                  {!isEditMode && (
+                    <div className="flex items-center gap-2">
+                      {onPrevious && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={onPrevious}
+                          disabled={!hasPrevious}
+                          className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Previous
+                        </Button>
+                      )}
+                      {onNext && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={onNext}
+                          disabled={!hasNext}
+                          className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Next
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {isEditMode && <div className="flex-1" />}
 
-                  {/* Right: Send All (if on last item) */}
+                  {/* Right: Send All (if on last item) or Close button */}
                   <div className="flex items-center gap-2">
-                    {onSendAll && !hasNext && currentIndex !== undefined && totalCount !== undefined && totalCount > 0 && (
+                    {!isEditMode && onSendAll && !hasNext && currentIndex !== undefined && totalCount !== undefined && totalCount > 0 && (
                       <Button
                         variant="primary"
                         size="sm"
@@ -275,15 +390,17 @@ export function EmailDraftOverlay({
                         Send All ({selectedCount !== undefined ? selectedCount : totalCount})
                       </Button>
                     )}
-                    <button
-                      onClick={onClose}
-                      className="p-2 hover:bg-gray-100 rounded transition-colors"
-                      title="Close"
-                    >
-                      <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
+                    {!isEditMode && (
+                      <button
+                        onClick={onClose}
+                        className="p-2 hover:bg-gray-100 rounded transition-colors"
+                        title="Close"
+                      >
+                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
