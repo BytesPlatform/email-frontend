@@ -53,6 +53,9 @@ export const auth = {
         // This allows Authorization header to be sent even if cookies fail
         if (access_token) {
           safeLocalStorage.setItem('access_token', access_token)
+          console.log('[Auth] Token stored in localStorage:', access_token.substring(0, 20) + '...')
+        } else {
+          console.warn('[Auth] No access_token received in login response')
         }
         
         return {

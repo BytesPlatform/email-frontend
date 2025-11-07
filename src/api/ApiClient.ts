@@ -60,6 +60,15 @@ class ApiClient {
     const token = this.getAuthToken()
     if (token) {
       defaultHeaders['Authorization'] = `Bearer ${token}`
+      // Debug logging (remove in production if needed)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[ApiClient] Adding Authorization header with token')
+      }
+    } else {
+      // Debug logging
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[ApiClient] No token found in localStorage, relying on cookies')
+      }
     }
 
     const config: RequestInit = {
@@ -92,12 +101,13 @@ class ApiClient {
       
       // Handle different response formats
       if (data.message && data.client) {
-        // Backend format: { message: 'Login successful', client: {...} }
+        // Backend format: { message: 'Login successful', client: {...}, access_token: '...' }
         return {
           success: true,
           data: {
             message: data.message,
-            client: data.client
+            client: data.client,
+            access_token: data.access_token // Include access_token if present
           }
         } as ApiResponse<T>
       } else if (data.success !== undefined) {
