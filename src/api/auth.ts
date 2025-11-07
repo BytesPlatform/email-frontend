@@ -41,12 +41,18 @@ export const auth = {
       const response = await apiClient.post('/auth/login', credentials)
       
       if (response.success && response.data) {
-        const data = response.data as { client?: Client; message?: string }
-        const { client, message } = data
+        const data = response.data as { client?: Client; message?: string; access_token?: string }
+        const { client, message, access_token } = data
         
         // Store client data in localStorage for UI state management
         if (client) {
           safeLocalStorage.setItem(STORAGE_KEYS.currentUser, JSON.stringify(client))
+        }
+        
+        // Store token in localStorage as fallback if cookies don't work in production
+        // This allows Authorization header to be sent even if cookies fail
+        if (access_token) {
+          safeLocalStorage.setItem('access_token', access_token)
         }
         
         return {
@@ -74,16 +80,25 @@ export const auth = {
       const response = await apiClient.post('/auth/signup', data)
       
       if (response.success && response.data) {
-        const client = response.data as Client
+        const data = response.data as Client | { client?: Client; access_token?: string }
+        
+        // Handle different response formats
+        const client = 'client' in data ? data.client : data
+        const access_token = 'access_token' in data ? data.access_token : undefined
         
         // Store client data in localStorage for UI state management
         if (client) {
           safeLocalStorage.setItem(STORAGE_KEYS.currentUser, JSON.stringify(client))
         }
         
+        // Store token in localStorage as fallback if cookies don't work in production
+        if (access_token) {
+          safeLocalStorage.setItem('access_token', access_token)
+        }
+        
         return {
           success: true,
-          client
+          client: client as Client
         }
       } else {
         return {
@@ -110,6 +125,7 @@ export const auth = {
     } finally {
       // Always clear local storage
       safeLocalStorage.removeItem(STORAGE_KEYS.currentUser)
+      safeLocalStorage.removeItem('access_token') // Also remove token
     }
   },
 
