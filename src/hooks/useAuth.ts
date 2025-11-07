@@ -6,7 +6,7 @@ export function useAuth(): AuthState & {
   user: Client | null
   login: (email: string, password: string) => Promise<boolean>
   register: (email: string, password: string, name: string, phone?: string, city?: string, country?: string, address?: string) => Promise<boolean>
-  logout: () => void
+  logout: () => Promise<void>
   updateProfile: (data: { name?: string; email?: string; currentPassword?: string; newPassword?: string }) => Promise<boolean>
 } {
   const [client, setClient] = useState<Client | null>(null)
@@ -87,14 +87,19 @@ export function useAuth(): AuthState & {
     }
   }
 
-  const logout = () => {
-    auth.logout()
+  const logout = async () => {
+    // Clear state immediately for responsive UI
     setClient(null)
     setError(null)
-    // Clear lastUploadId from localStorage on logout to prevent cross-account data leak
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('lastUploadId')
-      console.log('[AUTH] Cleared lastUploadId on logout')
+    
+    // Await logout to ensure all cleanup completes
+    // This ensures localStorage is cleared before any redirect happens
+    try {
+      await auth.logout()
+      console.log('[AUTH] Logout completed successfully')
+    } catch (error) {
+      // Even if logout fails, state is already cleared
+      console.warn('[AUTH] Logout error (state already cleared):', error)
     }
   }
 

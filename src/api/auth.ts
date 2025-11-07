@@ -164,16 +164,38 @@ export const auth = {
 
   // Logout user
   async logout(): Promise<void> {
+    // CRITICAL: Clear local storage FIRST to ensure it's always cleared
+    // This ensures logout works even if API call fails (e.g., token expired, network error)
+    safeLocalStorage.removeItem(STORAGE_KEYS.currentUser)
+    safeLocalStorage.removeItem('access_token')
+    
+    // Also clear any other auth-related items
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('lastUploadId')
+        // Clear all localStorage items that might be auth-related
+        const keysToRemove: string[] = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && (key.includes('token') || key.includes('auth') || key.includes('user'))) {
+            keysToRemove.push(key)
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key))
+        console.log('[Auth] Cleared all authentication data from localStorage')
+      } catch (error) {
+        console.error('[Auth] Error clearing localStorage:', error)
+      }
+    }
+    
+    // Try to call backend logout endpoint (but don't fail if it doesn't work)
     try {
-      // Call backend logout endpoint
       await apiClient.post('/auth/logout')
+      console.log('[Auth] Backend logout successful')
     } catch (error) {
-      // Even if backend call fails, clear local storage
-      console.warn('Logout API call failed:', error)
-    } finally {
-      // Always clear local storage
-      safeLocalStorage.removeItem(STORAGE_KEYS.currentUser)
-      safeLocalStorage.removeItem('access_token') // Also remove token
+      // Backend logout failed - this is OK, we've already cleared local storage
+      // This can happen if token is expired, network error, or cross-origin cookie issues
+      console.warn('[Auth] Backend logout failed (this is OK if token expired or network issue):', error)
     }
   },
 
