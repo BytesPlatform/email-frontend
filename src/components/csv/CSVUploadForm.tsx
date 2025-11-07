@@ -17,73 +17,345 @@ interface UploadMetadata {
 interface CSVUploadFormProps {
   onFileProcessed?: (data: CSVRecord[], headers: string[]) => void
   onUploadSuccess?: (metadata: UploadMetadata) => void
+  onMappedDataReady?: (originalData: Record<string, string>[], mappings: ColumnMapping[]) => void
 }
 
-export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFormProps) {
+export interface ColumnMapping {
+  csvColumnIndex: number
+  csvColumnName: string
+  mappedField: string | null
+  confidence: 'exact' | 'synonym' | 'fuzzy' | 'none'
+}
+
+interface ValidationResult {
+  isValid: boolean
+  errors: string[]
+  mappings: ColumnMapping[]
+  convertedData: CSVRecord[]
+}
+
+export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataReady }: CSVUploadFormProps) {
   const { client } = useAuthContext()
   const [file, setFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [dragActive, setDragActive] = useState(false)
   const [parsedData, setParsedData] = useState<CSVRecord[]>([])
-  const [, setHeaders] = useState<string[]>([])
   const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([])
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  // Standard 6-column format
+  // Standard 6-column format in exact order
   const requiredColumns = ['business_name', 'zipcode', 'state', 'phone_number', 'website', 'email']
   
-  // Column mapping for common variations
-  const columnMappings: { [key: string]: string[] } = {
-    'business_name': ['business_name', 'company_name', 'name', 'business', 'company'],
-    'zipcode': ['zipcode', 'zip', 'zip_code', 'postal_code'],
-    'state': ['state', 'province', 'region'],
-    'phone_number': ['phone_number', 'phone', 'telephone', 'contact_number'],
-    'website': ['website', 'url', 'web_site', 'homepage'],
-    'email': ['email', 'email_address', 'e_mail', 'contact_email']
+  // Comprehensive synonym dictionary for each required field
+  const synonymDictionary: { [key: string]: string[] } = {
+    'business_name': [
+      'business name',
+      'business_name',
+      'company',
+      'company name',
+      'company_name',
+      'store name',
+      'store_name',
+      'organization',
+      'organization name',
+      'organization_name',
+      'firm name',
+      'firm_name',
+      'brand name',
+      'brand_name',
+      'business',
+      'trading name',
+      'trading_name',
+      'entity name',
+      'entity_name',
+      'legal name',
+      'legal_name'
+    ],
+    'zipcode': [
+      'zip code',
+      'zipcode',
+      'zip_code',
+      'postal code',
+      'postal_code',
+      'post code',
+      'post_code',
+      'zip',
+      'area code',
+      'area_code',
+      'pin code',
+      'pin_code',
+      'postal',
+      'zip number',
+      'zip_number',
+      'postal zip',
+      'postal_zip',
+      'region code',
+      'region_code',
+      'delivery code',
+      'delivery_code'
+    ],
+    'state': [
+      'state',
+      'province',
+      'region',
+      'territory',
+      'county',
+      'district',
+      'governorate',
+      'prefecture',
+      'state name',
+      'state_name',
+      'region name',
+      'region_name',
+      'administrative area',
+      'administrative_area',
+      'location state',
+      'location_state'
+    ],
+    'phone_number': [
+      'phone',
+      'phone number',
+      'phone_number',
+      'telephone',
+      'contact',
+      'contact number',
+      'contact_number',
+      'mobile',
+      'mobile number',
+      'mobile_number',
+      'cell',
+      'cell number',
+      'cell_number',
+      'work phone',
+      'work_phone',
+      'office phone',
+      'office_phone',
+      'business contact',
+      'business_contact'
+    ],
+    'website': [
+      'website',
+      'url',
+      'website url',
+      'website_url',
+      'web address',
+      'web_address',
+      'site link',
+      'site_link',
+      'company website',
+      'company_website',
+      'homepage',
+      'webpage',
+      'link',
+      'official site',
+      'official_site',
+      'domain',
+      'website address',
+      'website_address'
+    ],
+    'email': [
+      'email',
+      'email address',
+      'email_address',
+      'business email',
+      'business_email',
+      'personal email',
+      'personal_email',
+      'contact email',
+      'contact_email',
+      'work email',
+      'work_email',
+      'official email',
+      'official_email',
+      'primary email',
+      'primary_email',
+      'mail',
+      'email id',
+      'email_id',
+      'company email',
+      'company_email',
+      'registered email',
+      'registered_email'
+    ]
   }
 
-  const validateAndConvertCSV = (data: Record<string, string>[], headers: string[]) => {
+  // Normalize string for comparison (lowercase, remove special chars)
+  const normalizeString = (str: string): string => {
+    return str.toLowerCase().replace(/[_\s-]/g, '').trim()
+  }
+
+  // Calculate Levenshtein distance for fuzzy matching
+  const levenshteinDistance = (str1: string, str2: string): number => {
+    const s1 = normalizeString(str1)
+    const s2 = normalizeString(str2)
+    const matrix: number[][] = []
+
+    for (let i = 0; i <= s2.length; i++) {
+      matrix[i] = [i]
+    }
+
+    for (let j = 0; j <= s1.length; j++) {
+      matrix[0][j] = j
+    }
+
+    for (let i = 1; i <= s2.length; i++) {
+      for (let j = 1; j <= s1.length; j++) {
+        if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1]
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          )
+        }
+      }
+    }
+
+    return matrix[s2.length][s1.length]
+  }
+
+  // Calculate similarity score (0-1, higher is better)
+  const calculateSimilarity = (str1: string, str2: string): number => {
+    const maxLength = Math.max(str1.length, str2.length)
+    if (maxLength === 0) return 1
+    const distance = levenshteinDistance(str1, str2)
+    return 1 - distance / maxLength
+  }
+
+  // Smart column mapping function
+  const mapColumns = (headers: string[]): ColumnMapping[] => {
+    const mappings: ColumnMapping[] = headers.map((header, index) => {
+      const normalizedHeader = normalizeString(header)
+      let bestMatch: { field: string; confidence: 'exact' | 'synonym' | 'fuzzy'; score: number } | null = null
+
+      // Try to match against each required field
+      for (const requiredField of requiredColumns) {
+        const synonyms = synonymDictionary[requiredField]
+        
+        // 1. Check for exact match
+        if (normalizedHeader === normalizeString(requiredField)) {
+          bestMatch = { field: requiredField, confidence: 'exact', score: 1.0 }
+          break
+        }
+
+        // 2. Check synonym dictionary
+        for (const synonym of synonyms) {
+          if (normalizedHeader === normalizeString(synonym)) {
+            bestMatch = { field: requiredField, confidence: 'synonym', score: 0.95 }
+            break
+          }
+        }
+
+        if (bestMatch) break
+
+        // 3. Try fuzzy matching with synonyms
+        for (const synonym of synonyms) {
+          const similarity = calculateSimilarity(normalizedHeader, synonym)
+          if (similarity >= 0.7) {
+            if (!bestMatch || similarity > bestMatch.score) {
+              bestMatch = { field: requiredField, confidence: 'fuzzy', score: similarity }
+            }
+          }
+        }
+      }
+
+      return {
+        csvColumnIndex: index,
+        csvColumnName: header,
+        mappedField: bestMatch ? bestMatch.field : null,
+        confidence: bestMatch ? bestMatch.confidence : 'none'
+      }
+    })
+
+    return mappings
+  }
+
+  // Validate that all required fields are present (order doesn't matter)
+  const validateRequiredFields = (mappings: ColumnMapping[]): string[] => {
+    const errors: string[] = []
+    const mappedFields = mappings
+      .filter(m => m.mappedField !== null)
+      .map(m => m.mappedField!)
+
+    // Check if all required fields are present
+    const missingFields = requiredColumns.filter(field => !mappedFields.includes(field))
+    if (missingFields.length > 0) {
+      errors.push(`Missing required fields: ${missingFields.join(', ')}`)
+    }
+
+    return errors
+  }
+
+  // Main validation function
+  const validateAndConvertCSV = (data: Record<string, string>[], headers: string[]): ValidationResult => {
     const errors: string[] = []
     const convertedData: CSVRecord[] = []
-    
-    // Check if we have the required columns
-    const missingColumns = requiredColumns.filter(col => 
-      !headers.some(header => 
-        columnMappings[col].some(mapping => 
-          header.toLowerCase().replace(/[_\s-]/g, '') === mapping.toLowerCase().replace(/[_\s-]/g, '')
-        )
-      )
-    )
-    
-    if (missingColumns.length > 0) {
-      errors.push(`Missing required columns: ${missingColumns.join(', ')}`)
+
+    // Check column count
+    if (headers.length !== 6) {
+      errors.push(`CSV must have exactly 6 columns. Found ${headers.length} columns.`)
+      return {
+        isValid: false,
+        errors,
+        mappings: headers.map((h, i) => ({
+          csvColumnIndex: i,
+          csvColumnName: h,
+          mappedField: null,
+          confidence: 'none'
+        })),
+        convertedData: []
+      }
     }
-    
-    // Convert data to standard format
-    data.forEach((row) => {
-      const convertedRow: CSVRecord = {}
-      
-      requiredColumns.forEach(requiredCol => {
-        // Find matching column in the CSV
-        const matchingHeader = headers.find(header => 
-          columnMappings[requiredCol].some(mapping => 
-            header.toLowerCase().replace(/[_\s-]/g, '') === mapping.toLowerCase().replace(/[_\s-]/g, '')
-          )
-        )
-        
-        if (matchingHeader) {
-          convertedRow[requiredCol] = row[matchingHeader] || ''
-        } else {
-          convertedRow[requiredCol] = ''
+
+    // Map columns
+    const mappings = mapColumns(headers)
+
+    // Check for unmapped columns
+    const unmappedColumns = mappings.filter(m => m.mappedField === null)
+    if (unmappedColumns.length > 0) {
+      const suggestions = unmappedColumns.map(m => {
+        // Find best suggestion for unmapped column
+        let bestSuggestion = ''
+        let bestScore = 0
+        for (const field of requiredColumns) {
+          const similarity = calculateSimilarity(m.csvColumnName, field)
+          if (similarity > bestScore && similarity >= 0.5) {
+            bestScore = similarity
+            bestSuggestion = field
+          }
         }
+        return bestSuggestion ? `"${m.csvColumnName}" (suggested: ${bestSuggestion})` : `"${m.csvColumnName}"`
       })
-      
-      convertedData.push(convertedRow)
-    })
-    
-    return { convertedData, errors }
+      errors.push(`Could not map columns: ${suggestions.join(', ')}`)
+    }
+
+    // Validate that all required fields are present
+    const fieldErrors = validateRequiredFields(mappings)
+    errors.push(...fieldErrors)
+
+    // If validation passed, convert data
+    if (errors.length === 0) {
+      data.forEach((row) => {
+        const convertedRow: CSVRecord = {}
+        mappings.forEach((mapping) => {
+          if (mapping.mappedField) {
+            convertedRow[mapping.mappedField] = row[mapping.csvColumnName] || ''
+          }
+        })
+        convertedData.push(convertedRow)
+      })
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      mappings,
+      convertedData
+    }
   }
 
   const parseCSV = (csvText: string) => {
@@ -130,6 +402,8 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
     const selectedFile = e.target.files?.[0]
     if (selectedFile && selectedFile.type === 'text/csv') {
       setFile(selectedFile)
+      setUploadError(null)
+      setUploadSuccess(null)
       
       // Parse the CSV file immediately
       try {
@@ -137,22 +411,31 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
         const { headers, data } = parseCSV(text)
         
         // Validate and convert to standard format
-        const { convertedData, errors } = validateAndConvertCSV(data, headers)
+        const validationResult = validateAndConvertCSV(data, headers)
         
-        setHeaders(requiredColumns) // Use standard headers
-        setParsedData(convertedData)
-        setValidationErrors(errors)
+        setParsedData(validationResult.convertedData)
+        setValidationErrors(validationResult.errors)
+        setColumnMappings(validationResult.mappings)
         
-        // Notify parent component with converted data
-        if (onFileProcessed) {
-          onFileProcessed(convertedData, requiredColumns)
+        // Notify parent component with mapped data for preview
+        if (onMappedDataReady) {
+          onMappedDataReady(data, validationResult.mappings)
+        }
+        
+        // Notify parent component with converted data only if valid
+        if (validationResult.isValid && onFileProcessed) {
+          onFileProcessed(validationResult.convertedData, requiredColumns)
+        } else if (onFileProcessed) {
+          // Still notify but with empty data if invalid
+          onFileProcessed([], requiredColumns)
         }
       } catch (error) {
         console.error('Error parsing CSV:', error)
-        alert('Error reading CSV file')
+        setUploadError('Error reading CSV file. Please ensure the file is a valid CSV format.')
+        setValidationErrors(['Failed to parse CSV file. Please check the file format.'])
       }
     } else {
-      alert('Please select a valid CSV file')
+      setUploadError('Please select a valid CSV file')
     }
   }
 
@@ -175,6 +458,8 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
       const droppedFile = e.dataTransfer.files[0]
       if (droppedFile.type === 'text/csv') {
         setFile(droppedFile)
+        setUploadError(null)
+        setUploadSuccess(null)
         
         // Parse the CSV file immediately
         try {
@@ -182,22 +467,31 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
           const { headers, data } = parseCSV(text)
           
           // Validate and convert to standard format
-          const { convertedData, errors } = validateAndConvertCSV(data, headers)
+          const validationResult = validateAndConvertCSV(data, headers)
           
-          setHeaders(requiredColumns) // Use standard headers
-          setParsedData(convertedData)
-          setValidationErrors(errors)
+          setParsedData(validationResult.convertedData)
+          setValidationErrors(validationResult.errors)
+          setColumnMappings(validationResult.mappings)
           
-          // Notify parent component with converted data
-          if (onFileProcessed) {
-            onFileProcessed(convertedData, requiredColumns)
+          // Notify parent component with mapped data for preview
+          if (onMappedDataReady) {
+            onMappedDataReady(data, validationResult.mappings)
+          }
+          
+          // Notify parent component with converted data only if valid
+          if (validationResult.isValid && onFileProcessed) {
+            onFileProcessed(validationResult.convertedData, requiredColumns)
+          } else if (onFileProcessed) {
+            // Still notify but with empty data if invalid
+            onFileProcessed([], requiredColumns)
           }
         } catch (error) {
           console.error('Error parsing CSV:', error)
-          alert('Error reading CSV file')
+          setUploadError('Error reading CSV file. Please ensure the file is a valid CSV format.')
+          setValidationErrors(['Failed to parse CSV file. Please check the file format.'])
         }
       } else {
-        alert('Please select a valid CSV file')
+        setUploadError('Please select a valid CSV file')
       }
     }
   }
@@ -208,6 +502,18 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
     // Check if user is authenticated
     if (!client) {
       setUploadError('You must be logged in to upload CSV files')
+      return
+    }
+
+    // Block upload if validation errors exist
+    if (validationErrors.length > 0) {
+      setUploadError('Please fix CSV validation errors before uploading')
+      return
+    }
+
+    // Ensure we have valid data
+    if (parsedData.length === 0) {
+      setUploadError('No valid data to upload. Please check your CSV file.')
       return
     }
 
@@ -254,8 +560,13 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
           setFile(null)
           setParsedData([])
           setValidationErrors([])
+          setColumnMappings([])
           setUploadSuccess(null)
           setUploadProgress(0)
+          // Clear mapped data in parent
+          if (onMappedDataReady) {
+            onMappedDataReady([], [])
+          }
         }, 3000)
       } else {
         setUploadError(response.error || 'Upload failed')
@@ -357,22 +668,73 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
             </div>
           )}
 
+          {/* Column Mapping Visualization - Only show mapped fields */}
+          {file && columnMappings.length > 0 && (() => {
+            const mappedColumns = columnMappings.filter(m => m.mappedField !== null)
+            return mappedColumns.length > 0 && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-slate-900 mb-3">Mapped Columns</h4>
+                <div className="space-y-2">
+                  {mappedColumns.map((mapping) => {
+                    const confidenceColor = 
+                      mapping.confidence === 'exact' ? 'text-green-600' :
+                      mapping.confidence === 'synonym' ? 'text-blue-600' :
+                      mapping.confidence === 'fuzzy' ? 'text-yellow-600' :
+                      'text-red-600'
+                    
+                    return (
+                      <div 
+                        key={mapping.csvColumnIndex} 
+                        className="flex items-center justify-between p-2 rounded bg-green-50 border border-green-200"
+                      >
+                        <div className="flex items-center space-x-3 flex-1">
+                          <span className="text-xs font-medium text-slate-500 w-8">#{mapping.csvColumnIndex + 1}</span>
+                          <span className="text-sm text-slate-900 flex-1">{mapping.csvColumnName}</span>
+                          <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                          </svg>
+                          <span className="text-sm font-medium text-slate-900">
+                            {mapping.mappedField}
+                          </span>
+                        </div>
+                        <span className={`text-xs font-medium ml-2 ${confidenceColor}`}>
+                          {mapping.confidence === 'exact' ? '✓ Exact' :
+                           mapping.confidence === 'synonym' ? '≈ Synonym' :
+                           mapping.confidence === 'fuzzy' ? '~ Fuzzy' : ''}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+                {validationErrors.length === 0 && parsedData.length > 0 && (
+                  <p className="text-xs text-green-600 mt-3 font-medium">
+                    ✓ All required columns mapped correctly
+                  </p>
+                )}
+              </div>
+            )
+          })()}
+
+
           {/* Validation Errors */}
           {validationErrors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
               <div className="flex items-start space-x-3">
-                <svg className="w-5 h-5 text-red-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
                 </svg>
-                <div>
-                  <h4 className="text-sm font-medium text-red-800 mb-2">CSV Format Issues</h4>
-                  <ul className="text-sm text-red-700 space-y-1">
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-red-800 mb-2">CSV Validation Failed</h4>
+                  <ul className="text-sm text-red-700 space-y-1.5">
                     {validationErrors.map((error, index) => (
-                      <li key={index}>• {error}</li>
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2">•</span>
+                        <span>{error}</span>
+                      </li>
                     ))}
                   </ul>
-                  <p className="text-xs text-red-600 mt-2">
-                    The CSV has been converted to the standard format. Missing columns will be empty.
+                  <p className="text-xs text-red-600 mt-3 font-medium">
+                    Please ensure your CSV has exactly 6 columns with all required fields: business_name, zipcode, state, phone_number, website, email (order doesn&apos;t matter)
                   </p>
                 </div>
               </div>
@@ -383,13 +745,13 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
           {file && validationErrors.length === 0 && parsedData.length > 0 && !uploadSuccess && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <div className="flex items-center space-x-3">
-                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <div>
-                  <h4 className="text-sm font-medium text-green-800">CSV Successfully Processed</h4>
+                  <h4 className="text-sm font-medium text-green-800">CSV Validation Passed</h4>
                   <p className="text-sm text-green-700">
-                    {parsedData.length} records converted to standard format with 6 columns: business_name, zipcode, state, phone_number, website, email
+                    {parsedData.length} records validated successfully. All 6 required columns are present and mapped correctly.
                   </p>
                 </div>
               </div>
@@ -429,13 +791,16 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
           {/* Upload Button */}
           <Button
             onClick={handleUpload}
-            disabled={!file || isUploading}
+            disabled={!file || isUploading || validationErrors.length > 0 || parsedData.length === 0}
             isLoading={isUploading}
             leftIcon={!isUploading ? uploadIcon : undefined}
             className="w-full"
             size="lg"
           >
-            {isUploading ? 'Uploading...' : 'Upload CSV'}
+            {isUploading ? 'Uploading...' : 
+             validationErrors.length > 0 ? 'Fix Errors to Upload' :
+             !file ? 'Upload CSV' :
+             'Upload CSV'}
           </Button>
 
           {/* File Requirements */}
@@ -458,7 +823,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
                 <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
-                <span>6 fields required: business_name, zipcode, state, phone_number, website, email</span>
+                <span>6 fields required: business_name, zipcode, state, phone_number, website, email (any order)</span>
               </div>
             </div>
           </div>

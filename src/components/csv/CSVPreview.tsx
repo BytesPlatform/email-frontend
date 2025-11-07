@@ -5,10 +5,13 @@ import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useData } from '@/contexts/DataContext'
 import { CSVRecord } from '@/types/ingestion'
+import { ColumnMapping } from '@/components/csv/CSVUploadForm'
 import Link from 'next/link'
 
 interface CSVPreviewProps {
   headers?: string[]
+  mappedCsvData?: Record<string, string>[]
+  columnMappings?: ColumnMapping[]
 }
 
 const previewIcon = (
@@ -24,9 +27,13 @@ const downloadIcon = (
   </svg>
 )
 
-export function CSVPreview({ headers = [] }: CSVPreviewProps) {
+export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = [] }: CSVPreviewProps) {
   const { csvData } = useData()
   const [showFullOverlay, setShowFullOverlay] = useState(false)
+  
+  // Get mapped columns only
+  const mappedColumns = columnMappings.filter(m => m.mappedField !== null)
+  const hasMappedData = mappedCsvData.length > 0 && mappedColumns.length > 0
 
   // Standard CSV template with 6 required columns
   const standardTemplate: CSVRecord[] = [
@@ -168,8 +175,58 @@ export function CSVPreview({ headers = [] }: CSVPreviewProps) {
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
-          {/* Show CSV Data or Empty State */}
-          {csvData.length > 0 ? (
+          {/* Show Mapped CSV Data or Regular CSV Data or Empty State */}
+          {hasMappedData ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-slate-900">
+                  CSV Data Preview (Mapped Fields Only)
+                </h4>
+                <div className="text-xs text-slate-500">
+                  {mappedCsvData.length} row{mappedCsvData.length !== 1 ? 's' : ''} • {mappedColumns.length} mapped field{mappedColumns.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+              
+              {/* Mapped CSV Data Table */}
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <div className="overflow-x-auto max-h-96">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 sticky top-0">
+                      <tr>
+                        {mappedColumns.map((mapping) => (
+                          <th 
+                            key={mapping.csvColumnIndex} 
+                            className="px-4 py-3 text-left font-medium text-slate-700 border-r border-slate-200 last:border-r-0"
+                          >
+                            <div className="flex flex-col">
+                              <span className="text-xs text-slate-500">{mapping.csvColumnName}</span>
+                              <span className="text-xs font-semibold text-slate-900 mt-0.5">
+                                → {mapping.mappedField}
+                              </span>
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {mappedCsvData.map((row, rowIndex) => (
+                        <tr key={rowIndex} className="hover:bg-slate-50">
+                          {mappedColumns.map((mapping) => (
+                            <td 
+                              key={mapping.csvColumnIndex} 
+                              className="px-4 py-3 text-slate-900 border-r border-slate-200 last:border-r-0"
+                            >
+                              {row[mapping.csvColumnName] || '-'}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : csvData.length > 0 ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold text-slate-900">
