@@ -31,11 +31,11 @@ export function Header() {
     }
   }, [isUserDropdownOpen])
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     // Clear authentication state first
-    logout()
+    await logout()
     
-    // Redirect to home page
+    // Redirect to home page after logout completes
     // Use window.location to force a full page reload and clear any cached state
     if (typeof window !== 'undefined') {
       window.location.href = '/'
