@@ -41,8 +41,6 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
   const [uploadProgress, setUploadProgress] = useState(0)
   const [dragActive, setDragActive] = useState(false)
   const [parsedData, setParsedData] = useState<CSVRecord[]>([])
-  const [originalCsvData, setOriginalCsvData] = useState<Record<string, string>[]>([])
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([])
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
@@ -415,8 +413,6 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
         // Validate and convert to standard format
         const validationResult = validateAndConvertCSV(data, headers)
         
-        setCsvHeaders(headers)
-        setOriginalCsvData(data)
         setParsedData(validationResult.convertedData)
         setValidationErrors(validationResult.errors)
         setColumnMappings(validationResult.mappings)
@@ -473,8 +469,6 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           // Validate and convert to standard format
           const validationResult = validateAndConvertCSV(data, headers)
           
-          setCsvHeaders(headers)
-          setOriginalCsvData(data)
           setParsedData(validationResult.convertedData)
           setValidationErrors(validationResult.errors)
           setColumnMappings(validationResult.mappings)
@@ -565,10 +559,8 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
         setTimeout(() => {
           setFile(null)
           setParsedData([])
-          setOriginalCsvData([])
           setValidationErrors([])
           setColumnMappings([])
-          setCsvHeaders([])
           setUploadSuccess(null)
           setUploadProgress(0)
           // Clear mapped data in parent
@@ -683,7 +675,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
                 <h4 className="text-sm font-semibold text-slate-900 mb-3">Mapped Columns</h4>
                 <div className="space-y-2">
-                  {mappedColumns.map((mapping, index) => {
+                  {mappedColumns.map((mapping) => {
                     const confidenceColor = 
                       mapping.confidence === 'exact' ? 'text-green-600' :
                       mapping.confidence === 'synonym' ? 'text-blue-600' :
@@ -742,7 +734,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
                     ))}
                   </ul>
                   <p className="text-xs text-red-600 mt-3 font-medium">
-                    Please ensure your CSV has exactly 6 columns with all required fields: business_name, zipcode, state, phone_number, website, email (order doesn't matter)
+                    Please ensure your CSV has exactly 6 columns with all required fields: business_name, zipcode, state, phone_number, website, email (order doesn&apos;t matter)
                   </p>
                 </div>
               </div>
