@@ -35,12 +35,18 @@ class ApiClient {
     try {
       // Try to get token from localStorage first (if stored)
       const token = localStorage.getItem('access_token')
-      if (token) return token
+      if (token) {
+        // Log in production for debugging (can be removed later)
+        console.log('[ApiClient] Token found in localStorage, length:', token.length)
+        return token
+      }
       
       // If not in localStorage, cookies should be sent automatically with credentials: 'include'
       // But we can't read httpOnly cookies from JavaScript, so return null
+      console.warn('[ApiClient] No token found in localStorage')
       return null
-    } catch {
+    } catch (error) {
+      console.error('[ApiClient] Error accessing localStorage:', error)
       return null
     }
   }
@@ -55,29 +61,39 @@ class ApiClient {
       'Content-Type': 'application/json',
     }
 
-    // Try to get token from localStorage (if stored) or cookies
-    // This provides fallback if cookies don't work in production
+    // CRITICAL: Always try to get token from localStorage and add Authorization header
+    // This is essential for production cross-origin requests
     const token = this.getAuthToken()
     if (token) {
       defaultHeaders['Authorization'] = `Bearer ${token}`
-      // Debug logging (remove in production if needed)
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[ApiClient] Adding Authorization header with token')
-      }
+      console.log('[ApiClient] Authorization header added with token')
     } else {
-      // Debug logging
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[ApiClient] No token found in localStorage, relying on cookies')
-      }
+      console.warn('[ApiClient] No token in localStorage - requests may fail if cookies also fail')
+    }
+
+    // Merge headers: defaultHeaders first, then options.headers
+    // This ensures Authorization header is set, but allows it to be overridden if needed
+    const customHeaders = options.headers ? (typeof options.headers === 'object' && !(options.headers instanceof Headers) 
+      ? (Array.isArray(options.headers) 
+          ? Object.fromEntries(options.headers as [string, string][])
+          : options.headers as Record<string, string>)
+      : {}) : {}
+    
+    const mergedHeaders: Record<string, string> = {
+      ...defaultHeaders,
+      ...customHeaders,
+    }
+    
+    // CRITICAL: Ensure Authorization header is never removed by custom headers
+    // If token exists, always include it (unless explicitly set to empty/null)
+    if (token && !customHeaders['Authorization'] && !customHeaders['authorization']) {
+      mergedHeaders['Authorization'] = `Bearer ${token}`
     }
 
     const config: RequestInit = {
       ...options,
       credentials: 'include', // Always include cookies for authentication
-      headers: {
-        ...defaultHeaders,
-        ...options.headers,
-      },
+      headers: mergedHeaders,
     }
 
     try {
@@ -99,6 +115,29 @@ class ApiClient {
 
       const data = await response.json()
       
+      // CRITICAL: Extract and store access_token from ANY response format
+      // This ensures token is always available for Authorization header
+      let access_token: string | undefined = undefined
+      
+      // Check for access_token in various possible locations
+      if (data.access_token) {
+        access_token = data.access_token
+      } else if (data.data?.access_token) {
+        access_token = data.data.access_token
+      } else if (typeof data === 'object' && 'access_token' in data) {
+        access_token = (data as Record<string, unknown>).access_token as string | undefined
+      }
+      
+      // If token found, store it immediately (for future requests)
+      if (access_token && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('access_token', access_token)
+          console.log('[ApiClient] Token extracted and stored from response')
+        } catch (error) {
+          console.error('[ApiClient] Failed to store token:', error)
+        }
+      }
+      
       // Handle different response formats
       if (data.message && data.client) {
         // Backend format: { message: 'Login successful', client: {...}, access_token: '...' }
@@ -107,20 +146,28 @@ class ApiClient {
           data: {
             message: data.message,
             client: data.client,
-            access_token: data.access_token // Include access_token if present
+            access_token: access_token || data.access_token // Include access_token if present
           }
         } as ApiResponse<T>
       } else if (data.success !== undefined) {
         // Standard format: { success: true, data: {...} }
         // OR: { success: true, emailDraftId: ..., ... } (when backend returns directly)
         // If data.data exists, use it; otherwise, use the entire data object
+        const responseData = data.data !== undefined ? data.data : data
+        // Ensure access_token is included in the response data
+        if (access_token && typeof responseData === 'object' && responseData !== null) {
+          (responseData as Record<string, unknown>).access_token = access_token
+        }
         return {
           success: data.success,
-          data: data.data !== undefined ? data.data : data,
+          data: responseData,
           error: data.error
         } as ApiResponse<T>
       } else {
-        // Direct data response
+        // Direct data response - ensure access_token is included
+        if (access_token && typeof data === 'object' && data !== null) {
+          (data as Record<string, unknown>).access_token = access_token
+        }
         return {
           success: true,
           data

@@ -49,13 +49,34 @@ export const auth = {
           safeLocalStorage.setItem(STORAGE_KEYS.currentUser, JSON.stringify(client))
         }
         
-        // Store token in localStorage as fallback if cookies don't work in production
-        // This allows Authorization header to be sent even if cookies fail
+        // CRITICAL: Store token in localStorage - this is essential for production
+        // ApiClient also stores it, but we do it here too to ensure it's always stored
         if (access_token) {
           safeLocalStorage.setItem('access_token', access_token)
           console.log('[Auth] Token stored in localStorage:', access_token.substring(0, 20) + '...')
+          // Verify it was stored
+          const stored = safeLocalStorage.getItem('access_token')
+          if (stored === access_token) {
+            console.log('[Auth] Token storage verified successfully')
+          } else {
+            console.error('[Auth] Token storage verification failed!')
+            // Retry once
+            safeLocalStorage.setItem('access_token', access_token)
+            const retryStored = safeLocalStorage.getItem('access_token')
+            if (retryStored === access_token) {
+              console.log('[Auth] Token storage succeeded on retry')
+            } else {
+              console.error('[Auth] Token storage failed even after retry - localStorage may be disabled')
+            }
+          }
         } else {
           console.warn('[Auth] No access_token received in login response')
+          // Try to get it from response.data directly (in case it's nested differently)
+          const responseData = response.data as Record<string, unknown> | undefined
+          if (responseData && typeof responseData.access_token === 'string') {
+            console.log('[Auth] Found access_token in nested location, storing...')
+            safeLocalStorage.setItem('access_token', responseData.access_token)
+          }
         }
         
         return {
@@ -94,9 +115,33 @@ export const auth = {
           safeLocalStorage.setItem(STORAGE_KEYS.currentUser, JSON.stringify(client))
         }
         
-        // Store token in localStorage as fallback if cookies don't work in production
+        // CRITICAL: Store token in localStorage - this is essential for production
         if (access_token) {
           safeLocalStorage.setItem('access_token', access_token)
+          console.log('[Auth] Token stored in localStorage during signup:', access_token.substring(0, 20) + '...')
+          // Verify it was stored
+          const stored = safeLocalStorage.getItem('access_token')
+          if (stored === access_token) {
+            console.log('[Auth] Token storage verified successfully during signup')
+          } else {
+            console.error('[Auth] Token storage verification failed during signup!')
+            // Retry once
+            safeLocalStorage.setItem('access_token', access_token)
+            const retryStored = safeLocalStorage.getItem('access_token')
+            if (retryStored === access_token) {
+              console.log('[Auth] Token storage succeeded on retry during signup')
+            } else {
+              console.error('[Auth] Token storage failed even after retry during signup - localStorage may be disabled')
+            }
+          }
+        } else {
+          console.warn('[Auth] No access_token received in signup response')
+          // Try to get it from response.data directly (in case it's nested differently)
+          const responseData = response.data as Record<string, unknown> | undefined
+          if (responseData && typeof responseData.access_token === 'string') {
+            console.log('[Auth] Found access_token in nested location during signup, storing...')
+            safeLocalStorage.setItem('access_token', responseData.access_token)
+          }
         }
         
         return {
