@@ -53,6 +53,9 @@ export const unsubscribeApi = {
   /**
    * Get unsubscribe page URL (for redirecting users to the backend HTML page)
    * GET /emails/unsubscribe/:token returns HTML page
+   * 
+   * Note: The token should be the unsubscribeToken (not trackingPixelToken)
+   * This token is stored in EmailLog.unsubscribeToken when the email is sent
    */
   getUnsubscribePageUrl(token: string): string {
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'

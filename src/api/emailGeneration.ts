@@ -319,10 +319,15 @@ export const emailGenerationApi = {
    * This API:
    * - Validates draft and contact
    * - Checks spam score and auto-optimizes if needed
-   * - Generates tracking pixel token automatically
-   * - Sends via SendGrid with tracking
-   * - Creates EmailLog entry
+   * - Generates tracking pixel token and unsubscribe token automatically
+   * - Injects tracking pixel and unsubscribe link into email
+   * - Sends via SendGrid with native tracking enabled
+   * - Creates EmailLog entry with both tokens stored
    * - Updates draft status to 'sent'
+   * 
+   * Note: Two separate tokens are generated:
+   * - trackingPixelToken: For 1x1 pixel tracking (backup method)
+   * - unsubscribeToken: For unsubscribe link (separate for security)
    */
   async sendEmailDraft(draftId: number): Promise<ApiResponse<{
     success: boolean
