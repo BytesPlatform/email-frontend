@@ -3,7 +3,7 @@
 import React from 'react'
 import Link from 'next/link'
 
-export type DraftViewType = 'all' | 'email' | 'sms' | 'sent' | 'not-delivered' | 'starred'
+export type DraftViewType = 'all' | 'email' | 'sms' | 'sent' | 'not-delivered' | 'starred' | 'unsubscribed'
 
 interface DraftsSidebarProps {
   isCollapsed: boolean
@@ -17,6 +17,7 @@ interface DraftsSidebarProps {
   sentCount: number
   notDeliveredCount: number
   starredCount: number
+  unsubscribedCount: number
 }
 
 export function DraftsSidebar({
@@ -31,6 +32,7 @@ export function DraftsSidebar({
   sentCount,
   notDeliveredCount,
   starredCount,
+  unsubscribedCount,
 }: DraftsSidebarProps) {
   const menuItems = [
     {
@@ -72,6 +74,16 @@ export function DraftsSidebar({
         </svg>
       ),
       count: starredCount,
+    },
+    {
+      id: 'unsubscribed' as DraftViewType,
+      label: 'Unsubscribed',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12A9 9 0 113 12a9 9 0 0118 0z" />
+        </svg>
+      ),
+      count: unsubscribedCount,
     },
     {
       id: 'sent' as DraftViewType,

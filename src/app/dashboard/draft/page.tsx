@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, Suspense, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { DraftsSidebar, type DraftViewType } from '@/components/drafts/DraftsSidebar'
@@ -12,8 +12,10 @@ import { SmsDraftOverlay } from '@/components/drafts/SmsDraftOverlay'
 import { Button } from '@/components/ui/Button'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { smsGenerationApi } from '@/api/smsGeneration'
+import { unsubscribeApi } from '@/api/unsubscribe'
 import type { EmailDraft as ApiEmailDraft } from '@/types/emailGeneration'
 import type { SMSDraft } from '@/types/smsGeneration'
+import type { UnsubscribeListItem } from '@/types/unsubscribe'
 
 function DraftsPageContent() {
   const searchParams = useSearchParams()
@@ -46,9 +48,65 @@ function DraftsPageContent() {
   const [selectedDraftsForNavigation, setSelectedDraftsForNavigation] = useState<EmailDraft[]>([])
   const [selectedSmsDraftsForNavigation, setSelectedSmsDraftsForNavigation] = useState<SmsDraft[]>([])
   const [selectedSmsDraftsNavigationIndex, setSelectedSmsDraftsNavigationIndex] = useState(0)
+  const [unsubscribeMap, setUnsubscribeMap] = useState<Map<number, UnsubscribeListItem>>(new Map())
+  const [isUnsubscribeLoading, setIsUnsubscribeLoading] = useState(false)
+  const [isUnsubscribeLoaded, setIsUnsubscribeLoaded] = useState(false)
+  const [resubscribingDraftId, setResubscribingDraftId] = useState<number | null>(null)
+
+  const getUnsubscribeInfo = useCallback(
+    (contactId?: number | null) => {
+      if (!contactId || Number.isNaN(contactId)) {
+        return {
+          isUnsubscribed: false,
+          unsubscribedAt: null,
+          unsubscribeReason: null,
+        }
+      }
+      const record = unsubscribeMap.get(contactId)
+      return {
+        isUnsubscribed: !!record,
+        unsubscribedAt: record?.unsubscribedAt ?? null,
+        unsubscribeReason: record?.reason ?? null,
+      }
+    },
+    [unsubscribeMap]
+  )
+
+  const fetchUnsubscribeList = useCallback(async (force = false) => {
+    if (isUnsubscribeLoading) return
+    if (!force && isUnsubscribeLoaded) return
+    setIsUnsubscribeLoading(true)
+    try {
+      const res = await unsubscribeApi.getAllUnsubscribes()
+      if (res.success && Array.isArray(res.data)) {
+        const map = new Map<number, UnsubscribeListItem>()
+        res.data.forEach((item) => {
+          if (typeof item.contactId === 'number') {
+            map.set(item.contactId, {
+              ...item,
+              unsubscribedAt: item.unsubscribedAt ? new Date(item.unsubscribedAt).toISOString() : null,
+            })
+          }
+        })
+        setUnsubscribeMap(map)
+      } else {
+        setUnsubscribeMap(new Map())
+        if (res.error) {
+          console.error('Error fetching unsubscribe list:', res.error)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching unsubscribe list:', error)
+      setUnsubscribeMap(new Map())
+    } finally {
+      setIsUnsubscribeLoading(false)
+      setIsUnsubscribeLoaded(true)
+    }
+  }, [isUnsubscribeLoading, isUnsubscribeLoaded])
 
   // Transform API EmailDraft to component EmailDraft
   const transformEmailDraft = (apiDraft: ApiEmailDraft): EmailDraft => {
+    const unsubscribeInfo = getUnsubscribeInfo(apiDraft.contactId)
     return {
       id: apiDraft.id,
       contactId: apiDraft.contactId || 0,
@@ -61,6 +119,7 @@ function DraftsPageContent() {
       createdAt: apiDraft.createdAt || new Date().toISOString(),
       opens: undefined, // Will be populated if engagement data is included
       clicks: undefined, // Will be populated if engagement data is included
+      ...unsubscribeInfo,
     }
   }
 
@@ -90,6 +149,7 @@ function DraftsPageContent() {
       } else {
         setEmailDrafts([])
       }
+      fetchUnsubscribeList(true)
     } catch (err) {
       console.error('Error fetching email drafts:', err)
       setEmailDrafts([])
@@ -143,6 +203,12 @@ function DraftsPageContent() {
     }
   }, [])
 
+  useEffect(() => {
+    if (activeTab === 'email') {
+      fetchUnsubscribeList()
+    }
+  }, [activeTab, fetchUnsubscribeList])
+
   // Fetch drafts when view/tab changes
   useEffect(() => {
     // Fetch both types when view needs both (all, starred, sent, not-delivered)
@@ -189,10 +255,60 @@ function DraftsPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, emailDrafts, smsDrafts])
 
+  useEffect(() => {
+    setEmailDrafts((prevDrafts) => {
+      let hasChanges = false
+      const nextDrafts = prevDrafts.map((draft) => {
+        const info = getUnsubscribeInfo(draft.contactId)
+        if (
+          draft.isUnsubscribed === info.isUnsubscribed &&
+          draft.unsubscribedAt === info.unsubscribedAt &&
+          draft.unsubscribeReason === info.unsubscribeReason
+        ) {
+          return draft
+        }
+        hasChanges = true
+        return { ...draft, ...info }
+      })
+      return hasChanges ? nextDrafts : prevDrafts
+    })
+
+    setSelectedDraftsForNavigation((prevDrafts) => {
+      if (prevDrafts.length === 0) return prevDrafts
+      let hasChanges = false
+      const nextDrafts = prevDrafts.map((draft) => {
+        const info = getUnsubscribeInfo(draft.contactId)
+        if (
+          draft.isUnsubscribed === info.isUnsubscribed &&
+          draft.unsubscribedAt === info.unsubscribedAt &&
+          draft.unsubscribeReason === info.unsubscribeReason
+        ) {
+          return draft
+        }
+        hasChanges = true
+        return { ...draft, ...info }
+      })
+      return hasChanges ? nextDrafts : prevDrafts
+    })
+
+    setSelectedEmailDraft((prevDraft) => {
+      if (!prevDraft) return prevDraft
+      const info = getUnsubscribeInfo(prevDraft.contactId)
+      if (
+        prevDraft.isUnsubscribed === info.isUnsubscribed &&
+        prevDraft.unsubscribedAt === info.unsubscribedAt &&
+        prevDraft.unsubscribeReason === info.unsubscribeReason
+      ) {
+        return prevDraft
+      }
+      return { ...prevDraft, ...info }
+    })
+  }, [getUnsubscribeInfo])
+
   const handleViewChange = (view: DraftViewType) => {
     setActiveView(view)
     // Set active tab based on view
-    if (view === 'email') {
+    if (view === 'email' || view === 'unsubscribed') {
       setActiveTab('email')
     } else if (view === 'sms') {
       setActiveTab('sms')
@@ -516,6 +632,59 @@ function DraftsPageContent() {
     }
   }
 
+  const handleResubscribeDraft = async (draftId: number) => {
+    const draft = emailDrafts.find(d => d.id === draftId)
+    if (!draft || !draft.contactId) {
+      alert('Draft or contact information not found.')
+      return
+    }
+
+    if (!window.confirm('Resubscribe this contact to emails?')) {
+      return
+    }
+
+    setResubscribingDraftId(draftId)
+    try {
+      const res = await unsubscribeApi.resubscribeByContact(draft.contactId)
+      if (res.success && res.data) {
+        alert(res.data.message || 'Contact resubscribed successfully.')
+        setUnsubscribeMap(prev => {
+          const next = new Map(prev)
+          next.delete(draft.contactId)
+          return next
+        })
+        const clearUnsubscribeInfo = (d: EmailDraft): EmailDraft => ({
+          ...d,
+          isUnsubscribed: false,
+          unsubscribedAt: null,
+          unsubscribeReason: null,
+        })
+
+        setEmailDrafts(prevDrafts =>
+          prevDrafts.map(d => (d.id === draftId ? clearUnsubscribeInfo(d) : d))
+        )
+        setSelectedDraftsForNavigation(prev =>
+          prev.length > 0 ? prev.map(d => (d.id === draftId ? clearUnsubscribeInfo(d) : d)) : prev
+        )
+        setSelectedEmailDraft(prev =>
+          prev && prev.id === draftId ? clearUnsubscribeInfo(prev) : prev
+        )
+        fetchUnsubscribeList(true)
+      } else {
+        alert(res.error || 'Failed to resubscribe contact.')
+      }
+    } catch (err) {
+      console.error('Error resubscribing contact:', err)
+      alert(
+        err instanceof Error
+          ? err.message
+          : 'An error occurred while attempting to resubscribe.'
+      )
+    } finally {
+      setResubscribingDraftId(null)
+    }
+  }
+
   const handleSendEmailDraft = async (draftId: number) => {
     try {
       const res = await emailGenerationApi.sendEmailDraft(draftId)
@@ -641,6 +810,8 @@ function DraftsPageContent() {
     } else if (activeView === 'not-delivered') {
       // Filter drafts that haven't been sent or failed delivery
       drafts = drafts.filter(d => d.status === 'draft')
+    } else if (activeView === 'unsubscribed') {
+      drafts = drafts.filter(d => d.isUnsubscribed)
     }
 
     // Filter by status filter (from dropdown)
@@ -679,6 +850,8 @@ function DraftsPageContent() {
     } else if (activeView === 'not-delivered') {
       // Filter drafts that haven't been sent
       drafts = drafts.filter(d => d.status === 'draft')
+    } else if (activeView === 'unsubscribed') {
+      return []
     }
 
     // Filter by status filter (from dropdown)
@@ -713,6 +886,7 @@ function DraftsPageContent() {
   const sentCount = emailDrafts.filter(d => d.status === 'sent').length + smsDrafts.filter(d => d.status === 'sent').length
   const notDeliveredCount = emailDrafts.filter(d => d.status === 'draft').length + smsDrafts.filter(d => d.status === 'draft').length
   const starredCount = starredEmailDraftIds.size + starredSmsDraftIds.size
+  const unsubscribedCount = emailDrafts.filter(d => d.isUnsubscribed).length
 
   // For "all" view, combine both email and SMS drafts together
   // Group by contactId to show both email and SMS for same person
@@ -761,6 +935,9 @@ function DraftsPageContent() {
     displayDrafts = combinedDrafts.map(c => c.draft)
     isEmailView = true
   } else if (activeView === 'email') {
+    displayDrafts = filteredEmailDrafts
+    isEmailView = true
+  } else if (activeView === 'unsubscribed') {
     displayDrafts = filteredEmailDrafts
     isEmailView = true
   } else if (activeView === 'sms') {
@@ -1166,6 +1343,7 @@ function DraftsPageContent() {
           sentCount={sentCount}
           notDeliveredCount={notDeliveredCount}
           starredCount={starredCount}
+          unsubscribedCount={unsubscribedCount}
         />
 
         {/* Main Content Area */}
@@ -1181,7 +1359,9 @@ function DraftsPageContent() {
                    activeView === 'sms' ? 'SMS Drafts' :
                    activeView === 'starred' ? 'Starred' :
                    activeView === 'sent' ? 'Sent' :
-                   activeView === 'not-delivered' ? 'Not Delivered' : 'Drafts'}
+                   activeView === 'not-delivered' ? 'Not Delivered' :
+                   activeView === 'unsubscribed' ? 'Unsubscribed Emails' :
+                   'Drafts'}
                 </h1>
               </div>
               
@@ -1353,6 +1533,9 @@ function DraftsPageContent() {
                   onSend={(draftId, type) => {
                     handleSendDraft(draftId)
                   }}
+                  subscriptionDataLoaded={isUnsubscribeLoaded}
+                  onEmailResubscribe={handleResubscribeDraft}
+                  resubscribingEmailDraftId={resubscribingDraftId}
                 />
               ) : isEmailView ? (
               <EmailDraftsList
@@ -1372,6 +1555,9 @@ function DraftsPageContent() {
                 onView={handleViewDraft}
                 onEdit={handleEditDraft}
                 onSend={handleSendDraft}
+                subscriptionDataLoaded={isUnsubscribeLoaded}
+                onResubscribe={handleResubscribeDraft}
+                resubscribingDraftId={resubscribingDraftId}
               />
             ) : (
               <SmsDraftsList
@@ -1512,6 +1698,13 @@ function DraftsPageContent() {
             }
           }
         }}
+        subscriptionDataLoaded={isUnsubscribeLoaded}
+        onResubscribe={handleResubscribeDraft}
+        isResubscribing={
+          resubscribingDraftId !== null &&
+          selectedEmailDraft !== null &&
+          resubscribingDraftId === selectedEmailDraft.id
+        }
       />
 
       {/* SMS Draft Overlay */}

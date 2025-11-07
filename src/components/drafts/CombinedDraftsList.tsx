@@ -26,6 +26,9 @@ interface CombinedDraftsListProps {
   onView?: (draftId: number, type: 'email' | 'sms') => void
   onEdit?: (draftId: number, type: 'email' | 'sms') => void
   onSend?: (draftId: number, type: 'email' | 'sms') => void
+  subscriptionDataLoaded?: boolean
+  onEmailResubscribe?: (draftId: number) => void
+  resubscribingEmailDraftId?: number | null
 }
 
 export function CombinedDraftsList({
@@ -43,6 +46,9 @@ export function CombinedDraftsList({
   onView,
   onEdit,
   onSend,
+  subscriptionDataLoaded = false,
+  onEmailResubscribe,
+  resubscribingEmailDraftId = null,
 }: CombinedDraftsListProps) {
   if (isLoading) {
     return (
@@ -245,7 +251,7 @@ export function CombinedDraftsList({
 
                     {/* Draft Content */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-1">
+                      <div className="flex items-center gap-3 flex-wrap mb-1">
                         <span className={`text-sm truncate ${isUnread ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
                           {emailDraft?.contactName || smsDraft?.contactName || 'Unknown Contact'}
                         </span>
@@ -256,15 +262,43 @@ export function CombinedDraftsList({
                         }`}>
                           {item.type === 'email' ? 'Email' : 'SMS'}
                         </span>
-                        {item.draft.status === 'sent' && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 flex-shrink-0">
-                            Sent
-                          </span>
-                        )}
-                        {item.draft.status === 'delivered' && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 flex-shrink-0">
-                            Delivered
-                          </span>
+                        {item.type === 'email' && subscriptionDataLoaded && (
+                          <>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
+                                emailDraft?.isUnsubscribed
+                                  ? 'bg-red-100 text-red-700 border border-red-200'
+                                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                              }`}
+                              title={
+                                emailDraft?.isUnsubscribed
+                                  ? [
+                                      emailDraft?.unsubscribedAt
+                                        ? `Unsubscribed on ${new Date(emailDraft.unsubscribedAt).toLocaleString()}`
+                                        : undefined,
+                                      emailDraft?.unsubscribeReason ? `Reason: ${emailDraft.unsubscribeReason}` : undefined,
+                                    ]
+                                      .filter(Boolean)
+                                      .join('\n') || 'Contact is unsubscribed'
+                                  : 'Contact is currently subscribed'
+                              }
+                            >
+                              {emailDraft?.isUnsubscribed ? 'Unsubscribed' : 'Subscribed'}
+                            </span>
+                            {emailDraft?.isUnsubscribed && onEmailResubscribe && (
+                              <button
+                                type="button"
+                                className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-60 disabled:cursor-not-allowed"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onEmailResubscribe(item.draft.id)
+                                }}
+                                disabled={resubscribingEmailDraftId === item.draft.id}
+                              >
+                                {resubscribingEmailDraftId === item.draft.id ? 'Resubscribing…' : 'Resubscribe'}
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                       <div className="flex items-center gap-2 mb-1">

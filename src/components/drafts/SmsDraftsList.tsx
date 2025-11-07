@@ -161,16 +161,6 @@ export function SmsDraftsList({
                   <span className={`text-sm truncate ${isUnread ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
                     {draft.contactName || draft.contactPhone || 'Unknown Contact'}
                   </span>
-                  {draft.status === 'sent' && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 flex-shrink-0">
-                      Sent
-                    </span>
-                  )}
-                  {draft.status === 'delivered' && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 flex-shrink-0">
-                      Delivered
-                    </span>
-                  )}
                 </div>
                 <div className="mb-1">
                   <p className={`text-sm ${isUnread ? 'font-semibold text-gray-900' : 'text-gray-900'}`}>

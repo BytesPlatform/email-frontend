@@ -26,6 +26,9 @@ interface EmailDraftOverlayProps {
   isSelected?: boolean
   onToggleSelect?: (draftId: number, selected: boolean) => void
   onSendAll?: () => void
+  subscriptionDataLoaded?: boolean
+  onResubscribe?: (draftId: number) => void
+  isResubscribing?: boolean
 }
 
 export function EmailDraftOverlay({
@@ -45,6 +48,9 @@ export function EmailDraftOverlay({
   isSelected = false,
   onToggleSelect,
   onSendAll,
+  subscriptionDataLoaded = false,
+  onResubscribe,
+  isResubscribing = false,
 }: EmailDraftOverlayProps) {
   const [isMinimized, setIsMinimized] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
@@ -116,6 +122,9 @@ export function EmailDraftOverlay({
   }
 
   if (!isOpen || !emailDraft) return null
+
+  const unsubscribedAtDisplay =
+    emailDraft.unsubscribedAt ? new Date(emailDraft.unsubscribedAt).toLocaleString() : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -252,6 +261,37 @@ export function EmailDraftOverlay({
                   </div>
                 </div>
               </div>
+
+              {/* Subscription Status */}
+              {subscriptionDataLoaded && (
+                <div
+                  className={`px-4 py-3 border-b ${
+                    emailDraft.isUnsubscribed
+                      ? 'bg-red-50 border-red-100 text-red-700'
+                      : 'bg-emerald-50 border-emerald-100 text-emerald-700'
+                  }`}
+                >
+                  <p className="text-sm font-medium">
+                    {emailDraft.isUnsubscribed ? 'This contact is unsubscribed from emails.' : 'This contact is currently subscribed to emails.'}
+                  </p>
+                  {emailDraft.isUnsubscribed && (
+                    <div className="mt-1 space-y-1 text-xs text-current">
+                      {unsubscribedAtDisplay && <p>Unsubscribed on {unsubscribedAtDisplay}</p>}
+                      {emailDraft.unsubscribeReason && <p>Reason: {emailDraft.unsubscribeReason}</p>}
+                      {onResubscribe && (
+                        <button
+                          type="button"
+                          onClick={() => onResubscribe(emailDraft.id)}
+                          disabled={isResubscribing}
+                          className="mt-2 inline-flex items-center justify-center rounded border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {isResubscribing ? 'Resubscribing…' : 'Resubscribe Contact'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Subject Field - Clean Style */}
               <div className="px-4 py-3 border-b border-gray-200">

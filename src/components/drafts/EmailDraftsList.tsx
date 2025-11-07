@@ -15,6 +15,9 @@ export interface EmailDraft {
   createdAt: string
   opens?: number
   clicks?: number
+  isUnsubscribed?: boolean
+  unsubscribedAt?: string | null
+  unsubscribeReason?: string | null
 }
 
 interface EmailDraftsListProps {
@@ -28,6 +31,9 @@ interface EmailDraftsListProps {
   onView?: (draftId: number) => void
   onEdit?: (draftId: number) => void
   onSend?: (draftId: number) => void
+  subscriptionDataLoaded?: boolean
+  onResubscribe?: (draftId: number) => void
+  resubscribingDraftId?: number | null
 }
 
 export function EmailDraftsList({ 
@@ -40,7 +46,10 @@ export function EmailDraftsList({
   onToggleStar,
   onView, 
   onEdit, 
-  onSend
+  onSend,
+  subscriptionDataLoaded = false,
+  onResubscribe,
+  resubscribingDraftId = null,
 }: EmailDraftsListProps) {
   if (isLoading) {
     return (
@@ -171,15 +180,39 @@ export function EmailDraftsList({
                   <span className={`text-sm truncate ${isUnread ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
                     {draft.contactName || draft.contactEmail || 'Unknown Contact'}
                   </span>
-                  {draft.status === 'sent' && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 flex-shrink-0">
-                      Sent
-                    </span>
-                  )}
-                  {draft.status === 'delivered' && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 flex-shrink-0">
-                      Delivered
-                    </span>
+                  {subscriptionDataLoaded && (
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
+                          draft.isUnsubscribed ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                        }`}
+                        title={
+                          draft.isUnsubscribed
+                            ? [
+                                draft.unsubscribedAt ? `Unsubscribed on ${new Date(draft.unsubscribedAt).toLocaleString()}` : undefined,
+                                draft.unsubscribeReason ? `Reason: ${draft.unsubscribeReason}` : undefined,
+                              ]
+                                .filter(Boolean)
+                                .join('\n') || 'Contact is unsubscribed'
+                            : 'Contact is currently subscribed'
+                        }
+                      >
+                        {draft.isUnsubscribed ? 'Unsubscribed' : 'Subscribed'}
+                      </span>
+                      {draft.isUnsubscribed && onResubscribe && (
+                        <button
+                          type="button"
+                          className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-60 disabled:cursor-not-allowed"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onResubscribe(draft.id)
+                          }}
+                          disabled={resubscribingDraftId === draft.id}
+                        >
+                          {resubscribingDraftId === draft.id ? 'Resubscribing…' : 'Resubscribe'}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-2 mb-1">
