@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CSVUploadForm } from '@/components/csv/CSVUploadForm'
+import { CSVUploadForm, ColumnMapping } from '@/components/csv/CSVUploadForm'
 import { CSVPreview } from '@/components/csv/CSVPreview'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useData } from '@/contexts/DataContext'
@@ -19,10 +19,17 @@ export default function CSVIngestionPage() {
   const { setCsvData } = useData()
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [uploadMetadata, setUploadMetadata] = useState<UploadMetadata | null>(null)
+  const [mappedCsvData, setMappedCsvData] = useState<Record<string, string>[]>([])
+  const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([])
 
   const handleFileProcessed = (data: CSVRecord[], headers: string[]) => {
     setCsvData(data)
     setCsvHeaders(headers)
+  }
+
+  const handleMappedDataReady = (originalData: Record<string, string>[], mappings: ColumnMapping[]) => {
+    setMappedCsvData(originalData)
+    setColumnMappings(mappings)
   }
 
   const handleUploadSuccess = (metadata: UploadMetadata) => {
@@ -68,8 +75,16 @@ export default function CSVIngestionPage() {
             
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <CSVUploadForm onFileProcessed={handleFileProcessed} onUploadSuccess={handleUploadSuccess} />
-              <CSVPreview headers={csvHeaders} />
+              <CSVUploadForm 
+                onFileProcessed={handleFileProcessed} 
+                onUploadSuccess={handleUploadSuccess}
+                onMappedDataReady={handleMappedDataReady}
+              />
+              <CSVPreview 
+                headers={csvHeaders} 
+                mappedCsvData={mappedCsvData}
+                columnMappings={columnMappings}
+              />
             </div>
             
             {/* Upload Success Metadata */}

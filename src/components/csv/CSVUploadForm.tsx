@@ -17,9 +17,10 @@ interface UploadMetadata {
 interface CSVUploadFormProps {
   onFileProcessed?: (data: CSVRecord[], headers: string[]) => void
   onUploadSuccess?: (metadata: UploadMetadata) => void
+  onMappedDataReady?: (originalData: Record<string, string>[], mappings: ColumnMapping[]) => void
 }
 
-interface ColumnMapping {
+export interface ColumnMapping {
   csvColumnIndex: number
   csvColumnName: string
   mappedField: string | null
@@ -33,13 +34,14 @@ interface ValidationResult {
   convertedData: CSVRecord[]
 }
 
-export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFormProps) {
+export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataReady }: CSVUploadFormProps) {
   const { client } = useAuthContext()
   const [file, setFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [dragActive, setDragActive] = useState(false)
   const [parsedData, setParsedData] = useState<CSVRecord[]>([])
+  const [originalCsvData, setOriginalCsvData] = useState<Record<string, string>[]>([])
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([])
@@ -274,8 +276,8 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
     return mappings
   }
 
-  // Validate column order
-  const validateOrder = (mappings: ColumnMapping[]): string[] => {
+  // Validate that all required fields are present (order doesn't matter)
+  const validateRequiredFields = (mappings: ColumnMapping[]): string[] => {
     const errors: string[] = []
     const mappedFields = mappings
       .filter(m => m.mappedField !== null)
@@ -285,24 +287,6 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
     const missingFields = requiredColumns.filter(field => !mappedFields.includes(field))
     if (missingFields.length > 0) {
       errors.push(`Missing required fields: ${missingFields.join(', ')}`)
-    }
-
-    // Check order - each mapped field should be at the correct index
-    for (let i = 0; i < requiredColumns.length; i++) {
-      const expectedField = requiredColumns[i]
-      const mapping = mappings[i]
-      
-      if (mapping && mapping.mappedField !== expectedField) {
-        if (mapping.mappedField) {
-          errors.push(
-            `Column order incorrect: Expected "${expectedField}" at position ${i + 1}, but found "${mapping.mappedField}" (from "${mapping.csvColumnName}")`
-          )
-        } else {
-          errors.push(
-            `Column order incorrect: Expected "${expectedField}" at position ${i + 1}, but found unmapped column "${mapping.csvColumnName}"`
-          )
-        }
-      }
     }
 
     return errors
@@ -351,9 +335,9 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
       errors.push(`Could not map columns: ${suggestions.join(', ')}`)
     }
 
-    // Validate order
-    const orderErrors = validateOrder(mappings)
-    errors.push(...orderErrors)
+    // Validate that all required fields are present
+    const fieldErrors = validateRequiredFields(mappings)
+    errors.push(...fieldErrors)
 
     // If validation passed, convert data
     if (errors.length === 0) {
@@ -432,9 +416,15 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
         const validationResult = validateAndConvertCSV(data, headers)
         
         setCsvHeaders(headers)
+        setOriginalCsvData(data)
         setParsedData(validationResult.convertedData)
         setValidationErrors(validationResult.errors)
         setColumnMappings(validationResult.mappings)
+        
+        // Notify parent component with mapped data for preview
+        if (onMappedDataReady) {
+          onMappedDataReady(data, validationResult.mappings)
+        }
         
         // Notify parent component with converted data only if valid
         if (validationResult.isValid && onFileProcessed) {
@@ -484,9 +474,15 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
           const validationResult = validateAndConvertCSV(data, headers)
           
           setCsvHeaders(headers)
+          setOriginalCsvData(data)
           setParsedData(validationResult.convertedData)
           setValidationErrors(validationResult.errors)
           setColumnMappings(validationResult.mappings)
+          
+          // Notify parent component with mapped data for preview
+          if (onMappedDataReady) {
+            onMappedDataReady(data, validationResult.mappings)
+          }
           
           // Notify parent component with converted data only if valid
           if (validationResult.isValid && onFileProcessed) {
@@ -569,11 +565,16 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
         setTimeout(() => {
           setFile(null)
           setParsedData([])
+          setOriginalCsvData([])
           setValidationErrors([])
           setColumnMappings([])
           setCsvHeaders([])
           setUploadSuccess(null)
           setUploadProgress(0)
+          // Clear mapped data in parent
+          if (onMappedDataReady) {
+            onMappedDataReady([], [])
+          }
         }, 3000)
       } else {
         setUploadError(response.error || 'Upload failed')
@@ -675,56 +676,53 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
             </div>
           )}
 
-          {/* Column Mapping Visualization */}
-          {file && columnMappings.length > 0 && (
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-              <h4 className="text-sm font-semibold text-slate-900 mb-3">Column Mapping</h4>
-              <div className="space-y-2">
-                {columnMappings.map((mapping, index) => {
-                  const isCorrect = mapping.mappedField === requiredColumns[index]
-                  const confidenceColor = 
-                    mapping.confidence === 'exact' ? 'text-green-600' :
-                    mapping.confidence === 'synonym' ? 'text-blue-600' :
-                    mapping.confidence === 'fuzzy' ? 'text-yellow-600' :
-                    'text-red-600'
-                  
-                  return (
-                    <div 
-                      key={index} 
-                      className={`flex items-center justify-between p-2 rounded ${
-                        isCorrect && mapping.mappedField ? 'bg-green-50 border border-green-200' : 
-                        mapping.mappedField ? 'bg-yellow-50 border border-yellow-200' :
-                        'bg-red-50 border border-red-200'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3 flex-1">
-                        <span className="text-xs font-medium text-slate-500 w-8">#{index + 1}</span>
-                        <span className="text-sm text-slate-900 flex-1">{mapping.csvColumnName}</span>
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                        </svg>
-                        <span className={`text-sm font-medium ${mapping.mappedField ? 'text-slate-900' : 'text-red-600'}`}>
-                          {mapping.mappedField || 'Unmapped'}
-                        </span>
-                      </div>
-                      {mapping.mappedField && (
+          {/* Column Mapping Visualization - Only show mapped fields */}
+          {file && columnMappings.length > 0 && (() => {
+            const mappedColumns = columnMappings.filter(m => m.mappedField !== null)
+            return mappedColumns.length > 0 && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-slate-900 mb-3">Mapped Columns</h4>
+                <div className="space-y-2">
+                  {mappedColumns.map((mapping, index) => {
+                    const confidenceColor = 
+                      mapping.confidence === 'exact' ? 'text-green-600' :
+                      mapping.confidence === 'synonym' ? 'text-blue-600' :
+                      mapping.confidence === 'fuzzy' ? 'text-yellow-600' :
+                      'text-red-600'
+                    
+                    return (
+                      <div 
+                        key={mapping.csvColumnIndex} 
+                        className="flex items-center justify-between p-2 rounded bg-green-50 border border-green-200"
+                      >
+                        <div className="flex items-center space-x-3 flex-1">
+                          <span className="text-xs font-medium text-slate-500 w-8">#{mapping.csvColumnIndex + 1}</span>
+                          <span className="text-sm text-slate-900 flex-1">{mapping.csvColumnName}</span>
+                          <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                          </svg>
+                          <span className="text-sm font-medium text-slate-900">
+                            {mapping.mappedField}
+                          </span>
+                        </div>
                         <span className={`text-xs font-medium ml-2 ${confidenceColor}`}>
                           {mapping.confidence === 'exact' ? '✓ Exact' :
                            mapping.confidence === 'synonym' ? '≈ Synonym' :
                            mapping.confidence === 'fuzzy' ? '~ Fuzzy' : ''}
                         </span>
-                      )}
-                    </div>
-                  )
-                })}
+                      </div>
+                    )
+                  })}
+                </div>
+                {validationErrors.length === 0 && parsedData.length > 0 && (
+                  <p className="text-xs text-green-600 mt-3 font-medium">
+                    ✓ All required columns mapped correctly
+                  </p>
+                )}
               </div>
-              {validationErrors.length === 0 && parsedData.length > 0 && (
-                <p className="text-xs text-green-600 mt-3 font-medium">
-                  ✓ All columns mapped correctly and in the correct order
-                </p>
-              )}
-            </div>
-          )}
+            )
+          })()}
+
 
           {/* Validation Errors */}
           {validationErrors.length > 0 && (
@@ -744,7 +742,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
                     ))}
                   </ul>
                   <p className="text-xs text-red-600 mt-3 font-medium">
-                    Please ensure your CSV has exactly 6 columns in this exact order: business_name, zipcode, state, phone_number, website, email
+                    Please ensure your CSV has exactly 6 columns with all required fields: business_name, zipcode, state, phone_number, website, email (order doesn't matter)
                   </p>
                 </div>
               </div>
@@ -761,7 +759,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
                 <div>
                   <h4 className="text-sm font-medium text-green-800">CSV Validation Passed</h4>
                   <p className="text-sm text-green-700">
-                    {parsedData.length} records validated successfully. All 6 required columns are present and in the correct order.
+                    {parsedData.length} records validated successfully. All 6 required columns are present and mapped correctly.
                   </p>
                 </div>
               </div>
@@ -833,7 +831,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess }: CSVUploadFor
                 <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
-                <span>6 fields required: business_name, zipcode, state, phone_number, website, email</span>
+                <span>6 fields required: business_name, zipcode, state, phone_number, website, email (any order)</span>
               </div>
             </div>
           </div>
