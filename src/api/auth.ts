@@ -72,8 +72,8 @@ export const auth = {
         } else {
           console.warn('[Auth] No access_token received in login response')
           // Try to get it from response.data directly (in case it's nested differently)
-          const responseData = response.data as any
-          if (responseData?.access_token) {
+          const responseData = response.data as Record<string, unknown> | undefined
+          if (responseData && typeof responseData.access_token === 'string') {
             console.log('[Auth] Found access_token in nested location, storing...')
             safeLocalStorage.setItem('access_token', responseData.access_token)
           }
@@ -137,8 +137,8 @@ export const auth = {
         } else {
           console.warn('[Auth] No access_token received in signup response')
           // Try to get it from response.data directly (in case it's nested differently)
-          const responseData = response.data as any
-          if (responseData?.access_token) {
+          const responseData = response.data as Record<string, unknown> | undefined
+          if (responseData && typeof responseData.access_token === 'string') {
             console.log('[Auth] Found access_token in nested location during signup, storing...')
             safeLocalStorage.setItem('access_token', responseData.access_token)
           }

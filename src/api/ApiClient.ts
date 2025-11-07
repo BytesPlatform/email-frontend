@@ -125,7 +125,7 @@ class ApiClient {
       } else if (data.data?.access_token) {
         access_token = data.data.access_token
       } else if (typeof data === 'object' && 'access_token' in data) {
-        access_token = (data as any).access_token
+        access_token = (data as Record<string, unknown>).access_token as string | undefined
       }
       
       // If token found, store it immediately (for future requests)
@@ -156,7 +156,7 @@ class ApiClient {
         const responseData = data.data !== undefined ? data.data : data
         // Ensure access_token is included in the response data
         if (access_token && typeof responseData === 'object' && responseData !== null) {
-          (responseData as any).access_token = access_token
+          (responseData as Record<string, unknown>).access_token = access_token
         }
         return {
           success: data.success,
@@ -166,7 +166,7 @@ class ApiClient {
       } else {
         // Direct data response - ensure access_token is included
         if (access_token && typeof data === 'object' && data !== null) {
-          (data as any).access_token = access_token
+          (data as Record<string, unknown>).access_token = access_token
         }
         return {
           success: true,
