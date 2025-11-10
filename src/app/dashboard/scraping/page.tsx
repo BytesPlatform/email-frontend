@@ -156,6 +156,12 @@ export default function ScrapingPage() {
         }))
         setReadyContacts(transformed)
         setHasFetchedReadyAndStats(true)
+        
+        // Fetch stats after getting all contacts (if currentUploadId exists)
+        if (currentUploadId) {
+          await fetchStats()
+        }
+        
         // Auto-open modal to manage records (only if not preserving filter)
         if (!preserveFilter) {
           setStatusFilter('all')
