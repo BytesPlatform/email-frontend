@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { historyApi } from '@/api/history'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { smsGenerationApi } from '@/api/smsGeneration'
-import type { BusinessSummary, ScrapedRecord } from '@/types/emailGeneration'
+import type { BusinessSummary, ScrapedRecord, BulkStatusEntry } from '@/types/emailGeneration'
+import type { SmsBulkStatusEntry } from '@/types/smsGeneration'
 import type { ScrapingHistoryItem } from '@/types/history'
 import { EmailGenerationHeader } from '@/components/email-generation/EmailGenerationHeader'
 import { RecordsTable } from '@/components/email-generation/RecordsTable'
@@ -47,6 +48,74 @@ export default function EmailGenerationPage() {
 
   // Optimization suggestions state
   const [isLoadingOptimization, setIsLoadingOptimization] = useState(false)
+
+  const applyEmailBulkStatus = useCallback((statuses: BulkStatusEntry[]) => {
+    const statusMap = new Map(statuses.map((entry) => [entry.contactId, entry]))
+    setState((prev) => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map((record) => {
+        const status = statusMap.get(record.contactId)
+        return {
+          ...record,
+          hasSummary: status ? status.hasSummary : false,
+          hasEmailDraft: status ? status.hasEmailDraft : false,
+          emailDraftId: status?.emailDraftId ?? undefined,
+        }
+      }),
+    }))
+  }, [setState])
+
+  const applySmsBulkStatus = useCallback((statuses: SmsBulkStatusEntry[]) => {
+    const statusMap = new Map(statuses.map((entry) => [entry.contactId, entry]))
+    setState((prev) => ({
+      ...prev,
+      scrapedRecords: prev.scrapedRecords.map((record) => {
+        const status = statusMap.get(record.contactId)
+        return {
+          ...record,
+          hasSMSDraft: status ? status.hasSmsDraft : false,
+          smsDraftId: status?.smsDraftId ?? undefined,
+          smsStatus: status?.smsStatus ?? undefined,
+        }
+      }),
+    }))
+  }, [setState])
+
+  const fetchEmailBulkStatus = useCallback(async (contactIds: number[]) => {
+    if (contactIds.length === 0) {
+      setState((prev) => ({ ...prev, isLoadingBulkStatus: false }))
+      return
+    }
+    setState((prev) => ({ ...prev, isLoadingBulkStatus: true }))
+    try {
+      const statusRes = await emailGenerationApi.getBulkStatus(contactIds)
+      if (statusRes.success && statusRes.data) {
+        applyEmailBulkStatus(statusRes.data)
+      }
+    } catch (error) {
+      console.error('Error fetching email bulk status:', error)
+    } finally {
+      setState((prev) => ({ ...prev, isLoadingBulkStatus: false }))
+    }
+  }, [applyEmailBulkStatus, setState])
+
+  const fetchSmsBulkStatus = useCallback(async (contactIds: number[]) => {
+    if (contactIds.length === 0) {
+      setState((prev) => ({ ...prev, isLoadingBulkStatus: false }))
+      return
+    }
+    setState((prev) => ({ ...prev, isLoadingBulkStatus: true }))
+    try {
+      const statusRes = await smsGenerationApi.getBulkStatus(contactIds)
+      if (statusRes.success && statusRes.data) {
+        applySmsBulkStatus(statusRes.data)
+      }
+    } catch (error) {
+      console.error('Error fetching SMS bulk status:', error)
+    } finally {
+      setState((prev) => ({ ...prev, isLoadingBulkStatus: false }))
+    }
+  }, [applySmsBulkStatus, setState])
 
   // Load scraped records on component mount
   useEffect(() => {
@@ -120,55 +189,7 @@ export default function EmailGenerationPage() {
           currentPage: 1 // Reset to first page when new data is loaded
         }))
         
-          // Fetch bulk status for all contacts to update action buttons
-          if (scrapedRecords.length > 0) {
-            const contactIds = scrapedRecords.map(r => r.contactId)
-            
-            // Set loading state for bulk status
-            setState(prev => ({ ...prev, isLoadingBulkStatus: true }))
-            
-            try {
-              const statusRes = await emailGenerationApi.getBulkStatus(contactIds)
-              if (statusRes.success && statusRes.data) {
-                // Create a map for quick lookup
-                const statusMap = new Map(
-                  statusRes.data.map(s => [s.contactId, s])
-                )
-                
-                // Update records with status information
-                setState(prev => ({
-                  ...prev,
-                  scrapedRecords: prev.scrapedRecords.map(record => {
-                    const status = statusMap.get(record.contactId)
-                    if (status) {
-                      return {
-                        ...record,
-                        hasSummary: status.hasSummary,
-                        hasEmailDraft: status.hasEmailDraft,
-                        hasSMSDraft: status.hasSMSDraft,
-                        emailDraftId: status.emailDraftId || undefined,
-                        smsDraftId: status.smsDraftId || undefined,
-                        smsStatus: status.smsStatus || undefined, // Include SMS status from bulk API
-                      }
-                    }
-                    return record
-                  }),
-                  isLoadingBulkStatus: false // Clear loading state after update
-                }))
-              } else {
-                // Clear loading state even if API fails
-                setState(prev => ({ ...prev, isLoadingBulkStatus: false }))
-              }
-            } catch (error) {
-              console.error('Error fetching bulk status:', error)
-              // Clear loading state on error
-              setState(prev => ({ ...prev, isLoadingBulkStatus: false }))
-              // Don't show error to user, just log it - action buttons will work when View is clicked
-            }
-          } else {
-            // No records, clear loading state
-            setState(prev => ({ ...prev, isLoadingBulkStatus: false }))
-          }
+          // No immediate bulk status fetch here; handled by separate effect
       } else {
         console.log('History API Error:', historyRes.error)
           setState(prev => ({ 
@@ -189,6 +210,18 @@ export default function EmailGenerationPage() {
     loadScrapedRecords()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client?.id, setState])
+
+  // Fetch bulk status when mode changes or records are loaded
+  useEffect(() => {
+    const contactIds = state.scrapedRecords.map((record) => record.contactId)
+    if (contactIds.length === 0) return
+
+    if (mode === 'email') {
+      fetchEmailBulkStatus(contactIds)
+    } else {
+      fetchSmsBulkStatus(contactIds)
+    }
+  }, [mode, state.scrapedRecords.length, fetchEmailBulkStatus, fetchSmsBulkStatus])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -1341,63 +1374,6 @@ export default function EmailGenerationPage() {
                     </div>
                   )}
 
-                  {/* Actions - Only show in full mode */}
-                  {drawerViewMode === 'full' && (
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Actions</h3>
-                    <div className="flex space-x-2">
-                      {!selectedRecord.generatedSummary ? (
-                        <Button
-                          onClick={() => {
-                            handleGenerateSummary(selectedRecord.id)
-                            closeDrawer()
-                          }}
-                          disabled={selectedRecord.isGeneratingSummary}
-                          isLoading={selectedRecord.isGeneratingSummary}
-                        >
-                          {selectedRecord.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
-                        </Button>
-                      ) : !selectedRecord.generatedEmail ? (
-                        <Button
-                          onClick={() => {
-                            handleGenerateEmail(selectedRecord.id)
-                            closeDrawer()
-                          }}
-                          disabled={selectedRecord.isGeneratingEmail}
-                          isLoading={selectedRecord.isGeneratingEmail}
-                          variant="success"
-                        >
-                          {selectedRecord.isGeneratingEmail ? 'Generating...' : 'Generate Email'}
-                        </Button>
-                      ) : (
-                        <div className="flex space-x-2">
-                          <Button
-                            onClick={() => {
-                              handleGenerateSummary(selectedRecord.id)
-                              closeDrawer()
-                            }}
-                            disabled={selectedRecord.isGeneratingSummary}
-                            isLoading={selectedRecord.isGeneratingSummary}
-                            variant="outline"
-                          >
-                            Regenerate Summary
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              handleGenerateEmail(selectedRecord.id)
-                              closeDrawer()
-                            }}
-                            disabled={selectedRecord.isGeneratingEmail}
-                            isLoading={selectedRecord.isGeneratingEmail}
-                            variant="outline"
-                          >
-                            Regenerate Email
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  )}
                   </div>
                 </div>
               </div>

@@ -33,3 +33,10 @@ export interface SMSGenerationRequest {
   summaryId: number
 }
 
+export interface SmsBulkStatusEntry {
+  contactId: number
+  hasSmsDraft: boolean
+  smsDraftId: number | null
+  smsStatus: string | null
+}
+

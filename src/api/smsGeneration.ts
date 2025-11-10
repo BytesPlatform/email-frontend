@@ -1,5 +1,5 @@
 import { apiClient, ApiResponse } from './ApiClient'
-import { SMSDraft, SMSGenerationResponse } from '@/types/smsGeneration'
+import { SMSDraft, SMSGenerationResponse, SmsBulkStatusEntry } from '@/types/smsGeneration'
 
 export const smsGenerationApi = {
   /**
@@ -176,6 +176,36 @@ export const smsGenerationApi = {
     } catch (error) {
       console.error('Error fetching all SMS drafts:', error)
       throw error
+    }
+  },
+
+  /**
+   * Get bulk SMS status for contacts
+   * POST /sms/generation/bulk-status
+   */
+  async getBulkStatus(contactIds: number[]): Promise<ApiResponse<SmsBulkStatusEntry[]>> {
+    try {
+      const response = await apiClient.post<SmsBulkStatusEntry[]>('/sms/bulk-status', { contactIds })
+
+      if (response.success && response.data) {
+        return {
+          success: true,
+          data: response.data ?? [],
+        }
+      }
+
+      return {
+        success: false,
+        error: response.error || 'Failed to get SMS bulk status',
+        data: [],
+      }
+    } catch (error) {
+      console.error('Error getting SMS bulk status:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get SMS bulk status',
+        data: [],
+      }
     }
   }
 }

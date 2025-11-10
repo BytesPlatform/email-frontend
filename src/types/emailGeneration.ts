@@ -134,6 +134,25 @@ export interface OptimizeDto {
   subjectLine?: string
 }
 
+export interface BulkStatusEntry {
+  contactId: number
+  hasSummary: boolean
+  hasEmailDraft: boolean
+  hasSMSDraft: boolean
+  emailDraftId: number | null
+  smsDraftId: number | null
+  smsStatus: string | null
+}
+
+export interface BulkStatusPagination {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+  hasNext: boolean
+  hasPrevious: boolean
+}
+
 // Scraped record interface (reusing from scraping types)
 export interface ScrapedRecord {
   id: number
