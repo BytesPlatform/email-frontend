@@ -125,15 +125,28 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
     >
       <div 
         ref={modalRef}
-        className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden"
+        className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b flex items-center justify-between">
+        {/* Header with title and Start Scraping button */}
+        <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
           <h3 className="text-lg font-semibold">Scrape Records</h3>
-              <button onClick={onClose} className="text-gray-600 hover:text-gray-900 cursor-pointer">×</button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleStartScrape}
+              disabled={selectedIds.length === 0 || isScraping}
+              className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+            >
+              {isScraping ? 'Scraping…' : `Start Scraping ${selectedIds.length} Selected`}
+            </button>
+            <button onClick={onClose} className="text-gray-600 hover:text-gray-900 cursor-pointer text-2xl leading-none">×</button>
+          </div>
         </div>
-        <div className="px-6 pt-4">
-          <div className="flex flex-wrap items-center gap-2 mb-4">
+
+        {/* Top section with filters, selection controls, and pagination */}
+        <div className="px-6 pt-4 pb-3 flex-shrink-0 border-b">
+          {/* Filter tabs and item count */}
+          <div className="flex flex-wrap items-center gap-2 mb-3">
             {([
               { k: 'all', label: 'All' },
               { k: 'ready_to_scrape', label: 'Ready' },
@@ -159,12 +172,27 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
               </button>
             )}
           </div>
+
+          {/* Retry Failed button if applicable */}
+          {onRetryFailed && filter === 'scrape_failed' && (
+            <div className="mt-3">
+              <button
+                onClick={() => onRetryFailed(selectedIds)}
+                disabled={selectedIds.length === 0}
+                className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+              >
+                Retry Failed
+              </button>
+            </div>
+          )}
         </div>
-        <div className="px-6 pb-4 overflow-y-auto max-h-[60vh]">
+
+        {/* Scrollable records list */}
+        <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0">
           {filtered.length === 0 ? (
             <div className="text-center text-gray-500 py-12">No records for this filter.</div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 pb-2">
               {paged.map(c => (
                 <label key={c.id} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
                   <input
@@ -187,10 +215,11 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
             </div>
           )}
         </div>
-        <div className="px-6 py-3 border-t sticky bottom-0 bg-white">
-          <div className="flex items-center justify-between gap-4">
-            {/* Left: bulk selection */}
-            <div className="flex items-center gap-3 text-sm text-gray-700">
+
+        {/* Footer with selection controls and pagination */}
+        <div className="px-6 py-3 border-t flex-shrink-0 flex items-center justify-between">
+          {/* Left: Selection controls */}
+          <div className="flex items-center gap-3 text-sm text-gray-700">
             <button
               onClick={() => setSelectedIds(filtered.map(c => c.id))}
               disabled={filtered.length === 0}
@@ -206,60 +235,29 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
             >
               Clear All
             </button>
-              <span className="ml-1 text-gray-600">{selectedIds.length} selected</span>
-            </div>
-
-            {/* Middle: pager (hidden when only 1 page) */}
-            {showPager && (
-              <div className="flex items-center gap-2 text-sm">
-                <button
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 disabled:opacity-50 bg-white cursor-pointer disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <span className="text-gray-600">Page {currentPage} of {totalPages}</span>
-                <button
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage >= totalPages}
-                  className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 disabled:opacity-50 bg-white cursor-pointer disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-                <select
-                  value={pageSize}
-                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
-                  className="ml-2 px-2 py-1.5 rounded-md border border-gray-300 text-gray-700 bg-white cursor-pointer"
-                >
-                  <option value={10}>10 / page</option>
-                  <option value={20}>20 / page</option>
-                  <option value={50}>50 / page</option>
-                </select>
-              </div>
-            )}
-
-            {/* Right: actions */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleStartScrape}
-                disabled={selectedIds.length === 0 || isScraping}
-                className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-              >
-                {isScraping ? 'Scraping…' : `Start Scraping ${selectedIds.length} Selected`}
-              </button>
-              <button onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm cursor-pointer">Close</button>
-              {onRetryFailed && filter === 'scrape_failed' && (
-                <button
-                  onClick={() => onRetryFailed(selectedIds)}
-                  disabled={selectedIds.length === 0}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                >
-                  Retry Failed
-                </button>
-              )}
-            </div>
+            <span className="ml-1 text-gray-600">{selectedIds.length} selected</span>
           </div>
+
+          {/* Right: Pagination controls */}
+          {showPager && (
+            <div className="flex items-center gap-2 text-sm">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 disabled:opacity-50 bg-white cursor-pointer disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="text-gray-600">Page {currentPage} of {totalPages}</span>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 disabled:opacity-50 bg-white cursor-pointer disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
