@@ -23,9 +23,11 @@ interface ScrapeStatusBrowserProps {
   // Optional: request fresh ready-to-scrape from server when user asks
   onRequestReadyFetch?: () => void
   onAfterScrape?: () => Promise<void> | void
+  // Optional: callback when filter changes (useful for refreshing data)
+  onFilterChange?: (filter: StatusFilter) => void
 }
 
-export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter = 'all', onRetryFailed, onRequestReadyFetch, onAfterScrape }: ScrapeStatusBrowserProps) {
+export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter = 'all', onRetryFailed, onRequestReadyFetch, onAfterScrape, onFilterChange }: ScrapeStatusBrowserProps) {
   const [filter, setFilter] = React.useState<StatusFilter>(initialFilter)
   const [selectedIds, setSelectedIds] = React.useState<number[]>([])
   const [page, setPage] = React.useState(1)
@@ -156,7 +158,14 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
             ] as Array<{k: StatusFilter; label: string}>).map(t => (
               <button
                 key={t.k}
-                onClick={() => { setFilter(t.k); setSelectedIds([]); setPage(1) }}
+                onClick={() => { 
+                  setFilter(t.k); 
+                  setSelectedIds([]); 
+                  setPage(1);
+                  if (onFilterChange) {
+                    onFilterChange(t.k);
+                  }
+                }}
                 className={`px-3 py-1.5 rounded-lg text-sm border cursor-pointer ${filter === t.k ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
               >
                 {t.label}
