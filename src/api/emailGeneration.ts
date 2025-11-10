@@ -9,6 +9,8 @@ import {
   CheckSpamDto,
   OptimizationSuggestions,
   OptimizeDto,
+  BulkStatusEntry,
+  BulkStatusPagination,
 } from '@/types/emailGeneration'
 
 export const emailGenerationApi = {
@@ -376,59 +378,43 @@ export const emailGenerationApi = {
    * POST /emails/generation/bulk-status
    * Body: { contactIds: number[] }
    */
-  async getBulkStatus(contactIds: number[]): Promise<ApiResponse<Array<{
-    contactId: number
-    hasSummary: boolean
-    hasEmailDraft: boolean
-    hasSMSDraft: boolean
-    emailDraftId: number | null
-    smsDraftId: number | null
-    smsStatus: string | null
-  }>>> {
+  async getBulkStatus(contactIds: number[]): Promise<ApiResponse<BulkStatusEntry[]>> {
     try {
       const response = await apiClient.post<{
         success: boolean
-        data: Array<{
-          contactId: number
-          hasSummary: boolean
-          hasEmailDraft: boolean
-          hasSMSDraft: boolean
-          emailDraftId: number | null
-          smsDraftId: number | null
-          smsStatus: string | null
-        }>
+        data:
+          | BulkStatusEntry[]
+          | {
+              data: BulkStatusEntry[]
+              pagination?: BulkStatusPagination
+            }
+        pagination?: BulkStatusPagination
       }>('/emails/generation/bulk-status', { contactIds })
       
       if (response.success && response.data) {
-        // Handle nested response structure
-        type NestedBulkStatusResponse = { data: Array<{
-          contactId: number
-          hasSummary: boolean
-          hasEmailDraft: boolean
-          hasSMSDraft: boolean
-          emailDraftId: number | null
-          smsDraftId: number | null
-          smsStatus: string | null
-        }> }
-        const responseData = response.data as Array<{
-          contactId: number
-          hasSummary: boolean
-          hasEmailDraft: boolean
-          hasSMSDraft: boolean
-          emailDraftId: number | null
-          smsDraftId: number | null
-          smsStatus: string | null
-        }> | NestedBulkStatusResponse
-        
-        if (Array.isArray(responseData)) {
+        const rawData = response.data
+
+        if (Array.isArray(rawData)) {
           return {
             success: true,
-            data: responseData
+            data: rawData.map(entry => ({
+              ...entry,
+              hasSMSDraft: false,
+              smsDraftId: null,
+              smsStatus: null,
+            })),
           }
-        } else if ('data' in responseData && Array.isArray(responseData.data)) {
+        }
+
+        if (rawData && Array.isArray(rawData.data)) {
           return {
             success: true,
-            data: responseData.data
+            data: rawData.data.map(entry => ({
+              ...entry,
+              hasSMSDraft: false,
+              smsDraftId: null,
+              smsStatus: null,
+            })),
           }
         }
       }
@@ -436,15 +422,15 @@ export const emailGenerationApi = {
       return {
         success: false,
         error: response.error || 'Failed to get bulk status',
-        data: []
+        data: [],
       }
     } catch (error) {
       console.error('Error getting bulk status:', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to get bulk status',
-        data: []
+        data: [],
       }
     }
-  }
+  },
 }
