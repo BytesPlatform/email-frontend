@@ -66,6 +66,18 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
     fetchUploads()
   }, [client?.id, refreshTrigger])
 
+  // Block body scrolling when any overlay is open
+  useEffect(() => {
+    if (showCsvDataOverlay || showUploadOverlay) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [showCsvDataOverlay, showUploadOverlay])
+
   // Handle clicking on an uploaded file row
   const handleUploadClick = async (upload: CsvUpload) => {
     setShowUploadOverlay(true)
