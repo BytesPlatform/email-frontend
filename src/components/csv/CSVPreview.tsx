@@ -50,9 +50,23 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   const [showCsvDataOverlay, setShowCsvDataOverlay] = useState(false)
   const [overlayCsvData, setOverlayCsvData] = useState<Record<string, string>[]>([])
   const [overlayHeaders, setOverlayHeaders] = useState<string[]>([])
-  const [editingCell, setEditingCell] = useState<{ rowIndex: number; header: string } | null>(null)
+  const [editingCell, setEditingCell] = useState<{ rowIndex: number; header: string; isMapped?: boolean } | null>(null)
   const [editValue, setEditValue] = useState<string>('')
+  const [localCsvData, setLocalCsvData] = useState<Record<string, string>[]>([])
   
+  // Initialize local CSV data from csvData prop
+  useEffect(() => {
+    if (csvData && csvData.length > 0 && headers && headers.length > 0) {
+      setLocalCsvData(csvData.map(row => {
+        const rowObj: Record<string, string> = {}
+        headers.forEach(header => {
+          rowObj[header] = row[header] || ''
+        })
+        return rowObj
+      }))
+    }
+  }, [csvData, headers])
+
   // Get mapped columns only
   const mappedColumns = columnMappings.filter(m => m.mappedField !== null)
   const hasMappedData = localMappedCsvData.length > 0 && mappedColumns.length > 0
@@ -187,25 +201,119 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
       .trim()
   }
 
-  // Check if email field is empty or invalid
-  const isEmailEmpty = (value: string | undefined | null): boolean => {
+  // Check if field is empty or invalid
+  const isFieldEmpty = (value: string | undefined | null): boolean => {
     if (!value) return true
     const strValue = String(value).trim()
     return strValue === '' || strValue === '-' || strValue === 'null' || strValue === 'undefined'
   }
 
   // Check if a field is the email field
+  // Matches all email synonyms from CSVUploadForm.tsx
   const isEmailField = (fieldName: string, mapping?: ColumnMapping): boolean => {
+    const emailSynonyms = [
+      'email',
+      'email address',
+      'email_address',
+      'business email',
+      'business_email',
+      'personal email',
+      'personal_email',
+      'contact email',
+      'contact_email',
+      'work email',
+      'work_email',
+      'official email',
+      'official_email',
+      'primary email',
+      'primary_email',
+      'mail',
+      'email id',
+      'email_id',
+      'company email',
+      'company_email',
+      'registered email',
+      'registered_email'
+    ]
+    
     if (mapping) {
-      return mapping.mappedField === 'email' || mapping.csvColumnName.toLowerCase().includes('email')
+      // Check if mapped field is email
+      if (mapping.mappedField === 'email') {
+        return true
+      }
+      
+      // Check if CSV column name matches any email synonym
+      const lowerColumnName = mapping.csvColumnName.toLowerCase().trim()
+      return emailSynonyms.some(synonym => 
+        lowerColumnName === synonym.toLowerCase() || 
+        lowerColumnName.includes(synonym.toLowerCase())
+      )
     }
-    return fieldName.toLowerCase().includes('email')
+    
+    // Check field name directly
+    const lowerFieldName = fieldName.toLowerCase().trim()
+    return emailSynonyms.some(synonym => 
+      lowerFieldName === synonym.toLowerCase() || 
+      lowerFieldName.includes(synonym.toLowerCase())
+    )
+  }
+
+  // Check if a field is the phone number field
+  // Matches all phone number synonyms from CSVUploadForm.tsx
+  const isPhoneField = (fieldName: string, mapping?: ColumnMapping): boolean => {
+    const phoneSynonyms = [
+      'phone',
+      'phone number',
+      'phone_number',
+      'telephone',
+      'contact',
+      'contact number',
+      'contact_number',
+      'mobile',
+      'mobile number',
+      'mobile_number',
+      'cell',
+      'cell number',
+      'cell_number',
+      'work phone',
+      'work_phone',
+      'office phone',
+      'office_phone',
+      'business contact',
+      'business_contact'
+    ]
+    
+    if (mapping) {
+      // Check if mapped field is phone_number
+      if (mapping.mappedField === 'phone_number') {
+        return true
+      }
+      
+      // Check if CSV column name matches any phone synonym
+      const lowerColumnName = mapping.csvColumnName.toLowerCase().trim()
+      return phoneSynonyms.some(synonym => 
+        lowerColumnName === synonym.toLowerCase() || 
+        lowerColumnName.includes(synonym.toLowerCase())
+      )
+    }
+    
+    // Check field name directly
+    const lowerFieldName = fieldName.toLowerCase().trim()
+    return phoneSynonyms.some(synonym => 
+      lowerFieldName === synonym.toLowerCase() || 
+      lowerFieldName.includes(synonym.toLowerCase())
+    )
+  }
+
+  // Check if a field is required (email or phone)
+  const isRequiredField = (fieldName: string, mapping?: ColumnMapping): boolean => {
+    return isEmailField(fieldName, mapping) || isPhoneField(fieldName, mapping)
   }
 
   // Handle starting edit
-  const handleStartEdit = (e: React.MouseEvent, rowIndex: number, header: string, currentValue: string) => {
+  const handleStartEdit = (e: React.MouseEvent, rowIndex: number, header: string, currentValue: string, isMapped: boolean = true) => {
     e.stopPropagation()
-    setEditingCell({ rowIndex, header })
+    setEditingCell({ rowIndex, header, isMapped })
     setEditValue(currentValue === '-' || !currentValue ? '' : String(currentValue))
   }
 
@@ -214,7 +322,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
     e.stopPropagation()
     if (!editingCell) return
 
-    const { rowIndex, header } = editingCell
+    const { rowIndex, header, isMapped } = editingCell
     const trimmedValue = editValue.trim()
     
     // Validate email format if it's an email field
@@ -226,18 +334,45 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
       }
     }
 
-    const updatedData = [...localMappedCsvData]
-    updatedData[rowIndex] = {
-      ...updatedData[rowIndex],
-      [header]: trimmedValue
+    // Validate phone number format if it's a phone field
+    if (isPhoneField(header)) {
+      // Basic phone validation - allows digits, spaces, dashes, parentheses, and +
+      const phoneRegex = /^[\d\s\-\(\)\+]+$/
+      if (trimmedValue && !phoneRegex.test(trimmedValue)) {
+        alert('Please enter a valid phone number')
+        return
+      }
+      // Check minimum length (at least 7 digits)
+      const digitCount = trimmedValue.replace(/\D/g, '').length
+      if (trimmedValue && digitCount < 7) {
+        alert('Phone number must contain at least 7 digits')
+        return
+      }
     }
-    
-    // Update local mapped CSV data
-    setLocalMappedCsvData(updatedData)
-    
-    // Notify parent component
-    if (onDataUpdate) {
-      onDataUpdate(updatedData)
+
+    if (isMapped !== false && localMappedCsvData.length > 0) {
+      // Update mapped CSV data
+      const updatedData = [...localMappedCsvData]
+      updatedData[rowIndex] = {
+        ...updatedData[rowIndex],
+        [header]: trimmedValue
+      }
+      
+      // Update local mapped CSV data
+      setLocalMappedCsvData(updatedData)
+      
+      // Notify parent component
+      if (onDataUpdate) {
+        onDataUpdate(updatedData)
+      }
+    } else {
+      // Update non-mapped CSV data
+      const updatedData = [...localCsvData]
+      updatedData[rowIndex] = {
+        ...updatedData[rowIndex],
+        [header]: trimmedValue
+      }
+      setLocalCsvData(updatedData)
     }
     
     // Also update overlay data if it's open
@@ -322,20 +457,22 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                           {overlayHeaders.map((header, colIndex) => {
                             const value = row[header]
                             const displayValue = value !== null && value !== undefined ? String(value) : '-'
-                            const isEmptyEmail = isEmailField(header) && isEmailEmpty(displayValue)
+                            const isEmptyEmail = isEmailField(header) && isFieldEmpty(displayValue)
+                            const isEmptyPhone = isPhoneField(header) && isFieldEmpty(displayValue)
+                            const isEmptyRequired = isEmptyEmail || isEmptyPhone
                             const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.header === header
 
                             return (
                               <td 
                                 key={colIndex} 
                                 className={`px-4 py-3 border-r border-gray-200 last:border-r-0 ${
-                                  isEmptyEmail ? 'bg-red-50' : 'text-gray-900'
+                                  isEmptyRequired ? 'bg-red-50' : 'text-gray-900'
                                 }`}
                               >
                                 {isEditing ? (
                                   <div className="flex items-center gap-2">
                                     <input
-                                      type="email"
+                                      type={isEmailField(header) ? 'email' : 'tel'}
                                       value={editValue}
                                       onChange={(e) => setEditValue(e.target.value)}
                                       onKeyDown={(e) => {
@@ -347,6 +484,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                       }}
                                       className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                       autoFocus
+                                      placeholder={isEmailField(header) ? 'Enter email' : 'Enter phone number'}
                                     />
                                     <button
                                       onClick={handleSaveEdit}
@@ -363,14 +501,14 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                   </div>
                                 ) : (
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className={isEmptyEmail ? 'text-red-600 font-medium' : ''}>
+                                    <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
                                       {displayValue}
                                     </span>
-                                    {isEmptyEmail && (
+                                    {isEmptyRequired && (
                                       <button
                                         onClick={(e) => handleStartEdit(e, rowIndex, header, displayValue)}
                                         className="flex-shrink-0 px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
-                                        title="Edit email"
+                                        title={isEmailField(header) ? 'Edit email' : 'Edit phone number'}
                                       >
                                         Edit
                                       </button>
@@ -619,17 +757,19 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                           {mappedColumns.map((mapping) => {
                             const header = mapping.csvColumnName
                             const value = row[header] || '-'
-                            const isEmptyEmail = isEmailField(header, mapping) && isEmailEmpty(value)
+                            const isEmptyEmail = isEmailField(header, mapping) && isFieldEmpty(value)
+                            const isEmptyPhone = isPhoneField(header, mapping) && isFieldEmpty(value)
+                            const isEmptyRequired = isEmptyEmail || isEmptyPhone
                             const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.header === header
 
                             return (
                               <td 
                                 key={mapping.csvColumnIndex} 
                                 className={`px-4 py-3 border-r border-slate-200 last:border-r-0 ${
-                                  isEmptyEmail ? 'bg-red-50' : 'text-slate-900'
+                                  isEmptyRequired ? 'bg-red-50' : 'text-slate-900'
                                 }`}
                                 onClick={(e) => {
-                                  if (!isEditing && !isEmptyEmail) {
+                                  if (!isEditing && !isEmptyRequired) {
                                     setOverlayCsvData(localMappedCsvData)
                                     setOverlayHeaders(mappedColumns.map(m => m.csvColumnName))
                                     setShowCsvDataOverlay(true)
@@ -639,7 +779,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                 {isEditing ? (
                                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                     <input
-                                      type="email"
+                                      type={isEmailField(header, mapping) ? 'email' : 'tel'}
                                       value={editValue}
                                       onChange={(e) => setEditValue(e.target.value)}
                                       onKeyDown={(e) => {
@@ -651,6 +791,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                       }}
                                       className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                       autoFocus
+                                      placeholder={isEmailField(header, mapping) ? 'Enter email' : 'Enter phone number'}
                                     />
                                     <button
                                       onClick={handleSaveEdit}
@@ -667,14 +808,14 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                   </div>
                                 ) : (
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className={isEmptyEmail ? 'text-red-600 font-medium' : ''}>
+                                    <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
                                       {value}
                                     </span>
-                                    {isEmptyEmail && (
+                                    {isEmptyRequired && (
                                       <button
                                         onClick={(e) => handleStartEdit(e, rowIndex, header, value)}
                                         className="flex-shrink-0 px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
-                                        title="Edit email"
+                                        title={isEmailField(header, mapping) ? 'Edit email' : 'Edit phone number'}
                                       >
                                         Edit
                                       </button>
@@ -735,22 +876,100 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                           key={rowIndex} 
                           className="hover:bg-slate-50 cursor-pointer transition-colors"
                           onClick={() => {
-                            setOverlayCsvData(csvData.map(r => {
+                            const dataToShow = localCsvData.length > 0 ? localCsvData : csvData.map(r => {
                               const rowObj: Record<string, string> = {}
                               headers.forEach(header => {
                                 rowObj[header] = r[header] || ''
                               })
                               return rowObj
-                            }))
+                            })
+                            setOverlayCsvData(dataToShow)
                             setOverlayHeaders(headers)
                             setShowCsvDataOverlay(true)
                           }}
                         >
-                          {headers.map((header, colIndex) => (
-                            <td key={colIndex} className="px-3 py-2 text-slate-900 border-r border-slate-200">
-                              {row[header] || '-'}
-                            </td>
-                          ))}
+                          {headers.map((header, colIndex) => {
+                            const rowData = localCsvData[rowIndex] || row
+                            const value = rowData[header] || row[header] || '-'
+                            const isEmptyEmail = isEmailField(header) && isFieldEmpty(value)
+                            const isEmptyPhone = isPhoneField(header) && isFieldEmpty(value)
+                            const isEmptyRequired = isEmptyEmail || isEmptyPhone
+                            const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.header === header && editingCell?.isMapped === false
+
+                            return (
+                              <td 
+                                key={colIndex} 
+                                className={`px-3 py-2 border-r border-slate-200 ${
+                                  isEmptyRequired ? 'bg-red-50' : 'text-slate-900'
+                                }`}
+                                onClick={(e) => {
+                                  if (!isEditing && !isEmptyRequired) {
+                                    e.stopPropagation()
+                                    const dataToShow = localCsvData.length > 0 ? localCsvData : csvData.map(r => {
+                                      const rowObj: Record<string, string> = {}
+                                      headers.forEach(h => {
+                                        rowObj[h] = r[h] || ''
+                                      })
+                                      return rowObj
+                                    })
+                                    setOverlayCsvData(dataToShow)
+                                    setOverlayHeaders(headers)
+                                    setShowCsvDataOverlay(true)
+                                  }
+                                }}
+                              >
+                                {isEditing ? (
+                                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                      type={isEmailField(header) ? 'email' : 'tel'}
+                                      value={editValue}
+                                      onChange={(e) => setEditValue(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          handleSaveEdit(e as any)
+                                        } else if (e.key === 'Escape') {
+                                          handleCancelEdit(e as any)
+                                        }
+                                      }}
+                                      className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      autoFocus
+                                      placeholder={isEmailField(header) ? 'Enter email' : 'Enter phone number'}
+                                    />
+                                    <button
+                                      onClick={handleSaveEdit}
+                                      className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors"
+                                    >
+                                      ✓
+                                    </button>
+                                    <button
+                                      onClick={handleCancelEdit}
+                                      className="px-2 py-1 bg-gray-400 text-white rounded text-xs hover:bg-gray-500 transition-colors"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
+                                      {value}
+                                    </span>
+                                    {isEmptyRequired && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleStartEdit(e, rowIndex, header, value, false)
+                                        }}
+                                        className="flex-shrink-0 px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
+                                        title={isEmailField(header) ? 'Edit email' : 'Edit phone number'}
+                                      >
+                                        Edit
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                            )
+                          })}
                           <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                             <Link href="/dashboard/scraping">
                               <Button
