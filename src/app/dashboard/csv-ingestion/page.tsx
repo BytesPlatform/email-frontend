@@ -85,6 +85,9 @@ export default function CSVIngestionPage() {
                 mappedCsvData={mappedCsvData}
                 columnMappings={columnMappings}
                 refreshTrigger={uploadMetadata?.uploadId}
+                onDataUpdate={(updatedData) => {
+                  setMappedCsvData(updatedData)
+                }}
               />
             </div>
             

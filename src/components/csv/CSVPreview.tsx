@@ -15,6 +15,7 @@ interface CSVPreviewProps {
   mappedCsvData?: Record<string, string>[]
   columnMappings?: ColumnMapping[]
   refreshTrigger?: number // When this changes, refresh the uploaded files list
+  onDataUpdate?: (updatedData: Record<string, string>[]) => void // Callback when data is updated
 }
 
 const previewIcon = (
@@ -30,7 +31,14 @@ const downloadIcon = (
   </svg>
 )
 
-export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = [], refreshTrigger }: CSVPreviewProps) {
+export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = [], refreshTrigger, onDataUpdate }: CSVPreviewProps) {
+  // Local state for mapped CSV data to allow editing
+  const [localMappedCsvData, setLocalMappedCsvData] = useState<Record<string, string>[]>(mappedCsvData)
+
+  // Sync local state when prop changes
+  useEffect(() => {
+    setLocalMappedCsvData(mappedCsvData)
+  }, [mappedCsvData])
   const { csvData } = useData()
   const { client } = useAuthContext()
   const [showFullOverlay, setShowFullOverlay] = useState(false)
@@ -42,10 +50,12 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   const [showCsvDataOverlay, setShowCsvDataOverlay] = useState(false)
   const [overlayCsvData, setOverlayCsvData] = useState<Record<string, string>[]>([])
   const [overlayHeaders, setOverlayHeaders] = useState<string[]>([])
+  const [editingCell, setEditingCell] = useState<{ rowIndex: number; header: string } | null>(null)
+  const [editValue, setEditValue] = useState<string>('')
   
   // Get mapped columns only
   const mappedColumns = columnMappings.filter(m => m.mappedField !== null)
-  const hasMappedData = mappedCsvData.length > 0 && mappedColumns.length > 0
+  const hasMappedData = localMappedCsvData.length > 0 && mappedColumns.length > 0
 
   // Fetch uploaded CSV files
   useEffect(() => {
@@ -177,6 +187,80 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
       .trim()
   }
 
+  // Check if email field is empty or invalid
+  const isEmailEmpty = (value: string | undefined | null): boolean => {
+    if (!value) return true
+    const strValue = String(value).trim()
+    return strValue === '' || strValue === '-' || strValue === 'null' || strValue === 'undefined'
+  }
+
+  // Check if a field is the email field
+  const isEmailField = (fieldName: string, mapping?: ColumnMapping): boolean => {
+    if (mapping) {
+      return mapping.mappedField === 'email' || mapping.csvColumnName.toLowerCase().includes('email')
+    }
+    return fieldName.toLowerCase().includes('email')
+  }
+
+  // Handle starting edit
+  const handleStartEdit = (e: React.MouseEvent, rowIndex: number, header: string, currentValue: string) => {
+    e.stopPropagation()
+    setEditingCell({ rowIndex, header })
+    setEditValue(currentValue === '-' || !currentValue ? '' : String(currentValue))
+  }
+
+  // Handle saving edit
+  const handleSaveEdit = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!editingCell) return
+
+    const { rowIndex, header } = editingCell
+    const trimmedValue = editValue.trim()
+    
+    // Validate email format if it's an email field
+    if (isEmailField(header)) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (trimmedValue && !emailRegex.test(trimmedValue)) {
+        alert('Please enter a valid email address')
+        return
+      }
+    }
+
+    const updatedData = [...localMappedCsvData]
+    updatedData[rowIndex] = {
+      ...updatedData[rowIndex],
+      [header]: trimmedValue
+    }
+    
+    // Update local mapped CSV data
+    setLocalMappedCsvData(updatedData)
+    
+    // Notify parent component
+    if (onDataUpdate) {
+      onDataUpdate(updatedData)
+    }
+    
+    // Also update overlay data if it's open
+    if (showCsvDataOverlay && overlayCsvData.length > 0) {
+      const updatedOverlayData = [...overlayCsvData]
+      updatedOverlayData[rowIndex] = {
+        ...updatedOverlayData[rowIndex],
+        [header]: trimmedValue
+      }
+      setOverlayCsvData(updatedOverlayData)
+    }
+
+    setEditingCell(null)
+    setEditValue('')
+  }
+
+  // Handle canceling edit
+  const handleCancelEdit = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingCell(null)
+    setEditValue('')
+  }
+
   return (
     <>
       {/* CSV Data Overlay - for mapped CSV preview table */}
@@ -237,12 +321,62 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                         <tr key={rowIndex} className="hover:bg-gray-50">
                           {overlayHeaders.map((header, colIndex) => {
                             const value = row[header]
+                            const displayValue = value !== null && value !== undefined ? String(value) : '-'
+                            const isEmptyEmail = isEmailField(header) && isEmailEmpty(displayValue)
+                            const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.header === header
+
                             return (
                               <td 
                                 key={colIndex} 
-                                className="px-4 py-3 text-gray-900 border-r border-gray-200 last:border-r-0"
+                                className={`px-4 py-3 border-r border-gray-200 last:border-r-0 ${
+                                  isEmptyEmail ? 'bg-red-50' : 'text-gray-900'
+                                }`}
                               >
-                                {value !== null && value !== undefined ? String(value) : '-'}
+                                {isEditing ? (
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="email"
+                                      value={editValue}
+                                      onChange={(e) => setEditValue(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          handleSaveEdit(e as any)
+                                        } else if (e.key === 'Escape') {
+                                          handleCancelEdit(e as any)
+                                        }
+                                      }}
+                                      className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      autoFocus
+                                    />
+                                    <button
+                                      onClick={handleSaveEdit}
+                                      className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors"
+                                    >
+                                      ✓
+                                    </button>
+                                    <button
+                                      onClick={handleCancelEdit}
+                                      className="px-2 py-1 bg-gray-400 text-white rounded text-xs hover:bg-gray-500 transition-colors"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className={isEmptyEmail ? 'text-red-600 font-medium' : ''}>
+                                      {displayValue}
+                                    </span>
+                                    {isEmptyEmail && (
+                                      <button
+                                        onClick={(e) => handleStartEdit(e, rowIndex, header, displayValue)}
+                                        className="flex-shrink-0 px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
+                                        title="Edit email"
+                                      >
+                                        Edit
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </td>
                             )
                           })}
@@ -451,7 +585,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                   CSV Data Preview (Mapped Fields Only)
                 </h4>
                 <div className="text-xs text-slate-500">
-                  {mappedCsvData.length} row{mappedCsvData.length !== 1 ? 's' : ''} • {mappedColumns.length} mapped field{mappedColumns.length !== 1 ? 's' : ''}
+                  {localMappedCsvData.length} row{localMappedCsvData.length !== 1 ? 's' : ''} • {mappedColumns.length} mapped field{mappedColumns.length !== 1 ? 's' : ''}
                 </div>
               </div>
               
@@ -477,24 +611,79 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white">
-                      {mappedCsvData.map((row, rowIndex) => (
+                      {localMappedCsvData.map((row, rowIndex) => (
                         <tr 
                           key={rowIndex} 
-                          className="hover:bg-slate-50 cursor-pointer transition-colors"
-                          onClick={() => {
-                            setOverlayCsvData(mappedCsvData)
-                            setOverlayHeaders(mappedColumns.map(m => m.csvColumnName))
-                            setShowCsvDataOverlay(true)
-                          }}
+                          className="hover:bg-slate-50 transition-colors"
                         >
-                          {mappedColumns.map((mapping) => (
-                            <td 
-                              key={mapping.csvColumnIndex} 
-                              className="px-4 py-3 text-slate-900 border-r border-slate-200 last:border-r-0"
-                            >
-                              {row[mapping.csvColumnName] || '-'}
-                            </td>
-                          ))}
+                          {mappedColumns.map((mapping) => {
+                            const header = mapping.csvColumnName
+                            const value = row[header] || '-'
+                            const isEmptyEmail = isEmailField(header, mapping) && isEmailEmpty(value)
+                            const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.header === header
+
+                            return (
+                              <td 
+                                key={mapping.csvColumnIndex} 
+                                className={`px-4 py-3 border-r border-slate-200 last:border-r-0 ${
+                                  isEmptyEmail ? 'bg-red-50' : 'text-slate-900'
+                                }`}
+                                onClick={(e) => {
+                                  if (!isEditing && !isEmptyEmail) {
+                                    setOverlayCsvData(localMappedCsvData)
+                                    setOverlayHeaders(mappedColumns.map(m => m.csvColumnName))
+                                    setShowCsvDataOverlay(true)
+                                  }
+                                }}
+                              >
+                                {isEditing ? (
+                                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                      type="email"
+                                      value={editValue}
+                                      onChange={(e) => setEditValue(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          handleSaveEdit(e as any)
+                                        } else if (e.key === 'Escape') {
+                                          handleCancelEdit(e as any)
+                                        }
+                                      }}
+                                      className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      autoFocus
+                                    />
+                                    <button
+                                      onClick={handleSaveEdit}
+                                      className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors"
+                                    >
+                                      ✓
+                                    </button>
+                                    <button
+                                      onClick={handleCancelEdit}
+                                      className="px-2 py-1 bg-gray-400 text-white rounded text-xs hover:bg-gray-500 transition-colors"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className={isEmptyEmail ? 'text-red-600 font-medium' : ''}>
+                                      {value}
+                                    </span>
+                                    {isEmptyEmail && (
+                                      <button
+                                        onClick={(e) => handleStartEdit(e, rowIndex, header, value)}
+                                        className="flex-shrink-0 px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
+                                        title="Edit email"
+                                      >
+                                        Edit
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                            )
+                          })}
                         </tr>
                       ))}
                     </tbody>
