@@ -21,15 +21,21 @@ export default function CSVIngestionPage() {
   const [uploadMetadata, setUploadMetadata] = useState<UploadMetadata | null>(null)
   const [mappedCsvData, setMappedCsvData] = useState<Record<string, string>[]>([])
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([])
+  const [uncleanRows, setUncleanRows] = useState<Record<string, string>[]>([])
 
   const handleFileProcessed = (data: CSVRecord[], headers: string[]) => {
     setCsvData(data)
     setCsvHeaders(headers)
   }
 
-  const handleMappedDataReady = (originalData: Record<string, string>[], mappings: ColumnMapping[]) => {
+  const handleMappedDataReady = (
+    originalData: Record<string, string>[],
+    mappings: ColumnMapping[],
+    unclean: Record<string, string>[]
+  ) => {
     setMappedCsvData(originalData)
     setColumnMappings(mappings)
+    setUncleanRows(unclean)
   }
 
   const handleUploadSuccess = (metadata: UploadMetadata) => {
@@ -85,6 +91,7 @@ export default function CSVIngestionPage() {
                 mappedCsvData={mappedCsvData}
                 columnMappings={columnMappings}
                 refreshTrigger={uploadMetadata?.uploadId}
+                uncleanRows={uncleanRows}
                 onDataUpdate={(updatedData) => {
                   setMappedCsvData(updatedData)
                 }}

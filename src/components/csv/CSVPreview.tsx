@@ -16,6 +16,7 @@ interface CSVPreviewProps {
   columnMappings?: ColumnMapping[]
   refreshTrigger?: number // When this changes, refresh the uploaded files list
   onDataUpdate?: (updatedData: Record<string, string>[]) => void // Callback when data is updated
+  uncleanRows?: Record<string, string>[]
 }
 
 const previewIcon = (
@@ -31,14 +32,18 @@ const downloadIcon = (
   </svg>
 )
 
-export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = [], refreshTrigger, onDataUpdate }: CSVPreviewProps) {
+export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = [], refreshTrigger, onDataUpdate, uncleanRows = [] }: CSVPreviewProps) {
   // Local state for mapped CSV data to allow editing
   const [localMappedCsvData, setLocalMappedCsvData] = useState<Record<string, string>[]>(mappedCsvData)
+  const [localUncleanRows, setLocalUncleanRows] = useState<Record<string, string>[]>(uncleanRows || [])
 
   // Sync local state when prop changes
   useEffect(() => {
     setLocalMappedCsvData(mappedCsvData)
   }, [mappedCsvData])
+  useEffect(() => {
+    setLocalUncleanRows(uncleanRows || [])
+  }, [uncleanRows])
   const { csvData } = useData()
   const { client } = useAuthContext()
   const [showFullOverlay, setShowFullOverlay] = useState(false)
@@ -48,6 +53,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   const [showUploadOverlay, setShowUploadOverlay] = useState(false)
   const [isLoadingUploadDetails, setIsLoadingUploadDetails] = useState(false)
   const [showCsvDataOverlay, setShowCsvDataOverlay] = useState(false)
+  const [showUncleanOverlay, setShowUncleanOverlay] = useState(false)
   const [overlayCsvData, setOverlayCsvData] = useState<Record<string, string>[]>([])
   const [overlayHeaders, setOverlayHeaders] = useState<string[]>([])
   const [editingCell, setEditingCell] = useState<{ rowIndex: number; header: string; isMapped?: boolean } | null>(null)
@@ -70,6 +76,12 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   // Get mapped columns only
   const mappedColumns = columnMappings.filter(m => m.mappedField !== null)
   const hasMappedData = localMappedCsvData.length > 0 && mappedColumns.length > 0
+  const uncleanHeaders =
+    columnMappings.length > 0
+      ? columnMappings.map(mapping => mapping.csvColumnName)
+      : localUncleanRows[0]
+      ? Object.keys(localUncleanRows[0])
+      : []
 
   // Fetch uploaded CSV files
   useEffect(() => {
@@ -92,7 +104,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
 
   // Block body scrolling when any overlay is open
   useEffect(() => {
-    if (showCsvDataOverlay || showUploadOverlay) {
+    if (showCsvDataOverlay || showUploadOverlay || showUncleanOverlay) {
       document.body.style.overflow = 'hidden'
     } else {
       document.body.style.overflow = ''
@@ -100,7 +112,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
     return () => {
       document.body.style.overflow = ''
     }
-  }, [showCsvDataOverlay, showUploadOverlay])
+  }, [showCsvDataOverlay, showUploadOverlay, showUncleanOverlay])
 
   // Handle clicking on an uploaded file row
   const handleUploadClick = async (upload: CsvUpload) => {
@@ -398,6 +410,84 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
 
   return (
     <>
+      {/* Unclean Data Overlay - rows missing both email and phone */}
+      {showUncleanOverlay && localUncleanRows.length > 0 && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowUncleanOverlay(false)
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-white">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Rows Missing Contact Info</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {localUncleanRows.length} row{localUncleanRows.length !== 1 ? 's' : ''} will be skipped • Each row must include an email or phone number
+                </p>
+              </div>
+              <button
+                onClick={() => setShowUncleanOverlay(false)}
+                className="text-gray-600 hover:text-gray-900 cursor-pointer text-2xl leading-none w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-6 bg-gray-50">
+              <div className="border border-amber-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-amber-50 sticky top-0">
+                      <tr>
+                        {uncleanHeaders.map((header, index) => (
+                          <th
+                            key={index}
+                            className="px-4 py-3 text-left font-medium text-amber-900 border-r border-amber-200 last:border-r-0 whitespace-nowrap"
+                          >
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-amber-200 bg-white">
+                      {localUncleanRows.map((row, rowIndex) => (
+                        <tr key={rowIndex} className="hover:bg-amber-50/70 transition-colors">
+                          {uncleanHeaders.map((header, colIndex) => {
+                            const mapping = columnMappings.find(m => m.csvColumnName === header)
+                            const value = row[header]
+                            const isEmail = isEmailField(header, mapping)
+                            const isPhone = isPhoneField(header, mapping)
+                            const isCritical = (isEmail || isPhone) && isFieldEmpty(value)
+                            return (
+                              <td
+                                key={colIndex}
+                                className={`px-4 py-3 border-r border-amber-200 last:border-r-0 ${
+                                  isCritical ? 'text-red-700 font-medium' : 'text-gray-900'
+                                }`}
+                              >
+                                {value ? String(value) : '-'}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <p className="text-xs text-amber-700 mt-4">
+                These rows will not be uploaded because they are missing both an email address and a phone number.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CSV Data Overlay - for mapped CSV preview table */}
       {showCsvDataOverlay && overlayCsvData.length > 0 && (
         <div 
@@ -466,55 +556,12 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                               <td 
                                 key={colIndex} 
                                 className={`px-4 py-3 border-r border-gray-200 last:border-r-0 ${
-                                  isEmptyRequired ? 'bg-red-50' : 'text-gray-900'
+                                  isEmptyRequired ? 'text-red-600 font-medium' : 'text-gray-900'
                                 }`}
                               >
-                                {isEditing ? (
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type={isEmailField(header) ? 'email' : 'tel'}
-                                      value={editValue}
-                                      onChange={(e) => setEditValue(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          handleSaveEdit(e)
-                                        } else if (e.key === 'Escape') {
-                                          handleCancelEdit(e)
-                                        }
-                                      }}
-                                      className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                      autoFocus
-                                      placeholder={isEmailField(header) ? 'Enter email' : 'Enter phone number'}
-                                    />
-                                    <button
-                                      onClick={handleSaveEdit}
-                                      className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors"
-                                    >
-                                      ✓
-                                    </button>
-                                    <button
-                                      onClick={handleCancelEdit}
-                                      className="px-2 py-1 bg-gray-400 text-white rounded text-xs hover:bg-gray-500 transition-colors"
-                                    >
-                                      ×
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
-                                      {displayValue}
-                                    </span>
-                                    {isEmptyRequired && (
-                                      <button
-                                        onClick={(e) => handleStartEdit(e, rowIndex, header, displayValue)}
-                                        className="flex-shrink-0 px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
-                                        title={isEmailField(header) ? 'Edit email' : 'Edit phone number'}
-                                      >
-                                        Edit
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
+                                <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
+                                  {displayValue}
+                                </span>
                               </td>
                             )
                           })}
@@ -715,6 +762,27 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
+          {localUncleanRows.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-amber-900 font-semibold">
+                  {localUncleanRows.length} row{localUncleanRows.length !== 1 ? 's' : ''} will be skipped during upload.
+                </p>
+                <p className="text-xs text-amber-700 mt-1">
+                  Each contact must include at least an email address or a phone number.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-amber-300 text-amber-900 hover:bg-amber-100"
+                onClick={() => setShowUncleanOverlay(true)}
+              >
+                View Unclean Rows ({localUncleanRows.length})
+              </Button>
+            </div>
+          )}
+
           {/* Show Mapped CSV Data or Regular CSV Data or Empty State */}
           {hasMappedData ? (
             <div className="space-y-4">
@@ -766,7 +834,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                               <td 
                                 key={mapping.csvColumnIndex} 
                                 className={`px-4 py-3 border-r border-slate-200 last:border-r-0 ${
-                                  isEmptyRequired ? 'bg-red-50' : 'text-slate-900'
+                                  isEmptyRequired ? 'text-red-600 font-medium' : 'text-slate-900'
                                 }`}
                                 onClick={(e) => {
                                   if (!isEditing && !isEmptyRequired) {
@@ -807,20 +875,9 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                     </button>
                                   </div>
                                 ) : (
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
-                                      {value}
-                                    </span>
-                                    {isEmptyRequired && (
-                                      <button
-                                        onClick={(e) => handleStartEdit(e, rowIndex, header, value)}
-                                        className="flex-shrink-0 px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
-                                        title={isEmailField(header, mapping) ? 'Edit email' : 'Edit phone number'}
-                                      >
-                                        Edit
-                                      </button>
-                                    )}
-                                  </div>
+                                  <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
+                                    {value}
+                                  </span>
                                 )}
                               </td>
                             )
@@ -900,7 +957,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                               <td 
                                 key={colIndex} 
                                 className={`px-3 py-2 border-r border-slate-200 ${
-                                  isEmptyRequired ? 'bg-red-50' : 'text-slate-900'
+                                  isEmptyRequired ? 'text-red-600 font-medium' : 'text-slate-900'
                                 }`}
                                 onClick={(e) => {
                                   if (!isEditing && !isEmptyRequired) {
@@ -949,23 +1006,9 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                     </button>
                                   </div>
                                 ) : (
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
-                                      {value}
-                                    </span>
-                                    {isEmptyRequired && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          handleStartEdit(e, rowIndex, header, value, false)
-                                        }}
-                                        className="flex-shrink-0 px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
-                                        title={isEmailField(header) ? 'Edit email' : 'Edit phone number'}
-                                      >
-                                        Edit
-                                      </button>
-                                    )}
-                                  </div>
+                                  <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
+                                    {value}
+                                  </span>
                                 )}
                               </td>
                             )

@@ -17,7 +17,11 @@ interface UploadMetadata {
 interface CSVUploadFormProps {
   onFileProcessed?: (data: CSVRecord[], headers: string[]) => void
   onUploadSuccess?: (metadata: UploadMetadata) => void
-  onMappedDataReady?: (originalData: Record<string, string>[], mappings: ColumnMapping[]) => void
+  onMappedDataReady?: (
+    validOriginalData: Record<string, string>[],
+    mappings: ColumnMapping[],
+    uncleanRows: Record<string, string>[]
+  ) => void
 }
 
 export interface ColumnMapping {
@@ -32,6 +36,8 @@ interface ValidationResult {
   errors: string[]
   mappings: ColumnMapping[]
   convertedData: CSVRecord[]
+  validOriginalData: Record<string, string>[]
+  uncleanRows: Record<string, string>[]
 }
 
 export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataReady }: CSVUploadFormProps) {
@@ -45,6 +51,13 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([])
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uncleanRows, setUncleanRows] = useState<Record<string, string>[]>([])
+
+  const isValueEmpty = (value: string | undefined | null): boolean => {
+    if (value === undefined || value === null) return true
+    const trimmed = String(value).trim()
+    return trimmed === '' || trimmed === '-' || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined'
+  }
 
   // Standard 6-column format in exact order
   const requiredColumns = ['business_name', 'zipcode', 'state', 'phone_number', 'website', 'email']
@@ -294,6 +307,8 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
   const validateAndConvertCSV = (data: Record<string, string>[], headers: string[]): ValidationResult => {
     const errors: string[] = []
     const convertedData: CSVRecord[] = []
+    const validOriginalData: Record<string, string>[] = []
+    const uncleanRows: Record<string, string>[] = []
 
     // Check column count
     if (headers.length !== 6) {
@@ -307,7 +322,9 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           mappedField: null,
           confidence: 'none'
         })),
-        convertedData: []
+        convertedData: [],
+        validOriginalData: [],
+        uncleanRows: data
       }
     }
 
@@ -337,25 +354,72 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
     const fieldErrors = validateRequiredFields(mappings)
     errors.push(...fieldErrors)
 
-    // If validation passed, convert data
-    if (errors.length === 0) {
-      data.forEach((row) => {
-        const convertedRow: CSVRecord = {}
-        mappings.forEach((mapping) => {
-          if (mapping.mappedField) {
-            convertedRow[mapping.mappedField] = row[mapping.csvColumnName] || ''
-          }
-        })
-        convertedData.push(convertedRow)
+    if (errors.length > 0) {
+      return {
+        isValid: false,
+        errors,
+        mappings,
+        convertedData: [],
+        validOriginalData: [],
+        uncleanRows: data
+      }
+    }
+
+    const emailMapping = mappings.find(mapping => mapping.mappedField === 'email')
+    const phoneMapping = mappings.find(mapping => mapping.mappedField === 'phone_number')
+
+    data.forEach((row) => {
+      const emailValue = emailMapping ? row[emailMapping.csvColumnName] : ''
+      const phoneValue = phoneMapping ? row[phoneMapping.csvColumnName] : ''
+      const isEmailEmpty = isValueEmpty(emailValue)
+      const isPhoneEmpty = isValueEmpty(phoneValue)
+
+      if (isEmailEmpty && isPhoneEmpty) {
+        uncleanRows.push(row)
+        return
+      }
+
+      const convertedRow: CSVRecord = {}
+      mappings.forEach((mapping) => {
+        if (mapping.mappedField) {
+          convertedRow[mapping.mappedField] = row[mapping.csvColumnName] || ''
+        }
       })
+
+      validOriginalData.push(row)
+      convertedData.push(convertedRow)
+    })
+
+    if (convertedData.length === 0) {
+      errors.push('All rows are missing both email and phone number. Please provide at least one contact method for each row.')
     }
 
     return {
       isValid: errors.length === 0,
       errors,
       mappings,
-      convertedData
+      convertedData,
+      validOriginalData,
+      uncleanRows
     }
+  }
+
+  const buildCsvContent = (rows: CSVRecord[]): string => {
+    const csvHeaders = requiredColumns
+    const csvLines = [
+      csvHeaders.join(','),
+      ...rows.map(row =>
+        csvHeaders
+          .map(header => {
+            const value = row[header] || ''
+            return value.includes('"') || value.includes(',') || value.includes('\n')
+              ? `"${value.replace(/"/g, '""')}"`
+              : value
+          })
+          .join(',')
+      )
+    ]
+    return csvLines.join('\n')
   }
 
   const parseCSV = (csvText: string) => {
@@ -416,10 +480,15 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
         setParsedData(validationResult.convertedData)
         setValidationErrors(validationResult.errors)
         setColumnMappings(validationResult.mappings)
+        setUncleanRows(validationResult.uncleanRows)
         
         // Notify parent component with mapped data for preview
         if (onMappedDataReady) {
-          onMappedDataReady(data, validationResult.mappings)
+          onMappedDataReady(
+            validationResult.validOriginalData,
+            validationResult.mappings,
+            validationResult.uncleanRows
+          )
         }
         
         // Notify parent component with converted data only if valid
@@ -472,10 +541,15 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           setParsedData(validationResult.convertedData)
           setValidationErrors(validationResult.errors)
           setColumnMappings(validationResult.mappings)
+          setUncleanRows(validationResult.uncleanRows)
           
           // Notify parent component with mapped data for preview
           if (onMappedDataReady) {
-            onMappedDataReady(data, validationResult.mappings)
+            onMappedDataReady(
+              validationResult.validOriginalData,
+              validationResult.mappings,
+              validationResult.uncleanRows
+            )
           }
           
           // Notify parent component with converted data only if valid
@@ -513,7 +587,11 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
 
     // Ensure we have valid data
     if (parsedData.length === 0) {
-      setUploadError('No valid data to upload. Please check your CSV file.')
+      setUploadError(
+        uncleanRows.length > 0
+          ? 'No rows are eligible for upload because they are missing both an email and a phone number.'
+          : 'No valid data to upload. Please check your CSV file.'
+      )
       return
     }
 
@@ -534,8 +612,12 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
         })
       }, 200)
 
-      // Call the API
-      const response = await ingestionApi.uploadCsv(file, client.id)
+      // Rebuild CSV with only validated rows
+      const cleanedCsvContent = buildCsvContent(parsedData)
+      const cleanedFile = new File([cleanedCsvContent], file.name, { type: 'text/csv' })
+
+      // Call the API with cleaned data
+      const response = await ingestionApi.uploadCsv(cleanedFile, client.id)
 
       clearInterval(progressInterval)
       setUploadProgress(100)
@@ -561,11 +643,12 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           setParsedData([])
           setValidationErrors([])
           setColumnMappings([])
+          setUncleanRows([])
           setUploadSuccess(null)
           setUploadProgress(0)
           // Clear mapped data in parent
           if (onMappedDataReady) {
-            onMappedDataReady([], [])
+            onMappedDataReady([], [], [])
           }
         }, 3000)
       } else {
