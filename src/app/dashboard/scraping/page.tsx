@@ -134,7 +134,7 @@ export default function ScrapingPage() {
   }
 
   // Fetch all client contacts (from all CSV uploads)
-  const fetchAllClientContacts = async (limit?: number) => {
+  const fetchAllClientContacts = async (limit?: number, preserveFilter: boolean = false) => {
     setIsFetchingAllContacts(true)
     setApiError(null)
     setShowAllContacts(true)
@@ -156,9 +156,17 @@ export default function ScrapingPage() {
         }))
         setReadyContacts(transformed)
         setHasFetchedReadyAndStats(true)
-        // Auto-open modal to manage records
-        setStatusFilter('all')
-        setIsStatusOpen(true)
+        
+        // Fetch stats after getting all contacts (if currentUploadId exists)
+        if (currentUploadId) {
+          await fetchStats()
+        }
+        
+        // Auto-open modal to manage records (only if not preserving filter)
+        if (!preserveFilter) {
+          setStatusFilter('all')
+          setIsStatusOpen(true)
+        }
       } else {
         setApiError(res.error || 'Failed to fetch all client contacts')
       }
@@ -170,7 +178,7 @@ export default function ScrapingPage() {
   }
 
   // Fetch stats and selected upload's contacts together, then reveal records and actions
-  const fetchStatsAndShowRecords = async (limit: number = 20) => {
+  const fetchStatsAndShowRecords = async (limit: number = 20, preserveFilter: boolean = false) => {
     if (!currentUploadId) return
     setIsLoadingCombined(true)
     setApiError(null)
@@ -207,9 +215,11 @@ export default function ScrapingPage() {
         })()
       ])
       setHasFetchedReadyAndStats(true)
-      // Auto-open modal to manage records inside component
-      setStatusFilter('all')
-      setIsStatusOpen(true)
+      // Auto-open modal to manage records inside component (only if not preserving filter)
+      if (!preserveFilter) {
+        setStatusFilter('all')
+        setIsStatusOpen(true)
+      }
     } finally {
       setIsLoadingCombined(false)
     }
@@ -739,7 +749,29 @@ export default function ScrapingPage() {
         contacts={readyContacts}
         initialFilter={statusFilter}
         onRequestReadyFetch={() => fetchReadyContacts(readyPageSize)}
-        onAfterScrape={async () => { await fetchStats(); await fetchReadyContacts(readyPageSize) }}
+        onAfterScrape={async () => { 
+          await fetchStats(); 
+          if (showAllContacts) {
+            // Refresh all contacts if we're showing all contacts, preserve current filter
+            await fetchAllClientContacts(50, true);
+          } else {
+            // Otherwise refresh ready contacts for the current upload
+            await fetchReadyContacts(readyPageSize);
+          }
+        }}
+        onFilterChange={async (filter) => {
+          setStatusFilter(filter);
+          // When filter changes to scraped or failed, refresh contacts to get latest statuses
+          if (filter === 'scraped' || filter === 'scrape_failed') {
+            if (showAllContacts) {
+              // Refresh all contacts if showing all contacts, preserve current filter
+              await fetchAllClientContacts(50, true);
+            } else if (currentUploadId) {
+              // Otherwise refresh contacts for the current upload, preserve current filter
+              await fetchStatsAndShowRecords(20, true);
+            }
+          }
+        }}
       />
     </AuthGuard>
   )
