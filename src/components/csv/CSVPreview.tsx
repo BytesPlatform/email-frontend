@@ -318,7 +318,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   }
 
   // Handle saving edit
-  const handleSaveEdit = (e: React.MouseEvent) => {
+  const handleSaveEdit = (e: React.MouseEvent | React.KeyboardEvent) => {
     e.stopPropagation()
     if (!editingCell) return
 
@@ -390,7 +390,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   }
 
   // Handle canceling edit
-  const handleCancelEdit = (e: React.MouseEvent) => {
+  const handleCancelEdit = (e: React.MouseEvent | React.KeyboardEvent) => {
     e.stopPropagation()
     setEditingCell(null)
     setEditValue('')
@@ -477,9 +477,9 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                       onChange={(e) => setEditValue(e.target.value)}
                                       onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
-                                          handleSaveEdit(e as any)
+                                          handleSaveEdit(e)
                                         } else if (e.key === 'Escape') {
-                                          handleCancelEdit(e as any)
+                                          handleCancelEdit(e)
                                         }
                                       }}
                                       className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -784,9 +784,9 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                       onChange={(e) => setEditValue(e.target.value)}
                                       onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
-                                          handleSaveEdit(e as any)
+                                          handleSaveEdit(e)
                                         } else if (e.key === 'Escape') {
-                                          handleCancelEdit(e as any)
+                                          handleCancelEdit(e)
                                         }
                                       }}
                                       className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -926,9 +926,9 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                       onChange={(e) => setEditValue(e.target.value)}
                                       onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
-                                          handleSaveEdit(e as any)
+                                          handleSaveEdit(e)
                                         } else if (e.key === 'Escape') {
-                                          handleCancelEdit(e as any)
+                                          handleCancelEdit(e)
                                         }
                                       }}
                                       className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
