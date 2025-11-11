@@ -4,7 +4,7 @@ import {
   UploadScrapingHistoryResponse,
   ContactScrapingHistoryResponse,
   ScrapingAnalytics,
-  ClientHistoryFilters,
+  ClientHistoryFilters
 } from '@/types/history'
 
 export const historyApi = {
@@ -62,5 +62,6 @@ export const historyApi = {
   ): Promise<ApiResponse<ScrapingAnalytics>> {
     return apiClient.get<ScrapingAnalytics>(`scraping/history/analytics/${clientId}`)
   },
+
 }
 

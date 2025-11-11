@@ -46,9 +46,9 @@ export function CombinedDraftsList({
   onView,
   onEdit,
   onSend,
-  subscriptionDataLoaded = false,
-  onEmailResubscribe,
-  resubscribingEmailDraftId = null,
+  subscriptionDataLoaded: _subscriptionDataLoaded = false,
+  onEmailResubscribe: _onEmailResubscribe,
+  resubscribingEmailDraftId: _resubscribingEmailDraftId = null,
 }: CombinedDraftsListProps) {
   if (isLoading) {
     return (
@@ -233,17 +233,19 @@ export function CombinedDraftsList({
                     </button>
 
                     {/* Type Icon */}
-                    <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      item.type === 'email' 
-                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600'
-                        : 'bg-gradient-to-br from-green-500 to-teal-600'
-                    }`}>
+                    <div
+                      className={`h-10 w-10 flex items-center justify-center rounded-full ${
+                        item.type === 'email'
+                          ? 'bg-gradient-to-br from-indigo-500 to-purple-600'
+                          : 'bg-gradient-to-br from-green-500 to-teal-600'
+                      }`}
+                    >
                       {item.type === 'email' ? (
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                         </svg>
                       ) : (
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                         </svg>
                       )}
@@ -255,51 +257,6 @@ export function CombinedDraftsList({
                         <span className={`text-sm truncate ${isUnread ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
                           {emailDraft?.contactName || smsDraft?.contactName || 'Unknown Contact'}
                         </span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
-                          item.type === 'email'
-                            ? 'bg-indigo-100 text-indigo-700'
-                            : 'bg-green-100 text-green-700'
-                        }`}>
-                          {item.type === 'email' ? 'Email' : 'SMS'}
-                        </span>
-                        {item.type === 'email' && subscriptionDataLoaded && (
-                          <>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
-                                emailDraft?.isUnsubscribed
-                                  ? 'bg-red-100 text-red-700 border border-red-200'
-                                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                              }`}
-                              title={
-                                emailDraft?.isUnsubscribed
-                                  ? [
-                                      emailDraft?.unsubscribedAt
-                                        ? `Unsubscribed on ${new Date(emailDraft.unsubscribedAt).toLocaleString()}`
-                                        : undefined,
-                                      emailDraft?.unsubscribeReason ? `Reason: ${emailDraft.unsubscribeReason}` : undefined,
-                                    ]
-                                      .filter(Boolean)
-                                      .join('\n') || 'Contact is unsubscribed'
-                                  : 'Contact is currently subscribed'
-                              }
-                            >
-                              {emailDraft?.isUnsubscribed ? 'Unsubscribed' : 'Subscribed'}
-                            </span>
-                            {emailDraft?.isUnsubscribed && onEmailResubscribe && (
-                              <button
-                                type="button"
-                                className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-60 disabled:cursor-not-allowed"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  onEmailResubscribe(item.draft.id)
-                                }}
-                                disabled={resubscribingEmailDraftId === item.draft.id}
-                              >
-                                {resubscribingEmailDraftId === item.draft.id ? 'Resubscribing…' : 'Resubscribe'}
-                              </button>
-                            )}
-                          </>
-                        )}
                       </div>
                       <div className="flex items-center gap-2 mb-1">
                         {emailDraft && (

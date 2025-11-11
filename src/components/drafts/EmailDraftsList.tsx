@@ -47,9 +47,9 @@ export function EmailDraftsList({
   onView, 
   onEdit, 
   onSend,
-  subscriptionDataLoaded = false,
-  onResubscribe,
-  resubscribingDraftId = null,
+  subscriptionDataLoaded: _subscriptionDataLoaded = false,
+  onResubscribe: _onResubscribe,
+  resubscribingDraftId: _resubscribingDraftId = null,
 }: EmailDraftsListProps) {
   if (isLoading) {
     return (
@@ -180,40 +180,6 @@ export function EmailDraftsList({
                   <span className={`text-sm truncate ${isUnread ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
                     {draft.contactName || draft.contactEmail || 'Unknown Contact'}
                   </span>
-                  {subscriptionDataLoaded && (
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
-                          draft.isUnsubscribed ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                        }`}
-                        title={
-                          draft.isUnsubscribed
-                            ? [
-                                draft.unsubscribedAt ? `Unsubscribed on ${new Date(draft.unsubscribedAt).toLocaleString()}` : undefined,
-                                draft.unsubscribeReason ? `Reason: ${draft.unsubscribeReason}` : undefined,
-                              ]
-                                .filter(Boolean)
-                                .join('\n') || 'Contact is unsubscribed'
-                            : 'Contact is currently subscribed'
-                        }
-                      >
-                        {draft.isUnsubscribed ? 'Unsubscribed' : 'Subscribed'}
-                      </span>
-                      {draft.isUnsubscribed && onResubscribe && (
-                        <button
-                          type="button"
-                          className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-60 disabled:cursor-not-allowed"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onResubscribe(draft.id)
-                          }}
-                          disabled={resubscribingDraftId === draft.id}
-                        >
-                          {resubscribingDraftId === draft.id ? 'Resubscribing…' : 'Resubscribe'}
-                        </button>
-                      )}
-                    </div>
-                  )}
                 </div>
                 <div className="flex items-center gap-2 mb-1">
                   <span className={`text-sm truncate ${isUnread ? 'font-semibold text-gray-900' : 'text-gray-900'}`}>
