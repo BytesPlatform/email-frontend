@@ -110,3 +110,42 @@ export interface ScrapingAnalytics {
   contentQuality: ContentQuality[]
 }
 
+export type SentStatus = 'all' | 'sent' | 'delivered' | 'failed'
+
+export interface SentHistoryFilters {
+  page?: number
+  limit?: number
+  status?: SentStatus
+  search?: string
+}
+
+export interface SentEmailLog {
+  id: number
+  contactId?: number | null
+  contactName?: string | null
+  contactEmail?: string | null
+  subject?: string | null
+  body?: string | null
+  sentAt: string
+  status?: string | null
+  deliveryStatus?: string | null
+  opens?: number | null
+  clicks?: number | null
+}
+
+export interface SentSmsLog {
+  id: number
+  contactId?: number | null
+  contactName?: string | null
+  contactPhone?: string | null
+  message?: string | null
+  sentAt: string
+  status?: string | null
+  deliveryStatus?: string | null
+}
+
+export interface PaginatedSentLogs<T> {
+  items: T[]
+  pagination: Pagination
+}
+

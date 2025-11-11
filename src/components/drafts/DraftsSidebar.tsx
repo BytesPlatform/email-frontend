@@ -1,9 +1,13 @@
 'use client'
 
 import React from 'react'
-import Link from 'next/link'
 
-export type DraftViewType = 'all' | 'email' | 'sms' | 'sent' | 'not-delivered' | 'starred' | 'unsubscribed'
+export type DraftViewType =
+  | 'all'
+  | 'email'
+  | 'sms'
+  | 'starred'
+  | 'not-delivered'
 
 interface DraftsSidebarProps {
   isCollapsed: boolean
@@ -14,10 +18,8 @@ interface DraftsSidebarProps {
   allDraftsCount?: number
   emailDraftCount: number
   smsDraftCount: number
-  sentCount: number
-  notDeliveredCount: number
   starredCount: number
-  unsubscribedCount: number
+  notDeliveredCount: number
 }
 
 export function DraftsSidebar({
@@ -29,10 +31,8 @@ export function DraftsSidebar({
   allDraftsCount,
   emailDraftCount,
   smsDraftCount,
-  sentCount,
-  notDeliveredCount,
   starredCount,
-  unsubscribedCount,
+  notDeliveredCount,
 }: DraftsSidebarProps) {
   const menuItems = [
     {
@@ -76,31 +76,12 @@ export function DraftsSidebar({
       count: starredCount,
     },
     {
-      id: 'unsubscribed' as DraftViewType,
-      label: 'Unsubscribed',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12A9 9 0 113 12a9 9 0 0118 0z" />
-        </svg>
-      ),
-      count: unsubscribedCount,
-    },
-    {
-      id: 'sent' as DraftViewType,
-      label: 'Sent',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-        </svg>
-      ),
-      count: sentCount,
-    },
-    {
       id: 'not-delivered' as DraftViewType,
       label: 'Not Delivered',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01" />
         </svg>
       ),
       count: notDeliveredCount,

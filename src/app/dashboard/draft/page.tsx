@@ -43,7 +43,7 @@ function DraftsPageContent() {
     blocked: boolean
   } | undefined>()
   const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 25 // Reduced from 50 to make pagination more visible
+  const itemsPerPage = 6
   const [selectedDraftsNavigationIndex, setSelectedDraftsNavigationIndex] = useState(0)
   const [selectedDraftsForNavigation, setSelectedDraftsForNavigation] = useState<EmailDraft[]>([])
   const [selectedSmsDraftsForNavigation, setSelectedSmsDraftsForNavigation] = useState<SmsDraft[]>([])
@@ -145,7 +145,7 @@ function DraftsPageContent() {
       
       if (res.success && res.data) {
         const drafts = Array.isArray(res.data) ? res.data : []
-        setEmailDrafts(drafts.map(transformEmailDraft))
+        setEmailDrafts(drafts.filter(d => (d.status ?? 'draft') === 'draft').map(transformEmailDraft))
       } else {
         setEmailDrafts([])
       }
@@ -167,7 +167,7 @@ function DraftsPageContent() {
       
       if (res.success && res.data) {
         const drafts = Array.isArray(res.data) ? res.data : []
-        setSmsDrafts(drafts.map(transformSmsDraft))
+        setSmsDrafts(drafts.filter(d => (d.status ?? 'draft') === 'draft').map(transformSmsDraft))
       } else {
         setSmsDrafts([])
       }
@@ -211,8 +211,8 @@ function DraftsPageContent() {
 
   // Fetch drafts when view/tab changes
   useEffect(() => {
-    // Fetch both types when view needs both (all, starred, sent, not-delivered)
-    if (activeView === 'all' || activeView === 'starred' || activeView === 'sent' || activeView === 'not-delivered') {
+     // Fetch both types when view needs both (all, starred)
+    if (activeView === 'all' || activeView === 'starred') {
       fetchEmailDrafts()
       fetchSmsDrafts()
     } else if (activeView === 'email') {
@@ -308,7 +308,7 @@ function DraftsPageContent() {
   const handleViewChange = (view: DraftViewType) => {
     setActiveView(view)
     // Set active tab based on view
-    if (view === 'email' || view === 'unsubscribed') {
+    if (view === 'email') {
       setActiveTab('email')
     } else if (view === 'sms') {
       setActiveTab('sms')
@@ -799,25 +799,19 @@ function DraftsPageContent() {
     let drafts = emailDrafts
 
     // Filter by active view from sidebar
-    if (activeView === 'email') {
-      // Already filtered by activeTab
-    } else if (activeView === 'sms') {
+    if (activeView === 'sms') {
       return [] // Don't show email drafts when SMS view is active
-    } else if (activeView === 'starred') {
-      drafts = drafts.filter(d => starredEmailDraftIds.has(d.id))
-    } else if (activeView === 'sent') {
-      drafts = drafts.filter(d => d.status === 'sent')
-    } else if (activeView === 'not-delivered') {
-      // Filter drafts that haven't been sent or failed delivery
-      drafts = drafts.filter(d => d.status === 'draft')
-    } else if (activeView === 'unsubscribed') {
-      drafts = drafts.filter(d => d.isUnsubscribed)
     }
 
+    if (activeView === 'starred') {
+      drafts = drafts.filter(d => starredEmailDraftIds.has(d.id))
+    
+    } else if (activeView === 'not-delivered') {
+      drafts = drafts.filter(d => d.status !== 'sent' && d.status !== 'delivered')
+    } 
+
     // Filter by status filter (from dropdown)
-    if (statusFilter === 'starred' && !starredEmailDraftIds.has(drafts[0]?.id || 0)) {
-      // Already handled by activeView
-    } else if (statusFilter !== 'all' && statusFilter !== 'starred') {
+    if (statusFilter !== 'all') {
       drafts = drafts.filter(d => d.status === statusFilter)
     }
 
@@ -839,25 +833,18 @@ function DraftsPageContent() {
     let drafts = smsDrafts
 
     // Filter by active view from sidebar
-    if (activeView === 'sms') {
-      // Already filtered by activeTab
-    } else if (activeView === 'email') {
+    if (activeView === 'email') {
       return [] // Don't show SMS drafts when email view is active
-    } else if (activeView === 'starred') {
+    }
+
+    if (activeView === 'starred') {
       drafts = drafts.filter(d => starredSmsDraftIds.has(d.id))
-    } else if (activeView === 'sent') {
-      drafts = drafts.filter(d => d.status === 'sent')
     } else if (activeView === 'not-delivered') {
-      // Filter drafts that haven't been sent
-      drafts = drafts.filter(d => d.status === 'draft')
-    } else if (activeView === 'unsubscribed') {
-      return []
+      drafts = drafts.filter(d => d.status !== 'sent' && d.status !== 'delivered')
     }
 
     // Filter by status filter (from dropdown)
-    if (statusFilter === 'starred') {
-      // Already handled by activeView
-    } else if (statusFilter !== 'all' && statusFilter !== 'starred') {
+    if (statusFilter !== 'all') {
       drafts = drafts.filter(d => d.status === statusFilter)
     }
 
@@ -880,13 +867,14 @@ function DraftsPageContent() {
   // Calculate counts for sidebar - use ALL drafts (not filtered) for accurate sidebar counts
   // These counts should reflect the total available, not what's currently filtered or visible
   // "All Drafts" should show ALL drafts regardless of status (draft, sent, delivered)
-  const allDraftsCount = emailDrafts.length + smsDrafts.length
+  const allDraftsCount =
+    emailDrafts.filter(d => d.status === 'draft').length + smsDrafts.filter(d => d.status === 'draft').length
   const emailDraftCount = emailDrafts.filter(d => d.status === 'draft').length
   const smsDraftCount = smsDrafts.filter(d => d.status === 'draft').length
-  const sentCount = emailDrafts.filter(d => d.status === 'sent').length + smsDrafts.filter(d => d.status === 'sent').length
-  const notDeliveredCount = emailDrafts.filter(d => d.status === 'draft').length + smsDrafts.filter(d => d.status === 'draft').length
   const starredCount = starredEmailDraftIds.size + starredSmsDraftIds.size
-  const unsubscribedCount = emailDrafts.filter(d => d.isUnsubscribed).length
+  const notDeliveredCount =
+    emailDrafts.filter(d => d.status !== 'sent' && d.status !== 'delivered').length +
+    smsDrafts.filter(d => d.status !== 'sent' && d.status !== 'delivered').length
 
   // For "all" view, combine both email and SMS drafts together
   // Group by contactId to show both email and SMS for same person
@@ -934,17 +922,7 @@ function DraftsPageContent() {
     })
     displayDrafts = combinedDrafts.map(c => c.draft)
     isEmailView = true
-  } else if (activeView === 'email') {
-    displayDrafts = filteredEmailDrafts
-    isEmailView = true
-  } else if (activeView === 'unsubscribed') {
-    displayDrafts = filteredEmailDrafts
-    isEmailView = true
-  } else if (activeView === 'sms') {
-    displayDrafts = filteredSmsDrafts
-    isEmailView = false
-  } else if (activeView === 'sent' || activeView === 'not-delivered') {
-    // For sent/not-delivered, combine both types
+  } else if (activeView === 'not-delivered') {
     showCombinedView = true
     combinedDrafts = [
       ...filteredEmailDrafts.map(d => ({ type: 'email' as const, draft: d, contactId: d.contactId })),
@@ -959,6 +937,12 @@ function DraftsPageContent() {
     })
     displayDrafts = combinedDrafts.map(c => c.draft)
     isEmailView = true
+  } else if (activeView === 'email') {
+    displayDrafts = filteredEmailDrafts
+    isEmailView = true
+  } else if (activeView === 'sms') {
+    displayDrafts = filteredSmsDrafts
+    isEmailView = false
   } else {
     displayDrafts = filteredEmailDrafts
     isEmailView = true
@@ -1329,7 +1313,7 @@ function DraftsPageContent() {
 
   return (
     <AuthGuard>
-      <div className="flex h-[calc(100vh-64px)] bg-gray-50 overflow-hidden">
+      <div className="flex min-h-[calc(100vh-64px)] bg-gray-50">
         {/* Sidebar */}
         <DraftsSidebar
           isCollapsed={isSidebarCollapsed}
@@ -1340,10 +1324,8 @@ function DraftsPageContent() {
           allDraftsCount={allDraftsCount}
           emailDraftCount={emailDraftCount}
           smsDraftCount={smsDraftCount}
-          sentCount={sentCount}
-          notDeliveredCount={notDeliveredCount}
           starredCount={starredCount}
-          unsubscribedCount={unsubscribedCount}
+          notDeliveredCount={notDeliveredCount}
         />
 
         {/* Main Content Area */}
@@ -1354,14 +1336,17 @@ function DraftsPageContent() {
               {/* Logo/Title */}
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-semibold text-gray-900">
-                  {activeView === 'all' ? 'All Drafts' : 
-                   activeView === 'email' ? 'Email Drafts' :
-                   activeView === 'sms' ? 'SMS Drafts' :
-                   activeView === 'starred' ? 'Starred' :
-                   activeView === 'sent' ? 'Sent' :
-                   activeView === 'not-delivered' ? 'Not Delivered' :
-                   activeView === 'unsubscribed' ? 'Unsubscribed Emails' :
-                   'Drafts'}
+                  {activeView === 'all'
+                    ? 'All Drafts'
+                    : activeView === 'email'
+                      ? 'Email Drafts'
+                      : activeView === 'sms'
+                        ? 'SMS Drafts'
+                        : activeView === 'starred'
+                          ? 'Starred Drafts'
+                          : activeView === 'not-delivered'
+                            ? 'Not Delivered'
+                            : 'Drafts'}
                 </h1>
               </div>
               
@@ -1581,8 +1566,8 @@ function DraftsPageContent() {
             )}
 
             {/* Pagination - Always show when there are drafts */}
-            {totalDrafts > 0 && (
-              <div className="flex items-center justify-between mt-4 px-4 py-3 bg-white rounded-lg border border-gray-200">
+              {totalDrafts > 0 && (
+                <div className="flex items-center justify-between mt-4 px-4 py-3 bg-white rounded-lg border border-gray-200 mb-16">
                 <div className="text-sm text-gray-600">
                   {totalPages > 1 ? (
                     <>
