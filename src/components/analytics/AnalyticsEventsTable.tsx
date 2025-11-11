@@ -1,0 +1,187 @@
+'use client'
+
+import { EmailAnalyticsEvent } from '@/types/analytics'
+import { useMemo, useState } from 'react'
+
+export interface AnalyticsEventsTableProps {
+  events: EmailAnalyticsEvent[]
+  isLoading?: boolean
+}
+
+const EVENT_LABELS: Record<EmailAnalyticsEvent['type'], string> = {
+  processed: 'Processed',
+  deferred: 'Deferred',
+  delivered: 'Delivered',
+  bounced: 'Bounced',
+  blocked: 'Blocked',
+  dropped: 'Dropped',
+  spamreport: 'Spam Report',
+  unsubscribe: 'Unsubscribe',
+  open: 'Open',
+  click: 'Click',
+}
+
+const EVENT_ACCENTS: Record<EmailAnalyticsEvent['type'], string> = {
+  processed: 'bg-indigo-100 text-indigo-700',
+  deferred: 'bg-amber-100 text-amber-700',
+  delivered: 'bg-emerald-100 text-emerald-700',
+  bounced: 'bg-rose-100 text-rose-700',
+  blocked: 'bg-fuchsia-100 text-fuchsia-700',
+  dropped: 'bg-slate-100 text-slate-700',
+  spamreport: 'bg-rose-100 text-rose-700',
+  unsubscribe: 'bg-orange-100 text-orange-700',
+  open: 'bg-sky-100 text-sky-700',
+  click: 'bg-cyan-100 text-cyan-700',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  processed: 'Processed',
+  deferred: 'Deferred',
+  delivered: 'Delivered',
+  bounced: 'Bounced',
+  blocked: 'Blocked',
+  dropped: 'Dropped',
+  spamreport: 'Spam Report',
+}
+
+type EventFilterKey = 'all' | 'delivery' | 'engagement' | 'compliance'
+
+const FILTER_OPTIONS: Array<{ key: EventFilterKey; label: string }> = [
+  { key: 'all', label: 'All events' },
+  { key: 'delivery', label: 'Delivery' },
+  { key: 'engagement', label: 'Engagement' },
+  { key: 'compliance', label: 'Compliance' },
+]
+
+const FILTER_MAP: Record<EventFilterKey, EmailAnalyticsEvent['type'][]> = {
+  all: [],
+  delivery: ['processed', 'deferred', 'delivered', 'bounced', 'blocked', 'dropped'],
+  engagement: ['open', 'click'],
+  compliance: ['spamreport', 'unsubscribe'],
+}
+
+const formatDateTime = (iso: string) => {
+  const date = new Date(iso)
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+export function AnalyticsEventsTable({ events, isLoading = false }: AnalyticsEventsTableProps) {
+  const [activeFilter, setActiveFilter] = useState<EventFilterKey>('all')
+
+  const rows = useMemo(() => {
+    const filtered =
+      activeFilter === 'all'
+        ? events
+        : events.filter(event => FILTER_MAP[activeFilter].includes(event.type))
+
+    return filtered.slice(0, 25)
+  }, [events, activeFilter])
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
+      <div className="px-6 py-5 border-b border-slate-200">
+        <h3 className="text-lg font-semibold text-slate-900">Recent webhook activity</h3>
+        <p className="text-sm text-slate-500">
+          View the latest delivery, engagement, and compliance events flowing from SendGrid.
+        </p>
+      </div>
+
+      <div className="px-6 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-2">
+        {FILTER_OPTIONS.map(option => {
+          const isActive = activeFilter === option.key
+          return (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setActiveFilter(option.key)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                isActive
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {isLoading ? (
+        <div className="p-6">
+          <div className="space-y-3">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="h-12 w-full rounded-lg bg-slate-100 animate-pulse" />
+            ))}
+          </div>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="p-6 text-center text-sm text-slate-500">
+          No webhook activity recorded for this filter.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Event
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Recipient
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Email address
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Subject
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Occurred
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 bg-white">
+              {rows.map(event => (
+                <tr key={event.id}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${EVENT_ACCENTS[event.type]}`}
+                      >
+                        {EVENT_LABELS[event.type]}
+                      </span>
+                      {event.status && STATUS_LABELS[event.status] && (
+                        <span className="text-xs uppercase tracking-wide text-slate-400">
+                          {STATUS_LABELS[event.status]}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                    {event.contactName || '—'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                    {event.email || '—'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                    {event.subject || '—'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                    {formatDateTime(event.occurredAt)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+

@@ -133,6 +133,16 @@ export function Header() {
                 >
                   History
                 </Link>
+                <Link 
+                  href="/dashboard/analytics" 
+                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
+                    isActive('/dashboard/analytics') 
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  Analytics
+                </Link>
               </div>
             ) : (
               <>
@@ -355,6 +365,17 @@ export function Header() {
                   >
                     History
                   </Link>
+                <Link
+                  href="/dashboard/analytics"
+                  className={`block px-4 py-2.5 rounded-lg font-medium transition-all duration-200 ${
+                    isActive('/dashboard/analytics')
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Analytics
+                </Link>
                   <div className="pt-4 border-t border-slate-200 mt-2 space-y-2">
                     {/* Bytes Platform Link */}
                     <button
