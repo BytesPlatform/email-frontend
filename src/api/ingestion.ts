@@ -1,5 +1,17 @@
 import { apiClient, ApiResponse } from './ApiClient';
-import { CsvUploadResponse, CsvUpload, AllClientContactsResponse } from '@/types/ingestion';
+import {
+  CsvUploadResponse,
+  CsvUpload,
+  AllClientContactsResponse,
+  ClientContact,
+  ClientContactsListResponse,
+  ClientContactsQuery,
+  UpdateContactPayload,
+  UpdateContactResponse,
+  BulkUpdateContactItem,
+  BulkUpdateContactsPayload,
+  BulkUpdateResult
+} from '@/types/ingestion';
 
 export const ingestionApi = {
   /**
@@ -54,6 +66,158 @@ export const ingestionApi = {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to fetch uploads'
+      };
+    }
+  },
+
+  /**
+   * Get paginated contacts for the authenticated client
+   */
+  async listContacts(query: ClientContactsQuery = {}): Promise<ApiResponse<ClientContactsListResponse>> {
+    try {
+      const params = new URLSearchParams();
+
+      if (query.page && query.page > 0) {
+        params.append('page', query.page.toString());
+      }
+      if (query.limit && query.limit > 0) {
+        params.append('limit', query.limit.toString());
+      }
+      if (query.status && query.status !== 'all') {
+        params.append('status', query.status);
+      }
+      if (typeof query.csvUploadId === 'number') {
+        params.append('csvUploadId', query.csvUploadId.toString());
+      }
+      if (typeof query.validOnly === 'boolean') {
+        params.append('validOnly', String(query.validOnly));
+      }
+      if (typeof query.invalidOnly === 'boolean') {
+        params.append('invalidOnly', String(query.invalidOnly));
+      }
+      const trimmedSearch = query.search?.trim();
+      if (trimmedSearch) {
+        params.append('search', trimmedSearch);
+      }
+      if (query.sortBy) {
+        params.append('sortBy', query.sortBy);
+      }
+      if (query.sortOrder) {
+        params.append('sortOrder', query.sortOrder);
+      }
+
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      const response = await apiClient.get<ClientContactsListResponse>(`/ingestion/contacts${queryString}`);
+
+      if (response.success && response.data) {
+        return { success: true, data: response.data };
+      }
+
+      return { success: false, error: response.error || 'Failed to fetch contacts' };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch contacts'
+      };
+    }
+  },
+
+  /**
+   * Get a single contact by id for the authenticated client
+   */
+  async getContactById(contactId: number): Promise<ApiResponse<ClientContact>> {
+    try {
+      const response = await apiClient.get<ClientContact>(`/ingestion/contacts/${contactId}`);
+
+      if (response.success && response.data) {
+        return { success: true, data: response.data };
+      }
+
+      return { success: false, error: response.error || 'Failed to fetch contact details' };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch contact details'
+      };
+    }
+  },
+
+  /**
+   * Update a single contact (fix invalid contact info)
+   */
+  async updateContact(
+    contactId: number,
+    payload: UpdateContactPayload
+  ): Promise<ApiResponse<UpdateContactResponse>> {
+    try {
+      const response = await apiClient.patch<UpdateContactResponse>(
+        `/ingestion/contacts/${contactId}`,
+        payload
+      );
+
+      if (response.success && response.data) {
+        const raw = response.data as UpdateContactResponse | ClientContact;
+        const contact =
+          (raw as UpdateContactResponse)?.contact ?? (raw as ClientContact);
+        if (contact && typeof contact.id === 'number') {
+          const message = (raw as UpdateContactResponse)?.message;
+          return {
+            success: true,
+            data: {
+              contact,
+              message
+            }
+          };
+        }
+
+        return {
+          success: true,
+          data: {
+            contact: contact as ClientContact
+          }
+        };
+      }
+
+      return { success: false, error: response.error || 'Failed to update contact' };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update contact'
+      };
+    }
+  },
+
+  /**
+   * Bulk update multiple contacts
+   */
+  async bulkUpdateContacts(
+    payload: BulkUpdateContactsPayload
+  ): Promise<ApiResponse<BulkUpdateResult>> {
+    try {
+      const response = await apiClient.patch<BulkUpdateResult>(
+        `/ingestion/contacts/bulk`,
+        payload
+      );
+
+      if (response.success && response.data) {
+        const raw = response.data as BulkUpdateResult | { updated?: ClientContact[]; failed?: unknown[] };
+        const updated = Array.isArray(raw.updated) ? raw.updated : [];
+        const failed = Array.isArray(raw.failed) ? raw.failed : [];
+
+        return {
+          success: true,
+          data: {
+            updated,
+            failed: failed as Array<{ id: number; error: string }>
+          }
+        };
+      }
+
+      return { success: false, error: response.error || 'Failed to bulk update contacts' };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to bulk update contacts'
       };
     }
   },
