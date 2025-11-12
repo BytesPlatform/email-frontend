@@ -310,9 +310,9 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
     const validOriginalData: Record<string, string>[] = []
     const uncleanRows: Record<string, string>[] = []
 
-    // Check column count
-    if (headers.length !== 6) {
-      errors.push(`CSV must have exactly 6 columns. Found ${headers.length} columns.`)
+    // Check column count - allow more than 6 columns (extras will be ignored)
+    if (headers.length < 6) {
+      errors.push(`CSV must have at least 6 columns. Found ${headers.length} columns.`)
       return {
         isValid: false,
         errors,
@@ -324,61 +324,42 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
         })),
         convertedData: [],
         validOriginalData: [],
-        uncleanRows: data
+        uncleanRows: []
       }
+    }
+    
+    // If more than 6 columns, log a warning but continue
+    if (headers.length > 6) {
+      console.log(`CSV has ${headers.length} columns. Extra columns will be ignored.`)
     }
 
     // Map columns
     const mappings = mapColumns(headers)
 
-    // Check for unmapped columns
+    // Check for unmapped columns (warning only, not blocking)
     const unmappedColumns = mappings.filter(m => m.mappedField === null)
     if (unmappedColumns.length > 0) {
-      const suggestions = unmappedColumns.map(m => {
-        // Find best suggestion for unmapped column
-        let bestSuggestion = ''
-        let bestScore = 0
-        for (const field of requiredColumns) {
-          const similarity = calculateSimilarity(m.csvColumnName, field)
-          if (similarity > bestScore && similarity >= 0.5) {
-            bestScore = similarity
-            bestSuggestion = field
-          }
-        }
-        return bestSuggestion ? `"${m.csvColumnName}" (suggested: ${bestSuggestion})` : `"${m.csvColumnName}"`
-      })
-      errors.push(`Could not map columns: ${suggestions.join(', ')}`)
+      // Don't add as error, just log for reference
+      console.log('Unmapped columns (will be ignored):', unmappedColumns.map(m => m.csvColumnName))
     }
 
-    // Validate that all required fields are present
+    // Validate that all required fields are present (this is still required for conversion)
     const fieldErrors = validateRequiredFields(mappings)
-    errors.push(...fieldErrors)
-
-    if (errors.length > 0) {
+    if (fieldErrors.length > 0) {
+      // If required fields are missing, we can't convert the data
+      errors.push(...fieldErrors)
       return {
         isValid: false,
         errors,
         mappings,
         convertedData: [],
         validOriginalData: [],
-        uncleanRows: data
+        uncleanRows: []
       }
     }
 
-    const emailMapping = mappings.find(mapping => mapping.mappedField === 'email')
-    const phoneMapping = mappings.find(mapping => mapping.mappedField === 'phone_number')
-
+    // Process all rows - no filtering, everything goes to database
     data.forEach((row) => {
-      const emailValue = emailMapping ? row[emailMapping.csvColumnName] : ''
-      const phoneValue = phoneMapping ? row[phoneMapping.csvColumnName] : ''
-      const isEmailEmpty = isValueEmpty(emailValue)
-      const isPhoneEmpty = isValueEmpty(phoneValue)
-
-      if (isEmailEmpty && isPhoneEmpty) {
-        uncleanRows.push(row)
-        return
-      }
-
       const convertedRow: CSVRecord = {}
       mappings.forEach((mapping) => {
         if (mapping.mappedField) {
@@ -390,17 +371,13 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
       convertedData.push(convertedRow)
     })
 
-    if (convertedData.length === 0) {
-      errors.push('All rows are missing both email and phone number. Please provide at least one contact method for each row.')
-    }
-
     return {
       isValid: errors.length === 0,
       errors,
       mappings,
       convertedData,
       validOriginalData,
-      uncleanRows
+      uncleanRows: [] // No unclean rows - everything goes to database
     }
   }
 
@@ -579,19 +556,15 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
       return
     }
 
-    // Block upload if validation errors exist
+    // Block upload if validation errors exist (column mapping errors)
     if (validationErrors.length > 0) {
       setUploadError('Please fix CSV validation errors before uploading')
       return
     }
 
-    // Ensure we have valid data
+    // Ensure we have data to upload
     if (parsedData.length === 0) {
-      setUploadError(
-        uncleanRows.length > 0
-          ? 'No rows are eligible for upload because they are missing both an email and a phone number.'
-          : 'No valid data to upload. Please check your CSV file.'
-      )
+      setUploadError('No data to upload. Please check your CSV file.')
       return
     }
 
@@ -817,7 +790,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
                     ))}
                   </ul>
                   <p className="text-xs text-red-600 mt-3 font-medium">
-                    Please ensure your CSV has exactly 6 columns with all required fields: business_name, zipcode, state, phone_number, website, email (order doesn&apos;t matter)
+                    Please ensure your CSV has at least 6 columns with all required fields: business_name, zipcode, state, phone_number, website, email (order doesn&apos;t matter, extra columns are allowed)
                   </p>
                 </div>
               </div>
@@ -834,7 +807,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
                 <div>
                   <h4 className="text-sm font-medium text-green-800">CSV Validation Passed</h4>
                   <p className="text-sm text-green-700">
-                    {parsedData.length} records validated successfully. All 6 required columns are present and mapped correctly.
+                    {parsedData.length} records ready for upload. All 6 required columns are present and mapped correctly. All records will be uploaded to the database.
                   </p>
                 </div>
               </div>
@@ -906,7 +879,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
                 <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
-                <span>6 fields required: business_name, zipcode, state, phone_number, website, email (any order)</span>
+                <span>6 fields required: business_name, zipcode, state, phone_number, website, email (any order, extra columns allowed)</span>
               </div>
             </div>
           </div>

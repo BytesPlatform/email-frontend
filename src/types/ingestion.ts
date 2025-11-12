@@ -37,10 +37,15 @@ export interface ClientContact {
   businessName?: string
   website?: string
   email?: string
+  phone?: string
   state?: string
   zipCode?: string
   status?: string
   valid?: boolean
+  emailValid?: boolean
+  validationReason?: string
+  computedValid?: boolean
+  computedValidationReason?: string
   createdAt?: string
   csvUpload?: {
     id: number
@@ -54,5 +59,66 @@ export interface AllClientContactsResponse {
   message: string
   count: number
   contacts: ClientContact[]
+}
+
+export interface ClientContactsMeta {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+}
+
+export interface ClientContactsListResponse {
+  data: ClientContact[]
+  meta: ClientContactsMeta
+}
+
+export interface ClientContactsQuery {
+  page?: number
+  limit?: number
+  status?: string
+  csvUploadId?: number
+  validOnly?: boolean
+  invalidOnly?: boolean
+  search?: string
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+}
+
+export interface UpdateContactPayload {
+  businessName?: string
+  email?: string | null
+  phone?: string | null
+  website?: string | null
+  state?: string | null
+  zipCode?: string | null
+  status?: string
+  valid?: boolean
+}
+
+export interface UpdateContactResponse {
+  message?: string
+  contact: ClientContact
+}
+
+export interface BulkUpdateContactItem {
+  id: number
+  businessName?: string
+  email?: string | null
+  phone?: string | null
+  website?: string | null
+  state?: string | null
+  zipCode?: string | null
+  status?: string
+  valid?: boolean
+}
+
+export interface BulkUpdateContactsPayload {
+  contacts: BulkUpdateContactItem[]
+}
+
+export interface BulkUpdateResult {
+  updated: ClientContact[]
+  failed: Array<{ id: number; error: string }>
 }
 
