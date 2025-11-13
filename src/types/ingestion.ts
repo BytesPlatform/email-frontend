@@ -47,6 +47,7 @@ export interface ClientContact {
   computedValid?: boolean
   computedValidationReason?: string
   createdAt?: string
+  errorMessage?: string | null
   csvUpload?: {
     id: number
     fileName: string

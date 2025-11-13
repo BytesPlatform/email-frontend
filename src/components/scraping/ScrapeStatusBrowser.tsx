@@ -10,6 +10,7 @@ type Contact = {
   state?: string
   zipCode?: string
   status?: string
+  errorMessage?: string | null
 }
 
 type StatusFilter = 'all' | 'ready_to_scrape' | 'scraping' | 'scraped' | 'scrape_failed'
@@ -25,14 +26,17 @@ interface ScrapeStatusBrowserProps {
   onAfterScrape?: () => Promise<void> | void
   // Optional: callback when filter changes (useful for refreshing data)
   onFilterChange?: (filter: StatusFilter) => void
+  // Optional: callback to update a single contact's status optimistically
+  onContactStatusUpdate?: (contactId: number, status: string) => void
 }
 
-export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter = 'all', onRetryFailed, onRequestReadyFetch, onAfterScrape, onFilterChange }: ScrapeStatusBrowserProps) {
+export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter = 'all', onRetryFailed, onRequestReadyFetch, onAfterScrape, onFilterChange, onContactStatusUpdate }: ScrapeStatusBrowserProps) {
   const [filter, setFilter] = React.useState<StatusFilter>(initialFilter)
   const [selectedIds, setSelectedIds] = React.useState<number[]>([])
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(15)
   const [isScraping, setIsScraping] = React.useState(false)
+  const [isRescraping, setIsRescraping] = React.useState<Record<number, boolean>>({})
   const modalRef = React.useRef<HTMLDivElement>(null)
 
   // Block body scrolling when modal is open
@@ -115,6 +119,40 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
       if (onAfterScrape) await onAfterScrape()
     } finally {
       setIsScraping(false)
+    }
+  }
+
+  const handleRescrape = async (contactId: number) => {
+    setIsRescraping(prev => ({ ...prev, [contactId]: true }))
+    try {
+      const res = await scrapingApi.resetContact(contactId)
+      if (res.success && res.data) {
+        // Optimistically update the contact status in parent component
+        if (onContactStatusUpdate) {
+          onContactStatusUpdate(contactId, res.data.status)
+        }
+        
+        // Call the refresh callback to get latest data from server
+        if (onAfterScrape) {
+          // Add a small delay to ensure backend has processed the change
+          await new Promise(resolve => setTimeout(resolve, 300))
+          await onAfterScrape()
+        }
+      } else {
+        console.error('Failed to reset contact:', res.error)
+        alert('Failed to reset contact. Please try again.')
+        if (onAfterScrape) {
+          await onAfterScrape()
+        }
+      }
+    } catch (error) {
+      console.error('Failed to reset contact:', error)
+      alert('Failed to reset contact. Please try again.')
+      if (onAfterScrape) {
+        await onAfterScrape()
+      }
+    } finally {
+      setIsRescraping(prev => ({ ...prev, [contactId]: false }))
     }
   }
 
@@ -203,23 +241,64 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
           ) : (
             <div className="space-y-2 pb-2">
               {paged.map(c => (
-                <label key={c.id} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                <div key={c.id} className="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50">
                   <input
                     type="checkbox"
                     checked={selectedIds.includes(c.id)}
                     onChange={() => toggleSelect(c.id)}
-                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded cursor-pointer"
+                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded cursor-pointer mt-1"
                   />
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="font-medium text-gray-900 truncate">{c.businessName || c.website || c.email || `Contact #${c.id}`}</div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${getStatusBadgeClass(c.status)}`}>
+                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium flex-shrink-0 ${getStatusBadgeClass(c.status)}`}>
                         {normalizeStatus(c.status) || 'unknown'}
                       </span>
                     </div>
                     <div className="text-xs text-gray-500 mt-1 truncate">{c.website || c.email || '-'}</div>
+                    {/* Show error message and rescrape button for failed scrapes */}
+                    {normalizeStatus(c.status) === 'scrape_failed' && (
+                      <div className="mt-2 flex items-start gap-2 p-2.5 bg-red-50/80 border-l-4 border-red-400 rounded-r-md">
+                        <svg className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-red-800 mb-1">Scraping Failed</div>
+                          {c.errorMessage ? (
+                            <div className="text-xs text-red-700 leading-relaxed mb-2.5 line-clamp-2">{c.errorMessage}</div>
+                          ) : (
+                            <div className="text-xs text-red-600 mb-2.5">No error details available</div>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRescrape(c.id)
+                            }}
+                            disabled={isRescraping[c.id]}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-md hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-sm"
+                          >
+                            {isRescraping[c.id] ? (
+                              <>
+                                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Rescraping...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Rescrape
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </label>
+                </div>
               ))}
             </div>
           )}
