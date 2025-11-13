@@ -94,6 +94,16 @@ export function Header() {
                   CSV Ingestion
                 </Link>
                 <Link 
+                  href="/dashboard/contacts" 
+                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
+                    isActive('/dashboard/contacts') 
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  Contacts
+                </Link>
+                <Link 
                   href="/dashboard/scraping" 
                   className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
                     isActive('/dashboard/scraping') 
@@ -133,16 +143,6 @@ export function Header() {
                 >
                   History
                 </Link>
-                <Link 
-                  href="/dashboard/contacts" 
-                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
-                    isActive('/dashboard/contacts') 
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
-                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  Contacts
-                  </Link>
                 <Link 
                   href="/dashboard/analytics" 
                   className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${

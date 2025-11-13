@@ -67,6 +67,8 @@ export interface ClientContactsMeta {
   limit: number
   total: number
   totalPages: number
+  totalValid?: number
+  totalInvalid?: number
 }
 
 export interface ClientContactsListResponse {

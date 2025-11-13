@@ -68,20 +68,19 @@ export function ContactsTable({
                   <span className="sr-only">Select</span>
                 </th>
               )}
-              <th className="px-4 py-3">Business</th>
+              <th className="pl-3 pr-4 py-3">Business</th>
               <th className="px-4 py-3">State</th>
               <th className="px-4 py-3">Zip</th>
               <th className="px-4 py-3">Phone</th>
               <th className="px-4 py-3">Website</th>
               <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Validity</th>
+              <th className="pl-4 pr-6 py-3">Validity</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 bg-white text-sm">
             {isLoading && (
               <tr>
-                <td colSpan={showCheckboxes ? 9 : 8} className="px-4 py-6 text-center text-slate-500">
+                <td colSpan={showCheckboxes ? 8 : 7} className="px-4 py-6 text-center text-slate-500">
                   Loading contacts…
                 </td>
               </tr>
@@ -89,7 +88,7 @@ export function ContactsTable({
 
             {error && !isLoading && (
               <tr>
-                <td colSpan={showCheckboxes ? 9 : 8} className="px-4 py-6 text-center text-rose-600">
+                <td colSpan={showCheckboxes ? 8 : 7} className="px-4 py-6 text-center text-rose-600">
                   {error}
                 </td>
               </tr>
@@ -97,7 +96,7 @@ export function ContactsTable({
 
             {!isLoading && !error && contacts.length === 0 && (
               <tr>
-                <td colSpan={showCheckboxes ? 9 : 8} className="px-4 py-6 text-center text-slate-500">
+                <td colSpan={showCheckboxes ? 8 : 7} className="px-4 py-6 text-center text-slate-500">
                   {emptyState || 'No contacts match the current filters.'}
                 </td>
               </tr>
@@ -133,7 +132,7 @@ export function ContactsTable({
                       </td>
                     )}
                     <td
-                      className="px-4 py-3 cursor-pointer"
+                      className="pl-3 pr-4 py-3 cursor-pointer"
                       onClick={() => onSelectContact(contact.id)}
                     >
                       <div className="font-medium text-slate-900">
@@ -187,15 +186,7 @@ export function ContactsTable({
                       {contact.email || '—'}
                     </td>
                     <td
-                      className="px-4 py-3 text-slate-600 cursor-pointer"
-                      onClick={() => onSelectContact(contact.id)}
-                    >
-                      <span className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1 text-xs font-medium capitalize">
-                        {contact.status || 'unknown'}
-                      </span>
-                    </td>
-                    <td
-                      className="px-4 py-3 text-slate-600 cursor-pointer"
+                      className="pl-4 pr-6 py-3 text-slate-600 cursor-pointer"
                       onClick={() => onSelectContact(contact.id)}
                     >
                       <span

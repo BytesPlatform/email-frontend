@@ -130,7 +130,6 @@ export default function ContactsPage() {
   const [meta, setMeta] = useState<ClientContactsMeta | null>(null)
   const [query, setQuery] = useState<ClientContactsQuery>({ page: 1, limit: 10 })
   const [validityFilter, setValidityFilter] = useState<ValidityFilter>('all')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [searchInput, setSearchInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -150,31 +149,9 @@ export default function ContactsPage() {
   const [bulkError, setBulkError] = useState<string | null>(null)
   const [bulkResult, setBulkResult] = useState<{ updated: number; failed: number } | null>(null)
 
-  const filteredContacts = useMemo(() => {
-    if (validityFilter === 'all') {
-      return contacts
-    }
-
-    return contacts.filter(contact => {
-      const validity = deriveContactValidity(contact)
-      if (validityFilter === 'valid') {
-        return validity.isValid === true
-      }
-      return validity.isValid === false
-    })
-  }, [contacts, validityFilter])
-
-  const currentValidOnPage = useMemo(
-    () =>
-      contacts.filter(contact => deriveContactValidity(contact).isValid === true).length,
-    [contacts]
-  )
-
-  const currentInvalidOnPage = useMemo(
-    () =>
-      contacts.filter(contact => deriveContactValidity(contact).isValid === false).length,
-    [contacts]
-  )
+  // Use total valid/invalid counts from backend (across all pages, independent of filter)
+  const totalValid = meta?.totalValid ?? 0
+  const totalInvalid = meta?.totalInvalid ?? 0
 
   const selectedContactValidity = useMemo(
     () => (selectedContact ? getValidityDisplay(selectedContact) : null),
@@ -191,16 +168,6 @@ export default function ContactsPage() {
     }
     return false
   }, [selectedContactIds.size, bulkContactData])
-
-  const statusOptions = useMemo(() => {
-    const uniqueStatuses = new Set<string>()
-    contacts.forEach(contact => {
-      if (contact.status) {
-        uniqueStatuses.add(contact.status)
-      }
-    })
-    return Array.from(uniqueStatuses).sort((a, b) => a.localeCompare(b))
-  }, [contacts])
 
   // Remove valid contacts from selection (only invalid contacts can be selected)
   useEffect(() => {
@@ -235,38 +202,50 @@ export default function ContactsPage() {
   }, [contacts])
 
   useEffect(() => {
-    const nextStatus = statusFilter === 'all' ? undefined : statusFilter
     setQuery(prev => {
-      if (prev.status === nextStatus && prev.page === 1) {
-        return prev
-      }
-      return {
-        ...prev,
-        page: 1,
-        status: nextStatus
-      }
-    })
-  }, [statusFilter])
+      let nextValidOnly: boolean | undefined
+      let nextInvalidOnly: boolean | undefined
 
-  useEffect(() => {
-    const nextValidOnly = validityFilter === 'valid' ? true : undefined
-    const nextInvalidOnly = validityFilter === 'invalid' ? true : undefined
+      if (validityFilter === 'valid') {
+        nextValidOnly = true
+        nextInvalidOnly = undefined
+      } else if (validityFilter === 'invalid') {
+        nextValidOnly = undefined
+        nextInvalidOnly = true
+      } else {
+        // 'all' - remove both filters
+        nextValidOnly = undefined
+        nextInvalidOnly = undefined
+      }
 
-    setQuery(prev => {
+      // Check if the values actually changed
       if (
         prev.validOnly === nextValidOnly &&
-        prev.invalidOnly === nextInvalidOnly &&
-        prev.page === 1
+        prev.invalidOnly === nextInvalidOnly
       ) {
         return prev
       }
 
-      return {
+      // Create new query object, preserving all existing properties
+      const newQuery: ClientContactsQuery = {
         ...prev,
-        page: 1,
-        validOnly: nextValidOnly,
-        invalidOnly: nextInvalidOnly
+        page: 1
       }
+
+      // Set or remove validOnly/invalidOnly
+      if (nextValidOnly !== undefined) {
+        newQuery.validOnly = nextValidOnly
+      } else {
+        delete newQuery.validOnly
+      }
+
+      if (nextInvalidOnly !== undefined) {
+        newQuery.invalidOnly = nextInvalidOnly
+      } else {
+        delete newQuery.invalidOnly
+      }
+
+      return newQuery
     })
   }, [validityFilter])
 
@@ -491,7 +470,7 @@ export default function ContactsPage() {
     const invalidIds = new Set<number>()
     const contactDataMap = new Map<number, { email: string; phone: string }>()
     
-    filteredContacts.forEach(contact => {
+    contacts.forEach((contact: ClientContact) => {
       const validity = deriveContactValidity(contact)
       if (validity.isValid === false) {
         invalidIds.add(contact.id)
@@ -663,14 +642,14 @@ export default function ContactsPage() {
                   </p>
                 </div>
                 <div className="bg-white rounded-xl shadow-md border border-emerald-100 p-5">
-                  <p className="text-sm text-slate-500">Valid on This Page</p>
-                  <p className="text-2xl font-semibold text-emerald-600 mt-1">{currentValidOnPage}</p>
-                  <p className="text-xs text-slate-400 mt-2">Contacts marked as valid in the current results</p>
+                  <p className="text-sm text-slate-500">Valid Contacts</p>
+                  <p className="text-2xl font-semibold text-emerald-600 mt-1">{totalValid.toLocaleString()}</p>
+                  <p className="text-xs text-slate-400 mt-2">Contacts with email or phone number</p>
                 </div>
                 <div className="bg-white rounded-xl shadow-md border border-rose-100 p-5">
-                  <p className="text-sm text-slate-500">Invalid on This Page</p>
-                  <p className="text-2xl font-semibold text-rose-600 mt-1">{currentInvalidOnPage}</p>
-                  <p className="text-xs text-slate-400 mt-2">Contacts that require review or corrections</p>
+                  <p className="text-sm text-slate-500">Invalid Contacts</p>
+                  <p className="text-2xl font-semibold text-rose-600 mt-1">{totalInvalid.toLocaleString()}</p>
+                  <p className="text-xs text-slate-400 mt-2">Contacts missing both email and phone</p>
                 </div>
               </div>
             )}
@@ -684,23 +663,20 @@ export default function ContactsPage() {
                   <ContactsFilterBar
                     validityFilter={validityFilter}
                     onValidityChange={setValidityFilter}
-                    statusFilter={statusFilter}
-                    onStatusChange={setStatusFilter}
-                    statusOptions={statusOptions}
                     searchValue={searchInput}
                     onSearchChange={setSearchInput}
                     perPage={query.limit || 10}
                     onPerPageChange={handleLimitChange}
                     perPageOptions={limitOptions}
                     totalCount={meta?.total || 0}
-                    validCount={currentValidOnPage}
-                    invalidCount={currentInvalidOnPage}
+                    validCount={totalValid}
+                    invalidCount={totalInvalid}
                   />
                 </CardHeader>
 
                 <CardContent className="space-y-4">
                   <ContactsTable
-                    contacts={filteredContacts}
+                    contacts={contacts}
                     isLoading={isLoading}
                     error={error}
                     selectedContactId={selectedContactId}
@@ -723,8 +699,8 @@ export default function ContactsPage() {
 
               <Card variant="filled">
                 <CardHeader
-                  title="Bulk Fix Contacts"
-                  subtitle="Select contacts from the table above, then add email or phone for each contact individually."
+                  title="Edit Invalid Contacts"
+                  subtitle="Select contacts from the table above, then add email or phone for each contact."
                 />
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
