@@ -42,6 +42,7 @@ export interface ClientContact {
   status?: string
   valid?: boolean
   createdAt?: string
+  errorMessage?: string | null
   csvUpload?: {
     id: number
     fileName: string

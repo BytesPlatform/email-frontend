@@ -13,6 +13,7 @@ export interface ReadyContact {
   status: ContactStatus
   scrapeMethod?: ScrapeMethod | null
   scrapePriority?: number
+  errorMessage?: string | null
   // Allow extra backend fields without breaking the UI
   [key: string]: unknown
 }

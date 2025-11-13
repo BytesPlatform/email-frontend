@@ -139,7 +139,7 @@ export default function ScrapingPage() {
     setApiError(null)
     setShowAllContacts(true)
     try {
-      const res = await ingestionApi.getAllClientContacts(limit || 50)
+      const res = await ingestionApi.getAllClientContacts(limit)
       if (res.success && res.data) {
         // Transform ClientContact[] to ReadyContact[]
         const transformed: ReadyContact[] = res.data.contacts.map((c: ClientContact): ReadyContact => ({
@@ -153,6 +153,7 @@ export default function ScrapingPage() {
           status: (c.status || 'ready_to_scrape') as ReadyContact['status'],
           scrapeMethod: undefined,
           scrapePriority: undefined,
+          errorMessage: c.errorMessage || null,
         }))
         setReadyContacts(transformed)
         setHasFetchedReadyAndStats(true)
@@ -523,7 +524,7 @@ export default function ScrapingPage() {
                           Fetch and show records
                         </button>
                         <button
-                          onClick={() => fetchAllClientContacts(50)}
+                          onClick={() => fetchAllClientContacts()}
                           disabled={isFetchingAllContacts}
                           className="bg-purple-700 text-white px-4 py-2.5 rounded-lg hover:bg-purple-800 disabled:bg-gray-400 text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed flex items-center space-x-2"
                         >
@@ -749,6 +750,14 @@ export default function ScrapingPage() {
         contacts={readyContacts}
         initialFilter={statusFilter}
         onRequestReadyFetch={() => fetchReadyContacts(readyPageSize)}
+        onContactStatusUpdate={(contactId, status) => {
+          // Optimistically update the contact status in local state
+          setReadyContacts(prev => prev.map(c => 
+            c.id === contactId 
+              ? { ...c, status: status as ReadyContact['status'], errorMessage: null }
+              : c
+          ))
+        }}
         onAfterScrape={async () => { 
           await fetchStats(); 
           if (showAllContacts) {
