@@ -33,6 +33,41 @@ const formatDateTime = (value?: string) => {
 }
 
 const deriveContactValidity = (contact: ClientContact) => {
+  // Priority 1: Check email/phone presence first (most important for display)
+  // This ensures contacts with email/phone show as valid even if valid field is false
+  const hasEmail = Boolean(contact.email?.trim())
+  const hasPhone = Boolean(contact.phone?.trim())
+
+  if (hasEmail || hasPhone) {
+    if (hasEmail && hasPhone) {
+      return {
+        isValid: true,
+        reason: 'Email and phone number present'
+      }
+    }
+    if (hasEmail) {
+      // Check if email is validated (emailValid field)
+      if (contact.emailValid === true) {
+        return {
+          isValid: true,
+          reason: 'Valid email address present'
+        }
+      }
+      // Email exists but not yet validated (might be newly added)
+      return {
+        isValid: true,
+        reason: 'Email address present (validation pending)'
+      }
+    }
+    if (hasPhone) {
+      return {
+        isValid: true,
+        reason: 'Phone number present'
+      }
+    }
+  }
+
+  // Priority 2: If no email/phone, check computedValid (from backend computation)
   if (typeof contact.computedValid === 'boolean') {
     return {
       isValid: contact.computedValid,
@@ -45,6 +80,7 @@ const deriveContactValidity = (contact: ClientContact) => {
     }
   }
 
+  // Priority 3: Check valid field (used for scraping validation, not contact info completeness)
   if (typeof contact.valid === 'boolean') {
     return {
       isValid: contact.valid,
@@ -54,41 +90,10 @@ const deriveContactValidity = (contact: ClientContact) => {
     }
   }
 
-  const emailValid = contact.emailValid === true
-  const hasEmail = Boolean(contact.email?.trim())
-  const hasPhone = Boolean(contact.phone?.trim())
-
-  if (emailValid && hasPhone) {
-    return {
-      isValid: true,
-      reason: 'Valid email and phone number present'
-    }
-  }
-
-  if (emailValid) {
-    return {
-      isValid: true,
-      reason: 'Valid email address present'
-    }
-  }
-
-  if (hasPhone) {
-    return {
-      isValid: true,
-      reason: 'Phone number present (email not validated)'
-    }
-  }
-
-  if (!hasEmail && !hasPhone) {
-    return {
-      isValid: false,
-      reason: contact.validationReason || 'Missing email address and phone number'
-    }
-  }
-
+  // If both email and phone are null/empty, contact is invalid
   return {
     isValid: false,
-    reason: contact.validationReason || 'Missing validated contact information'
+    reason: contact.validationReason || 'Missing email address and phone number'
   }
 }
 
