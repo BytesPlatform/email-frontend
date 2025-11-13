@@ -1,131 +1,59 @@
 'use client'
 
-import { Card, CardContent, CardHeader } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import type { ClientHistoryFilters } from '@/types/history'
+import React from 'react'
 
 interface HistoryFiltersProps {
-  filters: ClientHistoryFilters
-  onFilterChange: (filters: Partial<ClientHistoryFilters>) => void
+  search: string
+  onSearchChange: (search: string) => void
+  dateRange: 'all' | 'today' | 'week' | 'month'
+  onDateRangeChange: (range: 'all' | 'today' | 'week' | 'month') => void
 }
 
-export function HistoryFilters({ filters, onFilterChange }: HistoryFiltersProps) {
-  const handleStatusChange = (status: string) => {
-    onFilterChange({ status: status as 'all' | 'success' | 'failed' })
-  }
-
-  const handleMethodChange = (method: string) => {
-    onFilterChange({ method: method === 'all' ? undefined : method })
-  }
-
-  const handleDateFromChange = (date: string) => {
-    onFilterChange({ dateFrom: date || undefined })
-  }
-
-  const handleDateToChange = (date: string) => {
-    onFilterChange({ dateTo: date || undefined })
-  }
-
-  const handleBusinessNameChange = (name: string) => {
-    onFilterChange({ businessName: name || undefined })
-  }
-
-  const clearFilters = () => {
-    onFilterChange({
-      status: 'all',
-      method: undefined,
-      dateFrom: undefined,
-      dateTo: undefined,
-      businessName: undefined
-    })
-  }
-
+export function HistoryFilters({
+  search,
+  onSearchChange,
+  dateRange,
+  onDateRangeChange,
+}: HistoryFiltersProps) {
   return (
-    <Card>
-      <CardHeader>
-        <h3 className="text-lg font-medium text-gray-900">Filters</h3>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Status
-            </label>
-            <select
-              value={filters.status || 'all'}
-              onChange={(e) => handleStatusChange(e.target.value)}
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
-            >
-              <option value="all">All Status</option>
-              <option value="success">Success</option>
-              <option value="failed">Failed</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Method
-            </label>
-            <select
-              value={filters.method || 'all'}
-              onChange={(e) => handleMethodChange(e.target.value)}
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
-            >
-              <option value="all">All Methods</option>
-              <option value="direct_url">Direct URL</option>
-              <option value="email_domain">Email Domain</option>
-              <option value="business_search">Business Search</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Business Name
-            </label>
-            <input
-              type="text"
-              value={filters.businessName || ''}
-              onChange={(e) => handleBusinessNameChange(e.target.value)}
-              placeholder="Search business..."
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Date From
-            </label>
-            <input
-              type="date"
-              value={filters.dateFrom || ''}
-              onChange={(e) => handleDateFromChange(e.target.value)}
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Date To
-            </label>
-            <input
-              type="date"
-              value={filters.dateTo || ''}
-              onChange={(e) => handleDateToChange(e.target.value)}
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <Button
-              onClick={clearFilters}
-              variant="outline"
-              className="w-full cursor-pointer"
-            >
-              Clear Filters
-            </Button>
-          </div>
+    <div className="flex items-center gap-3">
+      {/* Search Bar */}
+      <div className="relative flex-1 max-w-md">
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
         </div>
-      </CardContent>
-    </Card>
+        <input
+          type="text"
+          placeholder="Search history..."
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+        />
+      </div>
+      
+      {/* Filter Icon Button */}
+      <button
+        className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+        title="Filter"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+        </svg>
+      </button>
+      
+      {/* Date Range Dropdown */}
+      <select
+        value={dateRange}
+        onChange={(e) => onDateRangeChange(e.target.value as 'all' | 'today' | 'week' | 'month')}
+        className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white cursor-pointer"
+      >
+        <option value="all">All Time</option>
+        <option value="today">Today</option>
+        <option value="week">This Week</option>
+        <option value="month">This Month</option>
+      </select>
+    </div>
   )
 }
