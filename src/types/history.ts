@@ -149,3 +149,101 @@ export interface PaginatedSentLogs<T> {
   pagination: Pagination
 }
 
+// SMS Log types
+export interface SmsLogContact {
+  id: number
+  businessName?: string | null
+  phone?: string | null
+  email?: string | null
+}
+
+export interface SmsLogDraft {
+  id: number
+  messageText?: string | null
+  status?: string | null
+  createdAt?: string | Date | null
+}
+
+export interface SmsLogClientSms {
+  id: number
+  phoneNumber?: string | null
+  status?: string | null
+  currentCounter?: number | null
+  totalCounter?: number | null
+  limit?: number | null
+}
+
+export interface SmsLog {
+  id: number
+  smsDraftId: number
+  contactId: number
+  clientSmsId: number
+  status: string
+  providerResponse?: Record<string, unknown>
+  sentAt: string | Date
+  contact?: SmsLogContact
+  smsDraft?: SmsLogDraft
+  clientSms?: SmsLogClientSms
+}
+
+export interface SmsLogsResponse {
+  message: string
+  success: boolean
+  count: number
+  data: SmsLog[]
+}
+
+// Email Log types
+export interface EmailLogContact {
+  id: number
+  businessName?: string | null
+  email?: string | null
+  phone?: string | null
+}
+
+export interface EmailLogClientEmail {
+  id: number
+  emailAddress?: string | null
+  status?: string | null
+  currentCounter?: number | null
+  totalCounter?: number | null
+  limit?: number | null
+}
+
+export interface EmailLogDraft {
+  id: number
+  subjectLine?: string | null
+  bodyText?: string | null
+  status?: string | null
+  createdAt?: string | Date | null
+  clientEmail?: EmailLogClientEmail
+}
+
+export interface EmailLogEngagement {
+  id: number
+  engagementType?: string | null
+  engagedAt?: string | Date | null
+  url?: string | null
+}
+
+export interface EmailLog {
+  id: number
+  emailDraftId: number
+  contactId: number
+  status: string
+  sentAt: string | Date
+  trackingPixelToken?: string | null
+  unsubscribeToken?: string | null
+  providerResponse?: Record<string, unknown>
+  contact?: EmailLogContact
+  emailDraft?: EmailLogDraft
+  emailEngagements?: EmailLogEngagement[]
+}
+
+export interface EmailLogsResponse {
+  message: string
+  success: boolean
+  count: number
+  data: EmailLog[]
+}
+

@@ -12,6 +12,7 @@ import {
   BulkStatusEntry,
   BulkStatusPagination,
 } from '@/types/emailGeneration'
+import type { EmailLog, EmailLogsResponse } from '@/types/history'
 
 export const emailGenerationApi = {
   /**
@@ -431,6 +432,49 @@ export const emailGenerationApi = {
         error: error instanceof Error ? error.message : 'Failed to get bulk status',
         data: [],
       }
+    }
+  },
+
+  /**
+   * Get email logs for a specific client email
+   * GET /emails/logs/client-email/:clientEmailId
+   */
+  async getEmailLogsByClientEmailId(clientEmailId: number): Promise<ApiResponse<EmailLog[]>> {
+    try {
+      const res = await apiClient.get<EmailLogsResponse>(`/emails/logs/client-email/${clientEmailId}`)
+      
+      if (res.success && res.data) {
+        // Check if data is nested (response.data.data) or direct array
+        const data = res.data as EmailLogsResponse | EmailLog[]
+        if (Array.isArray(data)) {
+          // Direct array
+          return {
+            success: true,
+            data: data as EmailLog[]
+          }
+        } else if (data.data && Array.isArray(data.data)) {
+          // Nested structure: response.data.data
+          return {
+            success: true,
+            data: data.data as EmailLog[]
+          }
+        } else if (data.count !== undefined && data.data && Array.isArray(data.data)) {
+          // Response structure: { message, success, count, data }
+          return {
+            success: true,
+            data: data.data as EmailLog[]
+          }
+        }
+      }
+      
+      return {
+        success: false,
+        error: 'Failed to fetch email logs',
+        data: []
+      }
+    } catch (error) {
+      console.error('Error fetching email logs:', error)
+      throw error
     }
   },
 }

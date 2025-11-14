@@ -13,12 +13,14 @@ import { Button } from '@/components/ui/Button'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { smsGenerationApi } from '@/api/smsGeneration'
 import { unsubscribeApi } from '@/api/unsubscribe'
+import { useAuthContext } from '@/contexts/AuthContext'
 import type { EmailDraft as ApiEmailDraft } from '@/types/emailGeneration'
 import type { SMSDraft } from '@/types/smsGeneration'
 import type { UnsubscribeListItem } from '@/types/unsubscribe'
 
 function DraftsPageContent() {
   const searchParams = useSearchParams()
+  const { client } = useAuthContext()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [activeView, setActiveView] = useState<DraftViewType>('all')
   const [activeTab, setActiveTab] = useState<'email' | 'sms'>('email')
@@ -158,12 +160,20 @@ function DraftsPageContent() {
     }
   }
 
-  // Fetch SMS drafts using existing API endpoint
+  // Fetch SMS drafts using getClientSmsDrafts API (same pattern as email drafts)
   const fetchSmsDrafts = async () => {
     setIsLoading(true)
     try {
-      // Using getAllSmsDrafts API method
-      const res = await smsGenerationApi.getAllSmsDrafts()
+      // Use client.id as clientSmsId (same as email uses client.id for clientEmailId)
+      if (!client?.id) {
+        console.warn('No client ID available')
+        setSmsDrafts([])
+        setIsLoading(false)
+        return
+      }
+      
+      // Using getClientSmsDrafts API method with client.id (same pattern as email)
+      const res = await smsGenerationApi.getClientSmsDrafts(client.id)
       
       if (res.success && res.data) {
         const drafts = Array.isArray(res.data) ? res.data : []
@@ -415,29 +425,79 @@ function DraftsPageContent() {
         // }
       }
     } else {
-      // SMS view logic
-      // Check if viewing from selected drafts
-      const selectedDrafts = filteredSmsDrafts.filter(d => selectedSmsDraftIds.has(d.id))
-      
-      if (selectedDrafts.length > 0) {
-        // Navigate through selected drafts
-        const draftIndex = selectedDrafts.findIndex(d => d.id === draftId)
-        if (draftIndex !== -1) {
-          setSelectedSmsDraftsForNavigation(selectedDrafts)
-          setSelectedSmsDraftsNavigationIndex(draftIndex)
-          const draft = selectedDrafts[draftIndex]
+      // SMS view logic - fetch full draft from API when viewing single draft
+      try {
+        // Fetch full SMS draft with all related data (contact, summary, clientSms)
+        const res = await smsGenerationApi.getSmsDraft(draftId)
+        
+        if (res.success && res.data) {
+          // Transform API draft to component draft
+          const fullDraft = transformSmsDraft(res.data)
+          
+          // Check if viewing from selected drafts
+          const selectedDrafts = filteredSmsDrafts.filter(d => selectedSmsDraftIds.has(d.id))
+          
+          if (selectedDrafts.length > 0) {
+            // Navigate through selected drafts
+            const draftIndex = selectedDrafts.findIndex(d => d.id === draftId)
+            if (draftIndex !== -1) {
+              // Update the selected draft with full data
+              const updatedSelectedDrafts = selectedDrafts.map(d => 
+                d.id === draftId ? fullDraft : d
+              )
+              setSelectedSmsDraftsForNavigation(updatedSelectedDrafts)
+              setSelectedSmsDraftsNavigationIndex(draftIndex)
+              setSelectedSmsDraft(fullDraft)
+              setIsSmsOverlayOpen(true)
+              return
+            }
+          }
+          
+          // Fallback: use the fetched full draft
+          setSelectedSmsDraft(fullDraft)
+          setIsSmsOverlayOpen(true)
+        } else {
+          // If API fails, fallback to local draft data
+          const selectedDrafts = filteredSmsDrafts.filter(d => selectedSmsDraftIds.has(d.id))
+          
+          if (selectedDrafts.length > 0) {
+            const draftIndex = selectedDrafts.findIndex(d => d.id === draftId)
+            if (draftIndex !== -1) {
+              setSelectedSmsDraftsForNavigation(selectedDrafts)
+              setSelectedSmsDraftsNavigationIndex(draftIndex)
+              setSelectedSmsDraft(selectedDrafts[draftIndex])
+              setIsSmsOverlayOpen(true)
+              return
+            }
+          }
+          
+          const draft = filteredSmsDrafts.find(d => d.id === draftId)
+          if (draft) {
+            setSelectedSmsDraft(draft)
+            setIsSmsOverlayOpen(true)
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching SMS draft:', err)
+        // Fallback to local draft data on error
+        const selectedDrafts = filteredSmsDrafts.filter(d => selectedSmsDraftIds.has(d.id))
+        
+        if (selectedDrafts.length > 0) {
+          const draftIndex = selectedDrafts.findIndex(d => d.id === draftId)
+          if (draftIndex !== -1) {
+            setSelectedSmsDraftsForNavigation(selectedDrafts)
+            setSelectedSmsDraftsNavigationIndex(draftIndex)
+            setSelectedSmsDraft(selectedDrafts[draftIndex])
+            setIsSmsOverlayOpen(true)
+            return
+          }
+        }
+        
+        const draft = filteredSmsDrafts.find(d => d.id === draftId)
+        if (draft) {
           setSelectedSmsDraft(draft)
           setIsSmsOverlayOpen(true)
-          return
         }
-      }
-      
-      // Fallback to filtered drafts navigation
-      const draftIndex = filteredSmsDrafts.findIndex(d => d.id === draftId)
-      const draft = filteredSmsDrafts[draftIndex]
-      if (draft) {
-        setSelectedSmsDraft(draft)
-        setIsSmsOverlayOpen(true)
       }
     }
   }
@@ -780,8 +840,18 @@ function DraftsPageContent() {
   const handleSendSmsDraft = async (draftId: number) => {
     try {
       const res = await smsGenerationApi.sendSmsDraft(draftId)
-      if (res.success) {
-        alert('SMS sent successfully!')
+      if (res.success && res.data) {
+        const message = res.data.message || 'SMS sent successfully!'
+        const messageSid = res.data.messageSid
+        const smsLogId = res.data.smsLogId
+        
+        // Show success message with details if available
+        if (messageSid && smsLogId) {
+          alert(`${message}\nMessage SID: ${messageSid}\nSMS Log ID: ${smsLogId}`)
+        } else {
+          alert(message)
+        }
+        
         handleCloseSmsOverlay()
         // Refresh SMS drafts
         fetchSmsDrafts()

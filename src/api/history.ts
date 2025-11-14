@@ -4,7 +4,9 @@ import {
   UploadScrapingHistoryResponse,
   ContactScrapingHistoryResponse,
   ScrapingAnalytics,
-  ClientHistoryFilters
+  ClientHistoryFilters,
+  SmsLogsResponse,
+  SmsLog
 } from '@/types/history'
 
 export const historyApi = {
@@ -61,6 +63,49 @@ export const historyApi = {
     clientId: number
   ): Promise<ApiResponse<ScrapingAnalytics>> {
     return apiClient.get<ScrapingAnalytics>(`scraping/history/analytics/${clientId}`)
+  },
+
+  /**
+   * Get SMS logs for a specific client SMS
+   * GET /sms/logs/client-sms/:clientSmsId
+   */
+  async getSmsLogsByClientSmsId(clientSmsId: number): Promise<ApiResponse<SmsLog[]>> {
+    try {
+      const res = await apiClient.get<SmsLogsResponse>(`/sms/logs/client-sms/${clientSmsId}`)
+      
+      if (res.success && res.data) {
+        // Check if data is nested (response.data.data) or direct array
+        const data = res.data as SmsLogsResponse | SmsLog[]
+        if (Array.isArray(data)) {
+          // Direct array
+          return {
+            success: true,
+            data: data as SmsLog[]
+          }
+        } else if (data.data && Array.isArray(data.data)) {
+          // Nested structure: response.data.data
+          return {
+            success: true,
+            data: data.data as SmsLog[]
+          }
+        } else if (data.count !== undefined && data.data && Array.isArray(data.data)) {
+          // Response structure: { message, success, count, data }
+          return {
+            success: true,
+            data: data.data as SmsLog[]
+          }
+        }
+      }
+      
+      return {
+        success: false,
+        error: 'Failed to fetch SMS logs',
+        data: []
+      }
+    } catch (error) {
+      console.error('Error fetching SMS logs:', error)
+      throw error
+    }
   },
 
 }
