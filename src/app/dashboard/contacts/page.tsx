@@ -134,6 +134,7 @@ export default function ContactsPage() {
   const [searchInput, setSearchInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isMounted, setIsMounted] = useState(false)
 
   const [selectedContactId, setSelectedContactId] = useState<number | null>(null)
   const [selectedContact, setSelectedContact] = useState<ClientContact | null>(null)
@@ -164,6 +165,14 @@ export default function ContactsPage() {
     isOpen: false,
     type: null,
   })
+
+  // Ensure component is mounted and client is available before rendering content
+  useEffect(() => {
+    // Only set mounted on client side
+    if (typeof window !== 'undefined') {
+      setIsMounted(true)
+    }
+  }, [])
 
   // Use total valid/invalid counts from backend (across all pages, independent of filter)
   const totalValid = meta?.totalValid ?? 0
@@ -287,6 +296,9 @@ export default function ContactsPage() {
   }, [searchInput])
 
   useEffect(() => {
+    // Don't fetch until component is mounted
+    if (!isMounted || !client) return
+
     let ignore = false
 
     const fetchContacts = async () => {
@@ -324,7 +336,7 @@ export default function ContactsPage() {
     return () => {
       ignore = true
     }
-  }, [query])
+  }, [query, isMounted, client])
 
   const handleLimitChange = (value: number) => {
     setQuery(prev => {
@@ -826,6 +838,21 @@ export default function ContactsPage() {
     } finally {
       setIsBulkSaving(false)
     }
+  }
+
+  // Don't render content until mounted on client side
+  // This prevents hydration mismatches and SSR issues
+  if (!isMounted) {
+    return (
+      <AuthGuard>
+        <div className="bg-gray-50 min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading contacts...</p>
+          </div>
+        </div>
+      </AuthGuard>
+    )
   }
 
   return (

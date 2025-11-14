@@ -80,16 +80,20 @@ export default function CSVIngestionPage() {
             
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <CSVUploadForm 
-                onFileProcessed={handleFileProcessed} 
-                onUploadSuccess={handleUploadSuccess}
-                onMappedDataReady={handleMappedDataReady}
-              />
-              <CSVPreview 
-                headers={csvHeaders} 
-                mappedCsvData={mappedCsvData}
-                columnMappings={columnMappings}
-              />
+              <div className="flex flex-col">
+                <CSVUploadForm 
+                  onFileProcessed={handleFileProcessed} 
+                  onUploadSuccess={handleUploadSuccess}
+                  onMappedDataReady={handleMappedDataReady}
+                />
+              </div>
+              <div className="flex flex-col">
+                <CSVPreview 
+                  headers={csvHeaders} 
+                  mappedCsvData={mappedCsvData}
+                  columnMappings={columnMappings}
+                />
+              </div>
             </div>
             
             {/* Upload Success Metadata */}
@@ -129,10 +133,10 @@ export default function CSVIngestionPage() {
                   </div>
                   <div className="flex-shrink-0 ml-6">
                     <Link 
-                      href="/dashboard/scraping" 
+                      href="/dashboard/contacts" 
                       className="inline-flex items-center space-x-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 shadow-md hover:shadow-lg transition-all duration-200 text-sm font-medium"
                     >
-                      <span>Go to Scraping</span>
+                      <span>Go to Contacts</span>
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                       </svg>

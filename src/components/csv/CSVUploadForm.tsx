@@ -547,6 +547,31 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
     }
   }
 
+  const handleRemoveFile = () => {
+    setFile(null)
+    setParsedData([])
+    setValidationErrors([])
+    setColumnMappings([])
+    setUncleanRows([])
+    setUploadError(null)
+    setUploadSuccess(null)
+    setUploadProgress(0)
+    
+    // Clear mapped data in parent
+    if (onMappedDataReady) {
+      onMappedDataReady([], [], [])
+    }
+    if (onFileProcessed) {
+      onFileProcessed([], requiredColumns)
+    }
+    
+    // Reset file input
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    if (fileInput) {
+      fileInput.value = ''
+    }
+  }
+
   const handleUpload = async () => {
     if (!file) return
 
@@ -690,10 +715,25 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="mx-auto w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md">
-                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+                <div className="relative">
+                  <div className="mx-auto w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md">
+                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleRemoveFile()
+                    }}
+                    className="absolute -top-2 -right-2 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors duration-200 z-20"
+                    title="Remove file"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
                 <div>
                   <p className="text-lg font-semibold text-slate-900">{file.name}</p>
@@ -770,7 +810,6 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
               </div>
             )
           })()}
-
 
           {/* Validation Errors */}
           {validationErrors.length > 0 && (

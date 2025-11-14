@@ -22,8 +22,13 @@ export function middleware(request: NextRequest) {
   const protectedRoutes = [
     '/dashboard',
     '/dashboard/csv-ingestion',
+    '/dashboard/contacts',
     '/dashboard/scraping',
+    '/dashboard/email-generation',
+    '/dashboard/draft',
+    '/dashboard/analytics',
     '/dashboard/history',
+    '/dashboard/profile',
   ]
 
   // Check if the current path is protected
