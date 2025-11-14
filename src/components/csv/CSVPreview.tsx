@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useData } from '@/contexts/DataContext'
@@ -36,13 +36,27 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   // Local state for mapped CSV data to allow editing
   const [localMappedCsvData, setLocalMappedCsvData] = useState<Record<string, string>[]>(mappedCsvData)
   const [localUncleanRows, setLocalUncleanRows] = useState<Record<string, string>[]>(uncleanRows || [])
+  
+  // Use refs to track previous values and prevent infinite loops
+  const prevMappedCsvDataRef = useRef<string>('')
+  const prevUncleanRowsRef = useRef<string>('')
 
-  // Sync local state when prop changes
+  // Sync local state when prop changes (only if values actually changed)
   useEffect(() => {
-    setLocalMappedCsvData(mappedCsvData)
+    // Compare using JSON stringify to check if arrays are actually different
+    const currentMappedStr = JSON.stringify(mappedCsvData)
+    if (currentMappedStr !== prevMappedCsvDataRef.current) {
+      prevMappedCsvDataRef.current = currentMappedStr
+      setLocalMappedCsvData(mappedCsvData)
+    }
   }, [mappedCsvData])
+  
   useEffect(() => {
-    setLocalUncleanRows(uncleanRows || [])
+    const currentUncleanStr = JSON.stringify(uncleanRows || [])
+    if (currentUncleanStr !== prevUncleanRowsRef.current) {
+      prevUncleanRowsRef.current = currentUncleanStr
+      setLocalUncleanRows(uncleanRows || [])
+    }
   }, [uncleanRows])
   const { csvData } = useData()
   const { client } = useAuthContext()
@@ -748,16 +762,48 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
         subtitle="Preview of your CSV data before import"
         icon={previewIcon}
       >
-        <div className="flex items-center justify-between w-full">
+        <div className="flex items-center justify-between w-full gap-2">
           <div></div>
-          <Button 
-            variant="outline" 
-            size="sm"
-            leftIcon={downloadIcon}
-            onClick={downloadTemplate}
-          >
-            Download Template
-          </Button>
+          <div className="flex items-center gap-2">
+            {(hasMappedData || csvData.length > 0) && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="px-2"
+                onClick={() => {
+                  if (hasMappedData && localMappedCsvData.length > 0) {
+                    setOverlayCsvData(localMappedCsvData)
+                    setOverlayHeaders(mappedColumns.map(m => m.csvColumnName))
+                  } else if (csvData.length > 0) {
+                    const dataToShow = localCsvData.length > 0 ? localCsvData : csvData.map(r => {
+                      const rowObj: Record<string, string> = {}
+                      headers.forEach(header => {
+                        rowObj[header] = r[header] || ''
+                      })
+                      return rowObj
+                    })
+                    setOverlayCsvData(dataToShow)
+                    setOverlayHeaders(headers)
+                  }
+                  setShowCsvDataOverlay(true)
+                }}
+                title="View CSV"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </Button>
+            )}
+            <Button 
+              variant="outline" 
+              size="sm"
+              leftIcon={downloadIcon}
+              onClick={downloadTemplate}
+            >
+              Download Template
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>

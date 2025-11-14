@@ -332,6 +332,17 @@ export function Header() {
                     CSV Ingestion
                   </Link>
                   <Link 
+                    href="/dashboard/contacts" 
+                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${
+                      isActive('/dashboard/contacts')
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                    }`}
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    Contacts
+                  </Link>
+                  <Link 
                     href="/dashboard/scraping" 
                     className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${
                       isActive('/dashboard/scraping')
