@@ -268,6 +268,68 @@ export const ingestionApi = {
         error: error instanceof Error ? error.message : 'Failed to fetch all client contacts'
       };
     }
+  },
+
+  /**
+   * Get all invalid contacts (no email AND no phone) for the authenticated client
+   * No pagination - returns all invalid contacts
+   */
+  async getAllInvalidContacts(): Promise<ApiResponse<AllClientContactsResponse>> {
+    try {
+      const response = await apiClient.get<AllClientContactsResponse>(`/ingestion/contacts/invalid`);
+      
+      if (response.success && response.data) {
+        return { success: true, data: response.data };
+      }
+      return { success: false, error: response.error || 'Failed to fetch invalid contacts' };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch invalid contacts'
+      };
+    }
+  },
+
+  /**
+   * Bulk delete all invalid contacts (no email AND no phone) for the authenticated client
+   */
+  async bulkDeleteInvalidContacts(): Promise<ApiResponse<{ message: string; deletedCount: number }>> {
+    try {
+      const response = await apiClient.delete<{ message: string; deletedCount: number }>(
+        `/ingestion/contacts/invalid/bulk`
+      );
+      
+      if (response.success && response.data) {
+        return { success: true, data: response.data };
+      }
+      return { success: false, error: response.error || 'Failed to delete invalid contacts' };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete invalid contacts'
+      };
+    }
+  },
+
+  /**
+   * Delete a single contact by ID
+   */
+  async deleteContact(contactId: number): Promise<ApiResponse<{ message: string; deleted: boolean }>> {
+    try {
+      const response = await apiClient.delete<{ message: string; deleted: boolean }>(
+        `/ingestion/contacts/${contactId}`
+      );
+      
+      if (response.success && response.data) {
+        return { success: true, data: response.data };
+      }
+      return { success: false, error: response.error || 'Failed to delete contact' };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete contact'
+      };
+    }
   }
 };
 
