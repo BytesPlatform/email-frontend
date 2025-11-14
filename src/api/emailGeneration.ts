@@ -52,6 +52,49 @@ export const emailGenerationApi = {
   },
 
   /**
+   * Bulk summarize multiple contacts
+   * POST /summarization/bulk-generate
+   * Body: { contactIds: number[] }
+   */
+  async bulkSummarizeContacts(contactIds: number[]): Promise<ApiResponse<{
+    totalProcessed: number
+    successful: number
+    failed: number
+    results: Array<{
+      contactId: number
+      success: boolean
+      summary?: BusinessSummary
+      error?: string
+    }>
+  }>> {
+    try {
+      console.log(`Calling bulk summarization API for ${contactIds.length} contacts`)
+      const response = await apiClient.post<{
+        message: string
+        success: boolean
+        totalProcessed: number
+        successful: number
+        failed: number
+        results: Array<{
+          contactId: number
+          success: boolean
+          summary?: BusinessSummary
+          error?: string
+        }>
+      }>(
+        '/summarization/bulk-generate',
+        { contactIds },
+        300000 // 5 minutes timeout for bulk operations
+      )
+      console.log(`Bulk summarization API response:`, response)
+      return response
+    } catch (error) {
+      console.error('Error in bulk summarization:', error)
+      throw error
+    }
+  },
+
+  /**
    * Generate business summary for a specific contact
    * Note: This will be implemented when backend API is ready
    */
@@ -126,6 +169,54 @@ export const emailGenerationApi = {
       return await apiClient.post<EmailDraft>('/emails/generation/generate', payload)
     } catch (error) {
       console.error('Error generating email draft:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Bulk generate email drafts for multiple contacts
+   * POST /emails/bulk-generate
+   * Body: GenerateEmailDto[]
+   */
+  async bulkGenerateEmailDrafts(requests: Array<{
+    contactId: number
+    summaryId: number
+    clientEmailId: number
+    tone?: string
+  }>): Promise<ApiResponse<{
+    totalProcessed: number
+    successful: number
+    failed: number
+    results: Array<{
+      contactId: number
+      summaryId: number
+      emailDraftId: number
+      success: boolean
+      error?: string
+    }>
+  }>> {
+    try {
+      console.log(`Calling bulk email generation API for ${requests.length} contacts`)
+      const response = await apiClient.post<{
+        totalProcessed: number
+        successful: number
+        failed: number
+        results: Array<{
+          contactId: number
+          summaryId: number
+          emailDraftId: number
+          success: boolean
+          error?: string
+        }>
+      }>(
+        '/emails/generation/bulk-generate',
+        requests,
+        300000 // 5 minutes timeout for bulk operations
+      )
+      console.log(`Bulk email generation API response:`, response)
+      return response
+    } catch (error) {
+      console.error('Error in bulk email generation:', error)
       throw error
     }
   },

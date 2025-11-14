@@ -48,6 +48,10 @@ export default function EmailGenerationPage() {
 
   // Optimization suggestions state
   const [isLoadingOptimization, setIsLoadingOptimization] = useState(false)
+  
+  // Bulk selection state
+  const [selectedRecordIds, setSelectedRecordIds] = useState<Set<number>>(new Set())
+  const [isBulkGenerating, setIsBulkGenerating] = useState(false)
 
   const applyEmailBulkStatus = useCallback((statuses: BulkStatusEntry[]) => {
     const statusMap = new Map(statuses.map((entry) => [entry.contactId, entry]))
@@ -1041,6 +1045,260 @@ export default function EmailGenerationPage() {
 
   // Drawer handlers are provided by useEmailGenerationState hook
 
+  // Selection handlers
+  const handleSelectRecord = (recordId: number, selected: boolean) => {
+    // Don't allow selection of records that have drafts
+    const record = state.scrapedRecords.find(r => r.id === recordId)
+    if (record) {
+      const hasDraft = mode === 'email' 
+        ? (record.hasEmailDraft || record.emailDraftId)
+        : (record.hasSMSDraft || record.smsDraftId)
+      if (hasDraft && selected) {
+        return // Prevent selection of records with drafts
+      }
+    }
+    
+    setSelectedRecordIds(prev => {
+      const next = new Set(prev)
+      if (selected) {
+        next.add(recordId)
+      } else {
+        next.delete(recordId)
+      }
+      return next
+    })
+  }
+
+  const handleSelectAll = (selected: boolean) => {
+    if (selected) {
+      const currentPageRecords = state.scrapedRecords.slice(
+        (state.currentPage - 1) * state.recordsPerPage,
+        state.currentPage * state.recordsPerPage
+      )
+      // Only select records that don't have drafts
+      const selectableRecords = currentPageRecords.filter(r => {
+        if (mode === 'email') {
+          return !r.hasEmailDraft && !r.emailDraftId
+        } else {
+          return !r.hasSMSDraft && !r.smsDraftId
+        }
+      })
+      setSelectedRecordIds(new Set(selectableRecords.map(r => r.id)))
+    } else {
+      setSelectedRecordIds(new Set())
+    }
+  }
+
+  // Bulk generation handlers
+  const handleBulkGenerateSummary = async () => {
+    if (selectedRecordIds.size === 0) {
+      alert('Please select at least one contact')
+      return
+    }
+
+    setIsBulkGenerating(true)
+    const selectedRecords = state.scrapedRecords.filter(r => selectedRecordIds.has(r.id))
+    // Only include contacts that don't already have summaries
+    const contactIdsToProcess = selectedRecords
+      .filter(r => !r.hasSummary)
+      .map(r => r.contactId)
+
+    if (contactIdsToProcess.length === 0) {
+      alert('All selected contacts already have summaries')
+      setIsBulkGenerating(false)
+      return
+    }
+
+    try {
+      const res = await emailGenerationApi.bulkSummarizeContacts(contactIdsToProcess)
+      
+      if (res.success && res.data) {
+        const { totalProcessed, successful, failed, results } = res.data
+        
+        // Update records with generated summaries
+        const summaryMap = new Map<number, BusinessSummary>()
+        results.forEach(result => {
+          if (result.success && result.summary) {
+            summaryMap.set(result.contactId, result.summary)
+          }
+        })
+
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(record => {
+            const summary = summaryMap.get(record.contactId)
+            if (summary) {
+              return {
+                ...record,
+                generatedSummary: summary,
+                hasSummary: true,
+                isGeneratingSummary: false
+              }
+            }
+            return record
+          })
+        }))
+
+        alert(`Bulk summary generation completed: ${successful} succeeded, ${failed} failed out of ${totalProcessed} total`)
+        setSelectedRecordIds(new Set())
+      } else {
+        alert('Failed to generate summaries: ' + (res.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Error in bulk summary generation:', error)
+      alert('Error generating summaries: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsBulkGenerating(false)
+    }
+  }
+
+  const handleBulkGenerateEmail = async () => {
+    if (selectedRecordIds.size === 0) {
+      alert('Please select at least one contact')
+      return
+    }
+
+    setIsBulkGenerating(true)
+    const selectedRecords = state.scrapedRecords.filter(r => selectedRecordIds.has(r.id))
+    
+    if (!client?.id) {
+      alert('Missing client ID')
+      setIsBulkGenerating(false)
+      return
+    }
+
+    // Build requests array for contacts that have summaries but no email drafts
+    const requests = selectedRecords
+      .filter(r => r.hasSummary && !r.hasEmailDraft && r.generatedSummary)
+      .map(r => ({
+        contactId: r.contactId,
+        summaryId: r.generatedSummary!.id,
+        clientEmailId: client.id,
+        tone: 'pro_friendly' as const
+      }))
+
+    if (requests.length === 0) {
+      alert('All selected contacts already have email drafts or are missing summaries')
+      setIsBulkGenerating(false)
+      return
+    }
+
+    try {
+      const res = await emailGenerationApi.bulkGenerateEmailDrafts(requests)
+      
+      if (res.success && res.data) {
+        const { totalProcessed, successful, failed, results } = res.data
+        
+        // Update records with generated email drafts
+        const draftMap = new Map<number, number>()
+        results.forEach(result => {
+          if (result.success && result.emailDraftId > 0) {
+            draftMap.set(result.contactId, result.emailDraftId)
+          }
+        })
+
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(record => {
+            const emailDraftId = draftMap.get(record.contactId)
+            if (emailDraftId) {
+              return {
+                ...record,
+                emailDraftId: emailDraftId,
+                hasEmailDraft: true,
+                isGeneratingEmail: false
+              }
+            }
+            return record
+          })
+        }))
+
+        alert(`Bulk email generation completed: ${successful} succeeded, ${failed} failed out of ${totalProcessed} total`)
+        setSelectedRecordIds(new Set())
+      } else {
+        alert('Failed to generate emails: ' + (res.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Error in bulk email generation:', error)
+      alert('Error generating emails: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsBulkGenerating(false)
+    }
+  }
+
+  const handleBulkGenerateSMS = async () => {
+    if (selectedRecordIds.size === 0) {
+      alert('Please select at least one contact')
+      return
+    }
+
+    setIsBulkGenerating(true)
+    const selectedRecords = state.scrapedRecords.filter(r => selectedRecordIds.has(r.id))
+    
+    if (!client?.id) {
+      alert('Missing client ID')
+      setIsBulkGenerating(false)
+      return
+    }
+
+    // Build requests array for contacts that have summaries but no SMS drafts
+    const requests = selectedRecords
+      .filter(r => r.hasSummary && !r.hasSMSDraft && r.generatedSummary)
+      .map(r => ({
+        contactId: r.contactId,
+        summaryId: r.generatedSummary!.id,
+        clientSmsId: client.id
+      }))
+
+    if (requests.length === 0) {
+      alert('All selected contacts already have SMS drafts or are missing summaries')
+      setIsBulkGenerating(false)
+      return
+    }
+
+    try {
+      const res = await smsGenerationApi.bulkGenerateSmsDrafts(requests)
+      
+      if (res.success && res.data) {
+        const { totalProcessed, successful, failed, results } = res.data
+        
+        // Update records with generated SMS drafts
+        const draftMap = new Map<number, number>()
+        results.forEach(result => {
+          if (result.success && result.smsDraftId > 0) {
+            draftMap.set(result.contactId, result.smsDraftId)
+          }
+        })
+
+        setState(prev => ({
+          ...prev,
+          scrapedRecords: prev.scrapedRecords.map(record => {
+            const smsDraftId = draftMap.get(record.contactId)
+            if (smsDraftId) {
+              return {
+                ...record,
+                smsDraftId: smsDraftId,
+                hasSMSDraft: true,
+                isGeneratingSMS: false
+              }
+            }
+            return record
+          })
+        }))
+
+        alert(`Bulk SMS generation completed: ${successful} succeeded, ${failed} failed out of ${totalProcessed} total`)
+        setSelectedRecordIds(new Set())
+      } else {
+        alert('Failed to generate SMS drafts: ' + (res.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Error in bulk SMS generation:', error)
+      alert('Error generating SMS drafts: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsBulkGenerating(false)
+    }
+  }
+
   return (
     <AuthGuard>
       <div className="bg-gray-50 min-h-screen">
@@ -1048,6 +1306,55 @@ export default function EmailGenerationPage() {
           <div className="space-y-6">
             {/* Page Header */}
             <EmailGenerationHeader mode={mode} onModeChange={setMode} />
+
+            {/* Bulk Actions Bar */}
+            {selectedRecordIds.size > 0 && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-indigo-900">
+                    {selectedRecordIds.size} {selectedRecordIds.size === 1 ? 'contact' : 'contacts'} selected
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={handleBulkGenerateSummary}
+                    disabled={isBulkGenerating}
+                    variant="outline"
+                    size="sm"
+                    className="bg-white hover:bg-gray-50"
+                  >
+                    {isBulkGenerating ? 'Generating...' : 'Generate Summaries'}
+                  </Button>
+                  {mode === 'email' ? (
+                    <Button
+                      onClick={handleBulkGenerateEmail}
+                      disabled={isBulkGenerating}
+                      variant="primary"
+                      size="sm"
+                    >
+                      {isBulkGenerating ? 'Generating...' : 'Generate Emails'}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleBulkGenerateSMS}
+                      disabled={isBulkGenerating}
+                      variant="primary"
+                      size="sm"
+                    >
+                      {isBulkGenerating ? 'Generating...' : 'Generate SMS'}
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() => setSelectedRecordIds(new Set())}
+                    variant="outline"
+                    size="sm"
+                    className="bg-white hover:bg-gray-50"
+                  >
+                    Clear Selection
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Scraped Records Table */}
             <RecordsTable
@@ -1057,6 +1364,9 @@ export default function EmailGenerationPage() {
               mode={mode}
               currentPage={state.currentPage}
               recordsPerPage={state.recordsPerPage}
+              selectedRecordIds={selectedRecordIds}
+              onSelectRecord={handleSelectRecord}
+              onSelectAll={handleSelectAll}
               onRecordClick={(record) => openDrawer(record)}
               onViewSummary={handleViewSummary}
               onViewEmailBody={handleViewEmailBody}

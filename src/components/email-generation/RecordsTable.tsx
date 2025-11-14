@@ -13,6 +13,9 @@ interface RecordsTableProps {
   mode: 'email' | 'sms'
   currentPage: number
   recordsPerPage: number
+  selectedRecordIds: Set<number>
+  onSelectRecord: (recordId: number, selected: boolean) => void
+  onSelectAll: (selected: boolean) => void
   onRecordClick: (record: ScrapedRecord) => void
   onViewSummary: (recordId: number) => Promise<void>
   onViewEmailBody: (recordId: number) => Promise<void>
@@ -38,6 +41,9 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
   mode,
   currentPage,
   recordsPerPage,
+  selectedRecordIds,
+  onSelectRecord,
+  onSelectAll,
   onRecordClick,
   onViewSummary,
   onViewEmailBody,
@@ -50,6 +56,16 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
   onSendSMS,
 }) => {
   const currentRecords = getCurrentPageRecords(records, currentPage, recordsPerPage)
+  // Filter out records with drafts for "select all" logic
+  const selectableRecords = currentRecords.filter(r => {
+    if (mode === 'email') {
+      return !r.hasEmailDraft && !r.emailDraftId
+    } else {
+      return !r.hasSMSDraft && !r.smsDraftId
+    }
+  })
+  const allSelected = selectableRecords.length > 0 && selectableRecords.every(r => selectedRecordIds.has(r.id))
+  const someSelected = selectableRecords.some(r => selectedRecordIds.has(r.id))
 
   return (
     <Card variant="elevated">
@@ -68,6 +84,7 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12"></th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
                     Business
                   </th>
@@ -85,6 +102,9 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
               <tbody className="bg-white divide-y divide-gray-200">
                 {Array.from({ length: recordsPerPage }).map((_, idx) => (
                   <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-2 py-3">
+                      <Skeleton className="h-4 w-4 rounded" />
+                    </td>
                     <td className="px-2 py-3">
                       <div className="flex items-center space-x-3">
                         <Skeleton className="h-8 w-8 rounded-full" />
@@ -134,6 +154,7 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12"></th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
                     Business
                   </th>
@@ -151,6 +172,9 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
               <tbody className="bg-white divide-y divide-gray-200">
                 {Array.from({ length: currentRecords.length || recordsPerPage }).map((_, idx) => (
                   <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-2 py-3">
+                      <Skeleton className="h-4 w-4 rounded" />
+                    </td>
                     <td className="px-2 py-3">
                       <div className="flex items-center space-x-3">
                         <Skeleton className="h-8 w-8 rounded-full" />
@@ -183,6 +207,27 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(input) => {
+                        if (input) input.indeterminate = someSelected && !allSelected
+                      }}
+                      onChange={(e) => {
+                        // Only select records that don't have drafts
+                        const selectableRecords = currentRecords.filter(r => {
+                          if (mode === 'email') {
+                            return !r.hasEmailDraft && !r.emailDraftId
+                          } else {
+                            return !r.hasSMSDraft && !r.smsDraftId
+                          }
+                        })
+                        onSelectAll(e.target.checked)
+                      }}
+                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
                     Business
                   </th>
@@ -203,6 +248,8 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
                     key={record.id}
                     record={record}
                     mode={mode}
+                    isSelected={selectedRecordIds.has(record.id)}
+                    onSelect={(selected) => onSelectRecord(record.id, selected)}
                     onRowClick={() => onRecordClick(record)}
                     onViewSummary={onViewSummary}
                     onViewEmailBody={onViewEmailBody}

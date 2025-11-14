@@ -7,6 +7,8 @@ import type { ScrapedRecord } from '@/types/emailGeneration'
 interface RecordTableRowProps {
   record: ScrapedRecord
   mode: 'email' | 'sms'
+  isSelected: boolean
+  onSelect: (selected: boolean) => void
   onRowClick: () => void
   onViewSummary: (recordId: number) => Promise<void>
   onViewEmailBody: (recordId: number) => Promise<void>
@@ -35,6 +37,8 @@ interface RecordTableRowProps {
 const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
   record,
   mode,
+  isSelected,
+  onSelect,
   onRowClick,
   onViewSummary,
   onViewEmailBody,
@@ -47,8 +51,27 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
   onSendSMS,
 }) => {
   const router = useRouter()
+  // Check if record has a draft (should hide checkbox)
+  const hasDraft = mode === 'email' 
+    ? (record.hasEmailDraft || record.emailDraftId) 
+    : (record.hasSMSDraft || record.smsDraftId)
+
   return (
-    <tr key={record.id} className="hover:bg-gray-50 cursor-pointer" onClick={onRowClick}>
+    <tr key={record.id} className={`hover:bg-gray-50 cursor-pointer ${isSelected ? 'bg-blue-50' : ''}`} onClick={onRowClick}>
+      {!hasDraft && (
+        <td className="px-2 py-2 whitespace-nowrap w-12" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={(e) => {
+              e.stopPropagation()
+              onSelect(e.target.checked)
+            }}
+            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+          />
+        </td>
+      )}
+      {hasDraft && <td className="px-2 py-2 whitespace-nowrap w-12"></td>}
       <td className="px-2 py-2 whitespace-nowrap min-w-[150px]">
         <div className="flex items-center">
           <div className="flex-shrink-0 h-8 w-8">

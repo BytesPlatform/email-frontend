@@ -88,6 +88,44 @@ export interface SummaryGenerationRequest {
   uploadId: number
 }
 
+export interface SummarizationResult {
+  contactId: number
+  success: boolean
+  summary?: BusinessSummary
+  error?: string
+}
+
+export interface BulkSummarizationResponse {
+  message: string
+  success: boolean
+  totalProcessed: number
+  successful: number
+  failed: number
+  results: SummarizationResult[]
+}
+
+export interface GenerateEmailDto {
+  contactId: number
+  summaryId: number
+  clientEmailId: number
+  tone?: string
+}
+
+export interface EmailGenerationResult {
+  contactId: number
+  summaryId: number
+  emailDraftId: number
+  success: boolean
+  error?: string
+}
+
+export interface BulkEmailGenerationResponse {
+  totalProcessed: number
+  successful: number
+  failed: number
+  results: EmailGenerationResult[]
+}
+
 export interface EmailGenerationRequest {
   contactId: number
   summaryData: BusinessSummary
