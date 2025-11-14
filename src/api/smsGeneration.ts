@@ -69,6 +69,53 @@ export const smsGenerationApi = {
   },
 
   /**
+   * Bulk generate SMS drafts for multiple contacts
+   * POST /sms/generation/bulk-generate
+   * Body: GenerateSmsDto[]
+   */
+  async bulkGenerateSmsDrafts(requests: Array<{
+    contactId: number
+    summaryId: number
+    clientSmsId: number
+  }>): Promise<ApiResponse<{
+    totalProcessed: number
+    successful: number
+    failed: number
+    results: Array<{
+      contactId: number
+      summaryId: number
+      smsDraftId: number
+      success: boolean
+      error?: string
+    }>
+  }>> {
+    try {
+      console.log(`Calling bulk SMS generation API for ${requests.length} contacts`)
+      const response = await apiClient.post<{
+        totalProcessed: number
+        successful: number
+        failed: number
+        results: Array<{
+          contactId: number
+          summaryId: number
+          smsDraftId: number
+          success: boolean
+          error?: string
+        }>
+      }>(
+        '/sms/generation/bulk-generate',
+        requests,
+        300000 // 5 minutes timeout for bulk operations
+      )
+      console.log(`Bulk SMS generation API response:`, response)
+      return response
+    } catch (error) {
+      console.error('Error in bulk SMS generation:', error)
+      throw error
+    }
+  },
+
+  /**
    * Get a specific SMS draft by ID
    * GET /sms/generation/drafts/:id
    */
