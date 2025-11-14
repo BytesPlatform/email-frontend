@@ -103,7 +103,7 @@ export function HistorySidebar({
         <nav className="p-2">
           {menuItems.map((item) => {
             const isActive = activeView === item.id
-            const showCount = item.count > 0 && !isCollapsed
+            const hasCount = item.count > 0
 
             return (
               <button
@@ -126,17 +126,21 @@ export function HistorySidebar({
                 >
                   {item.label}
                 </span>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full transition-opacity duration-300 ease-in-out whitespace-nowrap ${
-                    isActive
-                      ? 'bg-blue-200 text-blue-800'
-                      : 'bg-gray-200 text-gray-700'
-                  } ${
-                    !showCount || isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 w-auto'
-                  }`}
-                >
-                  {item.count > 99 ? '99+' : item.count}
-                </span>
+                {hasCount && (
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap transition-all duration-300 ease-in-out ${
+                      isActive
+                        ? 'bg-blue-200 text-blue-800'
+                        : 'bg-gray-200 text-gray-700'
+                    } ${
+                      isCollapsed 
+                        ? 'opacity-0 max-w-0 px-0 overflow-hidden' 
+                        : 'opacity-100 max-w-full'
+                    }`}
+                  >
+                    {item.count > 99 ? '99+' : item.count}
+                  </span>
+                )}
               </button>
             )
           })}

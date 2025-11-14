@@ -7,9 +7,17 @@ interface HistoryDetailOverlayProps {
   item: HistoryItem | null
   isOpen: boolean
   onClose: () => void
+  onResubscribe?: (contactId: number) => void
+  isResubscribing?: boolean
 }
 
-export function HistoryDetailOverlay({ item, isOpen, onClose }: HistoryDetailOverlayProps) {
+export function HistoryDetailOverlay({ 
+  item, 
+  isOpen, 
+  onClose, 
+  onResubscribe, 
+  isResubscribing = false 
+}: HistoryDetailOverlayProps) {
   if (!isOpen || !item) return null
 
   const formatDate = (dateString: string) => {
@@ -115,15 +123,33 @@ export function HistoryDetailOverlay({ item, isOpen, onClose }: HistoryDetailOve
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Close
-            </button>
-          </div>
+          {/* Footer with Resubscribe Button (for unsubscribed items) */}
+          {item.type === 'email-unsubscribed' && onResubscribe && item.contactId && (
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() => onResubscribe(item.contactId)}
+                disabled={isResubscribing}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                {isResubscribing ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Resubscribing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Resubscribe Contact
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

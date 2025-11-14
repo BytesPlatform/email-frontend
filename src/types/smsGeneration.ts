@@ -8,16 +8,28 @@ export interface SMSDraft {
   createdAt?: string
   updatedAt?: string
   characterCount?: number
-  // Related data (included in getSmsDraft response)
+  // Related data (included in getSmsDraft and getClientSmsDrafts response)
   contact?: {
+    id: number
     businessName?: string
     phone?: string
     email?: string
   }
   summary?: {
+    id: number
     summaryText?: string
     painPoints?: string[]
+    strengths?: string[]
     opportunities?: string[]
+    keywords?: string[]
+  }
+  clientSms?: {
+    id: number
+    phoneNumber?: string
+    status?: string
+    currentCounter?: number
+    totalCounter?: number
+    limit?: number
   }
 }
 
@@ -31,6 +43,15 @@ export interface SMSGenerationResponse {
 export interface SMSGenerationRequest {
   contactId: number
   summaryId: number
+  clientSmsId: number
+}
+
+export interface SMSGenerationResult {
+  contactId: number
+  summaryId: number
+  smsDraftId: number
+  success: boolean
+  error?: string
 }
 
 export interface SmsBulkStatusEntry {

@@ -7,7 +7,7 @@ import { historyApi } from '@/api/history'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { smsGenerationApi } from '@/api/smsGeneration'
 import type { BusinessSummary, ScrapedRecord, BulkStatusEntry } from '@/types/emailGeneration'
-import type { SmsBulkStatusEntry } from '@/types/smsGeneration'
+import type { SmsBulkStatusEntry, SMSDraft } from '@/types/smsGeneration'
 import type { ScrapingHistoryItem } from '@/types/history'
 import { EmailGenerationHeader } from '@/components/email-generation/EmailGenerationHeader'
 import { RecordsTable } from '@/components/email-generation/RecordsTable'
@@ -437,15 +437,36 @@ export default function EmailGenerationPage() {
     }))
     
     try {
-      const res = await smsGenerationApi.generateSmsDraft(record.contactId, record.generatedSummary.id)
+      if (!client?.id) throw new Error('Missing client id')
+      const res = await smsGenerationApi.generateSmsDraft(
+        record.contactId, 
+        record.generatedSummary.id,
+        client.id  // Use client.id like email does with clientEmailId
+      )
       
       console.log('SMS generation response:', res)
       
-      if (res.success && res.data) {
-        const smsDraftId = res.data.id
-        const smsDraft = res.data
+      // Backend returns: { contactId, summaryId, smsDraftId, success }
+      // The ApiClient wraps it, so we need to check both the response structure
+      if (res.success) {
+        // Check if response has smsDraftId in data or directly
+        type SmsGenerationData = { smsDraftId?: number; id?: number; clientSmsId?: number; status?: string } | SMSDraft | undefined
+        const data = res.data as SmsGenerationData
+        const smsDraftId = (data && typeof data === 'object' && 'smsDraftId' in data ? data.smsDraftId : undefined) || 
+                          (data && typeof data === 'object' && 'id' in data ? data.id : undefined) || 
+                          (data && 'id' in data ? (data as SMSDraft).id : undefined)
+        const extractedClientSmsId = (data && typeof data === 'object' && 'clientSmsId' in data ? data.clientSmsId : undefined) || 
+                                     (data && 'clientSms' in data ? (data as SMSDraft).clientSms?.id : undefined)
+        
+        // Store clientSmsId in localStorage if we have it
+        if (extractedClientSmsId) {
+          localStorage.setItem('clientSmsId', extractedClientSmsId.toString())
+        }
         
         if (smsDraftId) {
+          const status = (data && typeof data === 'object' && 'status' in data ? data.status : undefined) || 
+                       (data && 'status' in data ? (data as SMSDraft).status : undefined) || 
+                       'draft'
           setState(prev => ({
             ...prev,
             scrapedRecords: prev.scrapedRecords.map(r => 
@@ -453,7 +474,7 @@ export default function EmailGenerationPage() {
                 ? { 
                     ...r, 
                     smsDraftId: smsDraftId,
-                    smsStatus: smsDraft.status || 'draft',
+                    smsStatus: status,
                     hasSMSDraft: true,
                     isGeneratingSMS: false 
                   } 
@@ -461,7 +482,9 @@ export default function EmailGenerationPage() {
             )
           }))
         } else {
-          console.warn('SMS generated but no ID returned:', res.data)
+          // Response might be in the format returned directly from backend
+          // Try accessing properties directly from data
+          console.warn('Unexpected response structure:', res.data)
           setState(prev => ({
             ...prev,
             scrapedRecords: prev.scrapedRecords.map(r => 
@@ -881,6 +904,11 @@ export default function EmailGenerationPage() {
       const res = await smsGenerationApi.getSmsDraft(draftId)
       if (res.success && res.data) {
         const smsDraft = res.data
+        
+        // Store clientSmsId from the draft if available
+        if (smsDraft.clientSms?.id) {
+          localStorage.setItem('clientSmsId', smsDraft.clientSms.id.toString())
+        }
         
         // Don't update smsStatus when just viewing - preserve existing status
         // Status should only be updated when SMS is actually sent (in handleSendSMS)

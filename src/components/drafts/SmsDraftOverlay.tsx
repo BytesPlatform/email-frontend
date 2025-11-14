@@ -242,13 +242,11 @@ export function SmsDraftOverlay({
                     </span>
                   )}
                   <span className={`text-xs ml-auto ${
-                    isEditMode && characterCount > 160 
+                    isEditMode && characterCount > 200
                       ? 'text-red-500 font-semibold' 
-                      : isEditMode && characterCount > 140 
-                      ? 'text-orange-500' 
                       : 'text-gray-500'
                   }`}>
-                    {isEditMode ? characterCount : (smsDraft.characterCount ?? 0)} / 160 characters
+                    {isEditMode ? characterCount : (smsDraft.characterCount ?? 0)} / 200 characters
                   </span>
                 </div>
               </div>
@@ -261,8 +259,8 @@ export function SmsDraftOverlay({
                       value={editedMessage}
                       onChange={(e) => setEditedMessage(e.target.value)}
                       className="w-full min-h-[200px] text-sm text-gray-900 outline-none resize-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-3 leading-relaxed"
-                      placeholder="Enter your SMS message..."
-                      maxLength={160}
+                      placeholder="Enter your SMS message (max 200 characters)..."
+                      maxLength={200}
                       autoFocus
                       rows={8}
                     />
@@ -287,9 +285,9 @@ export function SmsDraftOverlay({
                           variant="primary"
                           size="sm"
                           onClick={handleSave}
-                          disabled={isSaving || !editedMessage.trim()}
+                          disabled={isSaving || !editedMessage.trim() || characterCount > 200}
                           isLoading={isSaving}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Save
                         </Button>

@@ -1,36 +1,66 @@
 import { apiClient, ApiResponse } from './ApiClient'
-import { SMSDraft, SMSGenerationResponse, SmsBulkStatusEntry } from '@/types/smsGeneration'
+import { SMSDraft, SMSGenerationResult, SmsBulkStatusEntry } from '@/types/smsGeneration'
 
 export const smsGenerationApi = {
   /**
    * Generate SMS draft based on business summary
-   * POST /sms/generate/:contactId/:summaryId
+   * POST /sms/generation/generate
+   * @param contactId - The contact ID
+   * @param summaryId - The summary ID
+   * @param clientSmsId - The client SMS template ID (required)
    */
-  async generateSmsDraft(contactId: number, summaryId: number): Promise<ApiResponse<SMSDraft>> {
+  async generateSmsDraft(contactId: number, summaryId: number, clientSmsId: number): Promise<ApiResponse<SMSDraft>> {
     try {
-      console.log(`Calling SMS API: /sms/generate/${contactId}/${summaryId} (120s timeout)`)
-      const response = await apiClient.post<SMSGenerationResponse>(
-        `/sms/generate/${contactId}/${summaryId}`,
-        undefined,
+      const requestBody = {
+        contactId,
+        summaryId,
+        clientSmsId,
+      }
+      
+      console.log(`Calling SMS API: /sms/generation/generate with`, requestBody, '(120s timeout)')
+      const response = await apiClient.post<SMSGenerationResult>(
+        '/sms/generation/generate',
+        requestBody,
         120000 // 120 seconds (2 minutes) for AI processing
       )
       console.log(`SMS generation API response:`, response)
       
-      // Backend returns: { success: true, message, data: { success, smsDraft, message, characterCount } }
-      // We need to extract the smsDraft from the nested data
+      // Backend returns: { success: true, data: { contactId, summaryId, smsDraftId, success, error? } }
+      // ApiClient unwraps it: response.data = { contactId, summaryId, smsDraftId, success, error? }
       if (response.success && response.data) {
-        const data = response.data as SMSGenerationResponse
-        if (data.smsDraft) {
+        const result = response.data as SMSGenerationResult
+        
+        if (result.success && result.smsDraftId > 0) {
+          // Fetch the full draft object using the draft ID
+          const draftResponse = await this.getSmsDraft(result.smsDraftId)
+          
+          if (draftResponse.success && draftResponse.data) {
+            console.log(`✅ SMS draft generated successfully with ID: ${result.smsDraftId}`)
+            return draftResponse
+          } else {
+            // If we can't fetch the draft, return a minimal response with the ID
+            return {
+              success: true,
+              data: {
+                id: result.smsDraftId,
+                contactId: result.contactId,
+                summaryId: result.summaryId,
+                status: 'draft',
+              } as SMSDraft
+            }
+          }
+        } else {
+          // Generation failed
           return {
-            success: true,
-            data: data.smsDraft
-          } as ApiResponse<SMSDraft>
+            success: false,
+            error: result.error || 'Failed to generate SMS draft'
+          }
         }
       }
       
       return {
         success: false,
-        error: 'Failed to generate SMS draft - no draft returned'
+        error: response.error || 'Failed to generate SMS draft - no response data'
       }
     } catch (error) {
       console.error('Error generating SMS draft:', error)
@@ -40,11 +70,11 @@ export const smsGenerationApi = {
 
   /**
    * Get a specific SMS draft by ID
-   * GET /sms/draft/:smsDraftId
+   * GET /sms/generation/drafts/:id
    */
   async getSmsDraft(draftId: number): Promise<ApiResponse<SMSDraft>> {
     try {
-      return await apiClient.get<SMSDraft>(`/sms/draft/${draftId}`)
+      return await apiClient.get<SMSDraft>(`/sms/generation/drafts/${draftId}`)
     } catch (error) {
       console.error('Error fetching SMS draft:', error)
       throw error
@@ -105,12 +135,38 @@ export const smsGenerationApi = {
 
   /**
    * Send an SMS draft
-   * POST /sms/send-draft/:smsDraftId
+   * POST /sms/send-draft
+   * Body: { draftId: number }
    */
-  async sendSmsDraft(draftId: number, to?: string): Promise<ApiResponse<{ success: boolean; message?: string }>> {
+  async sendSmsDraft(draftId: number): Promise<ApiResponse<{ success: boolean; smsLogId: number; messageSid: string; message: string }>> {
     try {
-      const body = to ? { to } : undefined
-      return await apiClient.post<{ success: boolean; message?: string }>(`/sms/send-draft/${draftId}`, body)
+      const response = await apiClient.post<{ success: boolean; smsLogId: number; messageSid: string; message: string }>(
+        '/sms/send-draft',
+        { draftId }
+      )
+      
+      // Backend returns: { message: 'SMS send initiated', success: true, data: { success, smsLogId, messageSid, message } }
+      if (response.success && response.data) {
+        // Check if data is nested (response.data.data) or direct
+        type SendResponse = { success: boolean; smsLogId: number; messageSid: string; message: string }
+        type NestedResponse = { data: SendResponse }
+        const data = response.data as SendResponse | NestedResponse
+        if ('data' in data && typeof data.data === 'object' && 'smsLogId' in data.data) {
+          // Nested structure: response.data.data
+          return {
+            success: true,
+            data: data.data
+          }
+        } else if ('smsLogId' in data) {
+          // Direct structure: response.data
+          return {
+            success: true,
+            data: data as SendResponse
+          }
+        }
+      }
+      
+      return response
     } catch (error) {
       console.error('Error sending SMS draft:', error)
       throw error
@@ -119,11 +175,11 @@ export const smsGenerationApi = {
 
   /**
    * Update an SMS draft
-   * PATCH /sms/draft/:smsDraftId
+   * PUT /sms/generation/drafts/:id
    */
   async updateSmsDraft(draftId: number, updates: { messageText?: string }): Promise<ApiResponse<SMSDraft>> {
     try {
-      return await apiClient.patch<SMSDraft>(`/sms/draft/${draftId}`, updates)
+      return await apiClient.put<SMSDraft>(`/sms/generation/drafts/${draftId}`, updates)
     } catch (error) {
       console.error('Error updating SMS draft:', error)
       throw error
@@ -131,22 +187,15 @@ export const smsGenerationApi = {
   },
 
   /**
-   * Get all SMS drafts for the current client
-   * GET /sms/drafts
+   * Get all SMS drafts for a specific client SMS
+   * GET /sms/client-sms/:clientSmsId/drafts
    */
-  async getAllSmsDrafts(): Promise<ApiResponse<SMSDraft[]>> {
+  async getClientSmsDrafts(clientSmsId: number): Promise<ApiResponse<SMSDraft[]>> {
     try {
-      interface GetAllSmsDraftsResponse {
-        message?: string
-        success?: boolean
-        count?: number
-        data?: SMSDraft[]
-      }
-      const res = await apiClient.get<GetAllSmsDraftsResponse>(`/sms/drafts`)
+      const res = await apiClient.get<SMSDraft[]>(`/sms/generation/client-sms/${clientSmsId}/drafts`)
       
-      console.log(`[SMS API] Response for getAllSmsDrafts:`, res)
+      console.log(`[SMS API] Response for getClientSmsDrafts (clientSmsId: ${clientSmsId}):`, res)
       
-      // Backend returns: { message, success, count, data: [...] }
       if (res.success && res.data) {
         // Check if res.data is already an array (unwrapped by ApiClient)
         if (Array.isArray(res.data)) {
@@ -157,13 +206,10 @@ export const smsGenerationApi = {
           }
         }
         
-        // Otherwise, check if it's wrapped in the response structure
-        const data = res.data as GetAllSmsDraftsResponse
-        const drafts = data.data && Array.isArray(data.data) ? data.data : []
-        console.log(`[SMS API] Extracted ${drafts.length} drafts (from wrapped data)`)
+        // Otherwise, return empty array
         return {
           success: true,
-          data: drafts
+          data: []
         } as ApiResponse<SMSDraft[]>
       }
       
@@ -174,7 +220,7 @@ export const smsGenerationApi = {
         data: []
       }
     } catch (error) {
-      console.error('Error fetching all SMS drafts:', error)
+      console.error('Error fetching client SMS drafts:', error)
       throw error
     }
   },

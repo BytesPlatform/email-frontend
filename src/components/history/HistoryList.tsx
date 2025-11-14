@@ -38,7 +38,6 @@ export function HistoryList({
       <div className="bg-white rounded-lg border border-gray-200">
         {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="flex items-center gap-4 p-3 border-b border-gray-100 animate-pulse">
-            <div className="h-5 w-5 bg-gray-200 rounded"></div>
             <div className="h-8 w-8 bg-gray-200 rounded-full"></div>
             <div className="flex-1">
               <div className="h-4 bg-gray-200 rounded w-1/4 mb-2"></div>
@@ -52,11 +51,8 @@ export function HistoryList({
 
   if (historyItems.length === 0) {
     return (
-      <div className="bg-white h-full flex flex-col">
-        <div className="flex items-center gap-4 px-6 py-2 border-b border-gray-200 bg-gray-50 flex-shrink-0">
-          <span className="text-sm text-gray-600">Select all</span>
-        </div>
-        <div className="flex-1 flex flex-col items-center justify-center py-16 px-4">
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+        <div className="flex flex-col items-center justify-center py-16 px-4">
           <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
             <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -77,9 +73,6 @@ export function HistoryList({
       </div>
     )
   }
-
-  const allSelected = historyItems.length > 0 && historyItems.every(item => selectedIds.has(item.id))
-  const someSelected = historyItems.some(item => selectedIds.has(item.id))
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -156,7 +149,7 @@ export function HistoryList({
       )
     }
     if (status === 'sent') {
-      return (
+    return (
         <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
           Sent
         </span>
@@ -175,37 +168,17 @@ export function HistoryList({
   }, {} as Record<number, HistoryItem[]>)
 
   return (
-    <div className="bg-white h-full flex flex-col">
-      {/* Select All Checkbox */}
-      <div className="flex items-center gap-4 px-6 py-2 border-b border-gray-200 bg-gray-50 flex-shrink-0">
-        <label className="flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            checked={allSelected}
-            ref={(input) => {
-              if (input) input.indeterminate = someSelected && !allSelected
-            }}
-            onChange={(e) => onSelectAll(e.target.checked)}
-            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
-          />
-        </label>
-        <span className="text-sm text-gray-600">
-          {selectedIds.size > 0 
-            ? `${selectedIds.size} selected` 
-            : 'Select all'}
-        </span>
-      </div>
-
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
       {/* History List - Grouped by Contact */}
-      <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+      <div className="divide-y divide-gray-100">
         {Object.entries(groupedByContact).map(([contactId, items]) => {
           const contactName = items[0].contactName
           
-          return (
+            return (
             <div key={contactId} className="bg-blue-50/20">
               {/* Contact Header (if multiple items for same contact) */}
               {items.length > 1 && (
-                <div className="px-6 py-2 bg-blue-50/50 border-b border-blue-100">
+                <div className="px-4 py-2 bg-blue-50/50 border-b border-blue-100">
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                       <span className="text-white font-semibold text-xs">
@@ -224,39 +197,21 @@ export function HistoryList({
 
               {/* History Items for this Contact */}
               {items.map((item) => {
-                const isSelected = selectedIds.has(item.id)
-
                 return (
                   <div
                     key={item.id}
-                    className={`flex items-center gap-4 px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${
-                      isSelected ? 'bg-blue-50' : ''
-                    }`}
+                    className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors"
                     onClick={(e) => {
-                      if ((e.target as HTMLElement).closest('input[type="checkbox"]') ||
-                          (e.target as HTMLElement).closest('button')) {
+                      if ((e.target as HTMLElement).closest('button')) {
                         return
                       }
                       onView?.(item.id)
                     }}
                   >
-                    {/* Checkbox */}
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={(e) => {
-                          onSelect(item.id, e.target.checked)
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
-                      />
-                    </div>
-
                     {/* Type Icon */}
                     <div className={`h-10 w-10 flex items-center justify-center rounded-full ${getTypeColor(item.type)}`}>
                       {getTypeIcon(item.type)}
-                    </div>
+              </div>
 
                     {/* History Content */}
                     <div className="flex-1 min-w-0">
@@ -283,8 +238,8 @@ export function HistoryList({
                     {/* Date */}
                     <div className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0">
                       {formatDate(item.sentAt)}
-                    </div>
-
+                            </div>
+                            
                     {/* View Button */}
                     {onView && (
                       <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -304,15 +259,15 @@ export function HistoryList({
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
                         </button>
-                      </div>
-                    )}
+                        </div>
+                      )}
                   </div>
                 )
               })}
             </div>
           )
         })}
-      </div>
-    </div>
+            </div>
+          </div>
   )
 }
