@@ -12,6 +12,10 @@ export type HistoryItem = {
   message?: string
   sentAt: string
   status?: string
+  fromEmail?: string
+  fromPhone?: string
+  toEmail?: string
+  toPhone?: string
 }
 
 interface HistoryListProps {

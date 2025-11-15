@@ -224,7 +224,7 @@ export const smsGenerationApi = {
    * Update an SMS draft
    * PUT /sms/generation/drafts/:id
    */
-  async updateSmsDraft(draftId: number, updates: { messageText?: string }): Promise<ApiResponse<SMSDraft>> {
+  async updateSmsDraft(draftId: number, updates: { messageText?: string; clientSmsId?: number }): Promise<ApiResponse<SMSDraft>> {
     try {
       return await apiClient.put<SMSDraft>(`/sms/generation/drafts/${draftId}`, updates)
     } catch (error) {

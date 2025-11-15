@@ -110,7 +110,28 @@ class ApiClient {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+        
+        // Extract clean error message
+        let errorMessage = errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`
+        
+        // Clean up NestJS error format
+        if (typeof errorMessage === 'string') {
+          // Remove stack traces and verbose error details
+          const lines = errorMessage.split('\n')
+          if (lines.length > 1) {
+            // Take the first meaningful line
+            errorMessage = lines[0]
+          }
+          // Remove exception class names
+          errorMessage = errorMessage
+            .replace(/BadRequestException:\s*/g, '')
+            .replace(/NotFoundException:\s*/g, '')
+            .replace(/UnauthorizedException:\s*/g, '')
+            .replace(/ForbiddenException:\s*/g, '')
+            .trim()
+        }
+        
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()

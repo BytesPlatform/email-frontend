@@ -2,7 +2,10 @@
 
 import React, { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import type { SmsDraft } from './SmsDraftsList'
+import { clientAccountsApi, ClientSms } from '@/api/clientAccounts'
+import { smsGenerationApi } from '@/api/smsGeneration'
 
 interface SmsDraftOverlayProps {
   isOpen: boolean
@@ -44,13 +47,106 @@ export function SmsDraftOverlay({
   const [isEditMode, setIsEditMode] = useState(false)
   const [editedMessage, setEditedMessage] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [availablePhones, setAvailablePhones] = useState<ClientSms[]>([])
+  const [selectedFromPhone, setSelectedFromPhone] = useState<number | null>(null)
+  const [isLoadingPhones, setIsLoadingPhones] = useState(false)
+  const [isUpdatingFromPhone, setIsUpdatingFromPhone] = useState(false)
+  const [isPhoneDropdownOpen, setIsPhoneDropdownOpen] = useState(false)
+  const [errorDialog, setErrorDialog] = useState<{ isOpen: boolean; message: string }>({
+    isOpen: false,
+    message: '',
+  })
 
-  // Initialize edited message when draft changes or edit mode is enabled
+  // Load available client phone numbers
+  useEffect(() => {
+    if (isOpen) {
+      loadAvailablePhones()
+    }
+  }, [isOpen])
+
+  // Initialize edited message and selected phone when draft changes
   useEffect(() => {
     if (smsDraft) {
       setEditedMessage(smsDraft.message || '')
+      // Find the selected phone ID based on fromPhone or clientSms
+      if (smsDraft.clientSms?.id && availablePhones.length > 0) {
+        const matchingPhone = availablePhones.find(p => p.id === smsDraft.clientSms?.id)
+        setSelectedFromPhone(matchingPhone?.id || null)
+      } else if (smsDraft.clientSms?.id) {
+        setSelectedFromPhone(smsDraft.clientSms.id)
+      }
     }
-  }, [smsDraft])
+  }, [smsDraft, availablePhones])
+
+  const loadAvailablePhones = async () => {
+    setIsLoadingPhones(true)
+    try {
+      const response = await clientAccountsApi.getClientSms()
+      if (response.success && response.data) {
+        setAvailablePhones(response.data)
+      }
+    } catch (error) {
+      console.error('Error loading available phone numbers:', error)
+    } finally {
+      setIsLoadingPhones(false)
+    }
+  }
+
+  const handleFromPhoneChange = async (clientSmsId: number) => {
+    if (!smsDraft || selectedFromPhone === clientSmsId) {
+      setIsPhoneDropdownOpen(false)
+      return
+    }
+
+    setIsUpdatingFromPhone(true)
+    setIsPhoneDropdownOpen(false)
+    try {
+      const response = await smsGenerationApi.updateSmsDraft(smsDraft.id, {
+        clientSmsId,
+      })
+      
+      if (response.success && response.data) {
+        setSelectedFromPhone(clientSmsId)
+      } else {
+        setErrorDialog({
+          isOpen: true,
+          message: response.error || 'Failed to update from phone number',
+        })
+      }
+    } catch (error) {
+      console.error('Error updating from phone number:', error)
+      let errorMessage = 'Failed to update from phone number'
+      if (error instanceof Error) {
+        errorMessage = error.message
+        // Clean up common error patterns
+        if (errorMessage.includes('BadRequestException')) {
+          errorMessage = errorMessage.replace(/BadRequestException:\s*/g, '')
+          errorMessage = errorMessage.split('\n')[0]
+        }
+      }
+      setErrorDialog({
+        isOpen: true,
+        message: errorMessage,
+      })
+    } finally {
+      setIsUpdatingFromPhone(false)
+    }
+  }
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!isPhoneDropdownOpen) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('.phone-dropdown-container')) {
+        setIsPhoneDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isPhoneDropdownOpen])
 
   // Reset edit mode when overlay closes
   useEffect(() => {
@@ -125,15 +221,15 @@ export function SmsDraftOverlay({
           : 'w-[600px] h-[600px]'
       }`}>
         {/* Title Bar - Dark Grey like Gmail */}
-        <div className="flex items-center justify-between px-4 py-2 bg-gray-700 text-white rounded-t-lg flex-shrink-0">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 text-white rounded-t-lg flex-shrink-0">
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
             {/* Navigation Controls */}
             {(hasPrevious || hasNext) && (
-              <div className="flex items-center gap-1 flex-shrink-0">
+              <div className="flex items-center gap-0.5 flex-shrink-0">
                 <button
                   onClick={onPrevious}
                   disabled={!hasPrevious}
-                  className="p-1.5 hover:bg-gray-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Previous"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -143,7 +239,7 @@ export function SmsDraftOverlay({
                 <button
                   onClick={onNext}
                   disabled={!hasNext}
-                  className="p-1.5 hover:bg-gray-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Next"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -154,7 +250,7 @@ export function SmsDraftOverlay({
             )}
             {/* Draft Counter */}
             {currentIndex !== undefined && totalCount !== undefined && (
-              <span className="text-xs text-gray-300 flex-shrink-0">
+              <span className="text-xs text-gray-300 flex-shrink-0 font-normal">
                 {currentIndex + 1} of {totalCount}
               </span>
             )}
@@ -166,7 +262,7 @@ export function SmsDraftOverlay({
           <div className="flex items-center gap-1 flex-shrink-0">
             {/* Unselect Checkbox */}
             {onToggleSelect && (
-              <label className="flex items-center gap-2 cursor-pointer hover:bg-gray-600 rounded px-2 py-1 transition-colors">
+              <label className="flex items-center gap-2 cursor-pointer hover:bg-gray-700 rounded px-2 py-1 transition-colors">
                 <input
                   type="checkbox"
                   checked={isSelected}
@@ -179,7 +275,7 @@ export function SmsDraftOverlay({
             )}
             <button
               onClick={() => setIsMinimized(!isMinimized)}
-              className="p-1.5 hover:bg-gray-600 rounded transition-colors"
+              className="p-1.5 hover:bg-gray-700 rounded transition-colors"
               title="Minimize"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -188,7 +284,7 @@ export function SmsDraftOverlay({
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-gray-600 rounded transition-colors"
+              className="p-1.5 hover:bg-gray-700 rounded transition-colors"
               title="Close"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -202,8 +298,64 @@ export function SmsDraftOverlay({
           <>
             {/* Content Area */}
             <div className="flex-1 flex flex-col overflow-hidden bg-white">
+              {/* From Field - Clean Gmail Style with Dropdown */}
+              <div className="px-6 py-3 border-b border-gray-200">
+                <div className="flex items-center">
+                  <span className="text-sm text-gray-500 font-normal mr-3 min-w-[60px]">From</span>
+                  <div className="flex-1 flex items-center gap-2">
+                    {isLoadingPhones ? (
+                      <div className="text-sm text-gray-500">Loading phone numbers...</div>
+                    ) : availablePhones.length === 0 ? (
+                      <div className="text-sm text-gray-500">No phone numbers available. Add phone numbers on the dashboard.</div>
+                    ) : (
+                      <>
+                        <div className="flex-1 relative phone-dropdown-container">
+                          <button
+                            type="button"
+                            onClick={() => !isUpdatingFromPhone && smsDraft.status !== 'sent' && setIsPhoneDropdownOpen(!isPhoneDropdownOpen)}
+                            disabled={isUpdatingFromPhone || smsDraft.status === 'sent'}
+                            className="flex-1 text-sm text-gray-900 outline-none bg-transparent border-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:text-indigo-600 transition-colors focus:text-indigo-600 text-left flex items-center justify-between w-full"
+                          >
+                            <span className="truncate">
+                              {availablePhones.find(p => p.id === selectedFromPhone)?.phoneNumber || 'Select phone number'}
+                            </span>
+                            <svg
+                              className={`w-4 h-4 text-gray-500 ml-2 flex-shrink-0 transition-transform ${isPhoneDropdownOpen ? 'rotate-180' : ''}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          {isPhoneDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                              {availablePhones.map((phone) => (
+                                <button
+                                  key={phone.id}
+                                  type="button"
+                                  onClick={() => handleFromPhoneChange(phone.id)}
+                                  className={`w-full text-left px-4 py-3 text-sm text-gray-900 hover:bg-indigo-50 transition-colors ${
+                                    selectedFromPhone === phone.id ? 'bg-indigo-50 text-indigo-700 font-medium' : ''
+                                  } first:rounded-t-lg last:rounded-b-lg`}
+                                >
+                                  {phone.phoneNumber}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {isUpdatingFromPhone && (
+                          <span className="text-xs text-gray-500 whitespace-nowrap">Updating...</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* To Field - Clean Gmail Style */}
-              <div className="px-4 py-3 border-b border-gray-200">
+              <div className="px-6 py-3 border-b border-gray-200">
                 <div className="flex items-center">
                   <span className="text-sm text-gray-500 font-normal mr-3 min-w-[60px]">To</span>
                   <div className="flex-1">
@@ -224,7 +376,7 @@ export function SmsDraftOverlay({
               </div>
 
               {/* Status Badge */}
-              <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
+              <div className="px-6 py-2 border-b border-gray-200 bg-gray-50">
                 <div className="flex items-center gap-2">
                   {smsDraft.status === 'sent' && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
@@ -254,7 +406,7 @@ export function SmsDraftOverlay({
               {/* SMS Body - Large Clean Area */}
               <div className="flex-1 overflow-hidden flex flex-col">
                 {isEditMode ? (
-                  <div className="flex-1 px-4 py-4 overflow-y-auto">
+                  <div className="flex-1 px-6 py-5 overflow-y-auto">
                     <textarea
                       value={editedMessage}
                       onChange={(e) => setEditedMessage(e.target.value)}
@@ -266,7 +418,7 @@ export function SmsDraftOverlay({
                     />
                   </div>
                 ) : (
-                  <div className="flex-1 overflow-y-auto px-4 py-4">
+                  <div className="flex-1 overflow-y-auto px-6 py-5">
                     <div className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed min-h-full">
                       {smsDraft.message || ''}
                     </div>
@@ -275,10 +427,10 @@ export function SmsDraftOverlay({
               </div>
 
               {/* Simplified Bottom Toolbar */}
-              <div className="border-t border-gray-200 bg-white px-4 py-3">
-                <div className="flex items-center justify-between">
+              <div className="border-t border-gray-200 bg-white px-6 py-3">
+                <div className="grid grid-cols-3 items-center">
                   {/* Left: Action Buttons */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 justify-start">
                     {isEditMode ? (
                       <>
                         <Button
@@ -326,37 +478,38 @@ export function SmsDraftOverlay({
                     )}
                   </div>
 
-                  {/* Center: Navigation */}
-                  {!isEditMode && (
-                    <div className="flex items-center gap-2">
-                      {onPrevious && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={onPrevious}
-                          disabled={!hasPrevious}
-                          className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          Previous
-                        </Button>
-                      )}
-                      {onNext && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={onNext}
-                          disabled={!hasNext}
-                          className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          Next
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  {isEditMode && <div className="flex-1" />}
+                  {/* Center: Navigation - Always Centered */}
+                  <div className="flex items-center justify-center gap-2">
+                    {!isEditMode && (
+                      <>
+                        {onPrevious && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onPrevious}
+                            disabled={!hasPrevious}
+                            className="text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-1.5 text-sm font-normal"
+                          >
+                            Previous
+                          </Button>
+                        )}
+                        {onNext && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onNext}
+                            disabled={!hasNext}
+                            className="text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-1.5 text-sm font-normal"
+                          >
+                            Next
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
 
-                  {/* Right: Send All (if on last item) or Close button */}
-                  <div className="flex items-center gap-2">
+                  {/* Right: Send All (if on last item) */}
+                  <div className="flex items-center gap-2 justify-end">
                     {!isEditMode && onSendAll && !hasNext && currentIndex !== undefined && totalCount !== undefined && totalCount > 0 && (
                       <Button
                         variant="primary"
@@ -367,17 +520,6 @@ export function SmsDraftOverlay({
                         Send All ({selectedCount !== undefined ? selectedCount : totalCount})
                       </Button>
                     )}
-                    {!isEditMode && (
-                      <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-gray-100 rounded transition-colors"
-                        title="Close"
-                      >
-                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>
@@ -385,6 +527,18 @@ export function SmsDraftOverlay({
           </>
         )}
       </div>
+
+      {/* Error Dialog */}
+      <ConfirmDialog
+        isOpen={errorDialog.isOpen}
+        title="Error"
+        message={errorDialog.message}
+        confirmText="OK"
+        cancelText=""
+        variant="danger"
+        onConfirm={() => setErrorDialog({ isOpen: false, message: '' })}
+        onCancel={() => setErrorDialog({ isOpen: false, message: '' })}
+      />
     </div>
   )
 }

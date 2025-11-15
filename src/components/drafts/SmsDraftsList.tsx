@@ -12,6 +12,14 @@ export interface SmsDraft {
   status: 'draft' | 'sent' | 'delivered'
   createdAt: string
   characterCount?: number
+  clientSms?: {
+    id: number
+    phoneNumber?: string
+    status?: string
+    currentCounter?: number
+    totalCounter?: number
+    limit?: number | null
+  }
 }
 
 interface SmsDraftsListProps {

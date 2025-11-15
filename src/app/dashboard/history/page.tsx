@@ -38,6 +38,8 @@ export default function HistoryPage() {
       message: log.smsDraft?.messageText || '',
       sentAt: typeof log.sentAt === 'string' ? log.sentAt : log.sentAt.toISOString(),
       status: log.status,
+      fromPhone: log.clientSms?.phoneNumber || undefined,
+      toPhone: log.contact?.phone || undefined,
     }
   }
 
@@ -56,6 +58,8 @@ export default function HistoryPage() {
       message: log.emailDraft?.bodyText || '',
       sentAt: typeof log.sentAt === 'string' ? log.sentAt : log.sentAt.toISOString(),
       status: log.status,
+      fromEmail: log.emailDraft?.clientEmail?.emailAddress || undefined,
+      toEmail: log.contact?.email || undefined,
     }
   }
 
@@ -216,6 +220,42 @@ export default function HistoryPage() {
       setSelectedItem(item)
       setIsDetailOpen(true)
     }
+  }
+
+  // Navigation handlers for history overlay
+  const handleNextHistory = () => {
+    if (!selectedItem) return
+    const currentIndex = dateFilteredItems.findIndex(item => item.id === selectedItem.id)
+    if (currentIndex >= 0 && currentIndex < dateFilteredItems.length - 1) {
+      const nextItem = dateFilteredItems[currentIndex + 1]
+      setSelectedItem(nextItem)
+    }
+  }
+
+  const handlePreviousHistory = () => {
+    if (!selectedItem) return
+    const currentIndex = dateFilteredItems.findIndex(item => item.id === selectedItem.id)
+    if (currentIndex > 0) {
+      const prevItem = dateFilteredItems[currentIndex - 1]
+      setSelectedItem(prevItem)
+    }
+  }
+
+  const getCurrentHistoryIndex = () => {
+    if (!selectedItem) return undefined
+    return dateFilteredItems.findIndex(item => item.id === selectedItem.id)
+  }
+
+  const hasNextHistory = () => {
+    if (!selectedItem) return false
+    const currentIndex = dateFilteredItems.findIndex(item => item.id === selectedItem.id)
+    return currentIndex >= 0 && currentIndex < dateFilteredItems.length - 1
+  }
+
+  const hasPreviousHistory = () => {
+    if (!selectedItem) return false
+    const currentIndex = dateFilteredItems.findIndex(item => item.id === selectedItem.id)
+    return currentIndex > 0
   }
 
   const handleResubscribe = async (contactId: number) => {
@@ -392,6 +432,12 @@ export default function HistoryPage() {
           selectedItem?.contactId !== undefined &&
           resubscribingContactId === selectedItem.contactId
         }
+        onNext={handleNextHistory}
+        onPrevious={handlePreviousHistory}
+        hasNext={hasNextHistory()}
+        hasPrevious={hasPreviousHistory()}
+        currentIndex={getCurrentHistoryIndex()}
+        totalCount={dateFilteredItems.length}
       />
     </AuthGuard>
   )

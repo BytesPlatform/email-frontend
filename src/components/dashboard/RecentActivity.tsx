@@ -133,7 +133,7 @@ export function RecentActivity() {
               <div key={event.id} className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${EVENT_ACCENTS[event.type]}`}
+                    className={`inline-flex items-center justify-center rounded-full px-2.5 py-1 text-xs font-semibold min-w-[90px] ${EVENT_ACCENTS[event.type]}`}
                   >
                     {EVENT_LABELS[event.type]}
                   </span>
