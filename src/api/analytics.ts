@@ -42,4 +42,47 @@ export const sendgridAnalyticsApi = {
   },
 }
 
+export interface DashboardStats {
+  csvUploads: {
+    value: string
+    change: string
+  }
+  scrapingJobs: {
+    value: string
+    change: string
+  }
+  totalRecords: {
+    value: string
+    change: string
+  }
+  successRate: {
+    value: string
+    change: string
+  }
+}
+
+export const dashboardApi = {
+  async getDashboardStats(): Promise<ApiResponse<DashboardStats>> {
+    try {
+      const response = await apiClient.get<{ stats: DashboardStats }>('/analytics/dashboard/stats')
+      // The API returns { stats: DashboardStats }, but we want to return DashboardStats directly
+      if (response.success && response.data && 'stats' in response.data) {
+        return {
+          success: true,
+          data: response.data.stats
+        }
+      }
+      return {
+        success: false,
+        error: 'Invalid response format from dashboard stats API'
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch dashboard stats'
+      }
+    }
+  },
+}
+
 

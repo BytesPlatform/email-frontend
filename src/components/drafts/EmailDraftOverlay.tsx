@@ -2,7 +2,11 @@
 
 import React, { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import type { EmailDraft as ComponentEmailDraft } from './EmailDraftsList'
+import { ingestionApi } from '@/api/ingestion'
+import { clientAccountsApi, ClientEmail } from '@/api/clientAccounts'
+import { emailGenerationApi } from '@/api/emailGeneration'
 
 interface EmailDraftOverlayProps {
   isOpen: boolean
@@ -54,19 +58,112 @@ export function EmailDraftOverlay({
 }: EmailDraftOverlayProps) {
   const [isMinimized, setIsMinimized] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
-  const [showCcBcc, setShowCcBcc] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [editedSubject, setEditedSubject] = useState('')
   const [editedBody, setEditedBody] = useState('')
+  const [editedEmail, setEditedEmail] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [isSavingEmail, setIsSavingEmail] = useState(false)
+  const [availableEmails, setAvailableEmails] = useState<ClientEmail[]>([])
+  const [selectedFromEmail, setSelectedFromEmail] = useState<number | null>(null)
+  const [isLoadingEmails, setIsLoadingEmails] = useState(false)
+  const [isUpdatingFromEmail, setIsUpdatingFromEmail] = useState(false)
+  const [isEmailDropdownOpen, setIsEmailDropdownOpen] = useState(false)
+  const [errorDialog, setErrorDialog] = useState<{ isOpen: boolean; message: string }>({
+    isOpen: false,
+    message: '',
+  })
+
+  // Load available client emails
+  useEffect(() => {
+    if (isOpen) {
+      loadAvailableEmails()
+    }
+  }, [isOpen])
 
   // Initialize edited content when draft changes or edit mode is enabled
   useEffect(() => {
     if (emailDraft) {
       setEditedSubject(emailDraft.subject || '')
       setEditedBody(emailDraft.body || '')
+      setEditedEmail(emailDraft.contactEmail || '')
+      // Find the selected email ID based on fromEmail
+      if (emailDraft.fromEmail && availableEmails.length > 0) {
+        const matchingEmail = availableEmails.find(e => e.emailAddress === emailDraft.fromEmail)
+        setSelectedFromEmail(matchingEmail?.id || null)
+      }
     }
-  }, [emailDraft])
+  }, [emailDraft, availableEmails])
+
+  const loadAvailableEmails = async () => {
+    setIsLoadingEmails(true)
+    try {
+      const response = await clientAccountsApi.getClientEmails()
+      if (response.success && response.data) {
+        setAvailableEmails(response.data)
+      }
+    } catch (error) {
+      console.error('Error loading available emails:', error)
+    } finally {
+      setIsLoadingEmails(false)
+    }
+  }
+
+  const handleFromEmailChange = async (clientEmailId: number) => {
+    if (!emailDraft || selectedFromEmail === clientEmailId) {
+      setIsEmailDropdownOpen(false)
+      return
+    }
+
+    setIsUpdatingFromEmail(true)
+    setIsEmailDropdownOpen(false)
+    try {
+      const response = await emailGenerationApi.updateEmailDraft(emailDraft.id, {
+        clientEmailId,
+      })
+      
+      if (response.success && response.data) {
+        setSelectedFromEmail(clientEmailId)
+      } else {
+        setErrorDialog({
+          isOpen: true,
+          message: response.error || 'Failed to update from email',
+        })
+      }
+    } catch (error) {
+      console.error('Error updating from email:', error)
+      let errorMessage = 'Failed to update from email'
+      if (error instanceof Error) {
+        errorMessage = error.message
+        // Clean up common error patterns
+        if (errorMessage.includes('BadRequestException')) {
+          errorMessage = errorMessage.replace(/BadRequestException:\s*/g, '')
+          errorMessage = errorMessage.split('\n')[0]
+        }
+      }
+      setErrorDialog({
+        isOpen: true,
+        message: errorMessage,
+      })
+    } finally {
+      setIsUpdatingFromEmail(false)
+    }
+  }
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!isEmailDropdownOpen) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('.email-dropdown-container')) {
+        setIsEmailDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isEmailDropdownOpen])
 
   // Reset edit mode when overlay closes
   useEffect(() => {
@@ -117,8 +214,51 @@ export function EmailDraftOverlay({
     if (emailDraft) {
       setEditedSubject(emailDraft.subject || '')
       setEditedBody(emailDraft.body || '')
+      setEditedEmail(emailDraft.contactEmail || '')
     }
     setIsEditMode(false)
+  }
+
+  const handleSaveEmail = async () => {
+    if (!emailDraft || !emailDraft.contactId) return
+    
+    const trimmedEmail = editedEmail.trim()
+    if (!trimmedEmail) {
+      alert('Please enter a valid email address')
+      return
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(trimmedEmail)) {
+      alert('Please enter a valid email address')
+      return
+    }
+
+    // If email hasn't changed, no need to update
+    if (trimmedEmail === emailDraft.contactEmail) {
+      return
+    }
+
+    setIsSavingEmail(true)
+    try {
+      const response = await ingestionApi.updateContact(emailDraft.contactId, {
+        email: trimmedEmail
+      })
+      
+      if (response.success && response.data?.contact) {
+        // Update the local draft state - this will be reflected when parent component refreshes
+        // For now, we'll just show a success message
+        alert('Email address updated successfully')
+      } else {
+        alert('Failed to update email address: ' + (response.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Error updating contact email:', error)
+      alert('Failed to update email address: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsSavingEmail(false)
+    }
   }
 
   if (!isOpen || !emailDraft) return null
@@ -143,15 +283,15 @@ export function EmailDraftOverlay({
           : 'w-[600px] h-[600px]'
       }`}>
         {/* Title Bar - Dark Grey like Gmail */}
-        <div className="flex items-center justify-between px-4 py-2 bg-gray-700 text-white rounded-t-lg flex-shrink-0">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 text-white rounded-t-lg flex-shrink-0">
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
             {/* Navigation Controls */}
             {(hasPrevious || hasNext) && (
-              <div className="flex items-center gap-1 flex-shrink-0">
+              <div className="flex items-center gap-0.5 flex-shrink-0">
                 <button
                   onClick={onPrevious}
                   disabled={!hasPrevious}
-                  className="p-1.5 hover:bg-gray-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Previous"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,7 +301,7 @@ export function EmailDraftOverlay({
                 <button
                   onClick={onNext}
                   disabled={!hasNext}
-                  className="p-1.5 hover:bg-gray-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Next"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -172,19 +312,19 @@ export function EmailDraftOverlay({
             )}
             {/* Draft Counter */}
             {currentIndex !== undefined && totalCount !== undefined && (
-              <span className="text-xs text-gray-300 flex-shrink-0">
+              <span className="text-xs text-gray-300 flex-shrink-0 font-normal">
                 {currentIndex + 1} of {totalCount}
               </span>
             )}
-            {/* Subject */}
+            {/* Contact Name */}
             <h3 className="text-sm font-medium truncate flex-1 min-w-0">
-              {emailDraft.subject || 'New Message'}
+              {emailDraft.contactName || emailDraft.contactEmail || 'Unknown Contact'}
             </h3>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             {/* Unselect Checkbox */}
             {onToggleSelect && (
-              <label className="flex items-center gap-2 cursor-pointer hover:bg-gray-600 rounded px-2 py-1 transition-colors">
+              <label className="flex items-center gap-2 cursor-pointer hover:bg-gray-700 rounded px-2 py-1 transition-colors">
                 <input
                   type="checkbox"
                   checked={isSelected}
@@ -197,7 +337,7 @@ export function EmailDraftOverlay({
             )}
             <button
               onClick={() => setIsMinimized(!isMinimized)}
-              className="p-1.5 hover:bg-gray-600 rounded transition-colors"
+              className="p-1.5 hover:bg-gray-700 rounded transition-colors"
               title="Minimize"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -206,7 +346,7 @@ export function EmailDraftOverlay({
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-gray-600 rounded transition-colors"
+              className="p-1.5 hover:bg-gray-700 rounded transition-colors"
               title="Close"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -220,44 +360,79 @@ export function EmailDraftOverlay({
           <>
             {/* Content Area */}
             <div className="flex-1 flex flex-col overflow-hidden bg-white">
-              {/* From Field - Clean Gmail Style */}
-              <div className="px-4 py-3 border-b border-gray-200">
+              {/* From Field - Clean Gmail Style with Dropdown */}
+              <div className="px-6 py-3 border-b border-gray-200">
                 <div className="flex items-center">
                   <span className="text-sm text-gray-500 font-normal mr-3 min-w-[60px]">From</span>
-                  <div className="flex-1">
-                    <input
-                      type="email"
-                      value={emailDraft.fromEmail || ''}
-                      readOnly
-                      className="w-full text-sm text-gray-900 outline-none bg-transparent border-none"
-                      placeholder="Sender email"
-                    />
+                  <div className="flex-1 flex items-center gap-2">
+                    {isLoadingEmails ? (
+                      <div className="text-sm text-gray-500">Loading emails...</div>
+                    ) : availableEmails.length === 0 ? (
+                      <div className="text-sm text-gray-500">No emails available. Add emails on the dashboard.</div>
+                    ) : (
+                      <>
+                        <div className="flex-1 relative email-dropdown-container">
+                          <button
+                            type="button"
+                            onClick={() => !isUpdatingFromEmail && emailDraft.status !== 'sent' && setIsEmailDropdownOpen(!isEmailDropdownOpen)}
+                            disabled={isUpdatingFromEmail || emailDraft.status === 'sent'}
+                            className="flex-1 text-sm text-gray-900 outline-none bg-transparent border-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:text-indigo-600 transition-colors focus:text-indigo-600 text-left flex items-center justify-between w-full"
+                          >
+                            <span className="truncate">
+                              {availableEmails.find(e => e.id === selectedFromEmail)?.emailAddress || 'Select email'}
+                            </span>
+                            <svg
+                              className={`w-4 h-4 text-gray-500 ml-2 flex-shrink-0 transition-transform ${isEmailDropdownOpen ? 'rotate-180' : ''}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          {isEmailDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                              {availableEmails.map((email) => (
+                                <button
+                                  key={email.id}
+                                  type="button"
+                                  onClick={() => handleFromEmailChange(email.id)}
+                                  className={`w-full text-left px-4 py-3 text-sm text-gray-900 hover:bg-indigo-50 transition-colors ${
+                                    selectedFromEmail === email.id ? 'bg-indigo-50 text-indigo-700 font-medium' : ''
+                                  } first:rounded-t-lg last:rounded-b-lg`}
+                                >
+                                  {email.emailAddress}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {isUpdatingFromEmail && (
+                          <span className="text-xs text-gray-500 whitespace-nowrap">Updating...</span>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* To Field - Clean Gmail Style */}
-              <div className="px-4 py-3 border-b border-gray-200">
+              <div className="px-6 py-3 border-b border-gray-200">
                 <div className="flex items-center">
                   <span className="text-sm text-gray-500 font-normal mr-3 min-w-[60px]">To</span>
-                  <div className="flex-1">
+                  <div className="flex-1 flex items-center gap-2">
                     <input
                       type="email"
-                      value={emailDraft.contactEmail || ''}
-                      readOnly
-                      className="w-full text-sm text-gray-900 outline-none bg-transparent border-none"
+                      value={editedEmail}
+                      onChange={(e) => setEditedEmail(e.target.value)}
+                      onBlur={handleSaveEmail}
+                      disabled={isSavingEmail}
+                      className="flex-1 text-sm text-gray-900 outline-none bg-transparent border-none focus:ring-0 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       placeholder="Recipients"
                     />
-                  </div>
-                  <div className="flex items-center gap-2 ml-2">
-                    <button
-                      onClick={() => setShowCcBcc(!showCcBcc)}
-                      className="text-xs text-gray-600 hover:text-gray-900 transition-colors"
-                      disabled={isEditMode}
-                    >
-                      Cc
-                    </button>
-                    <span className="text-gray-400">Bcc</span>
+                    {isSavingEmail && (
+                      <span className="text-xs text-gray-500 whitespace-nowrap">Saving...</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -265,7 +440,7 @@ export function EmailDraftOverlay({
               {/* Subscription Status */}
               {subscriptionDataLoaded && (
                 <div
-                  className={`px-4 py-3 border-b ${
+                  className={`px-6 py-3 border-b ${
                     emailDraft.isUnsubscribed
                       ? 'bg-red-50 border-red-100 text-red-700'
                       : 'bg-emerald-50 border-emerald-100 text-emerald-700'
@@ -294,31 +469,37 @@ export function EmailDraftOverlay({
               )}
 
               {/* Subject Field - Clean Style */}
-              <div className="px-4 py-3 border-b border-gray-200">
+              <div className="px-6 py-3 border-b border-gray-200">
                 {isEditMode ? (
-                  <input
-                    type="text"
-                    value={editedSubject}
-                    onChange={(e) => setEditedSubject(e.target.value)}
-                    className="w-full text-sm text-gray-900 outline-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-2"
-                    placeholder="Subject"
-                    autoFocus
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-gray-900 flex-shrink-0">Subject:</span>
+                    <input
+                      type="text"
+                      value={editedSubject}
+                      onChange={(e) => setEditedSubject(e.target.value)}
+                      className="flex-1 text-sm text-gray-900 outline-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-2"
+                      placeholder="Subject"
+                      autoFocus
+                    />
+                  </div>
                 ) : (
-                  <input
-                    type="text"
-                    value={emailDraft.subject || ''}
-                    readOnly
-                    className="w-full text-sm text-gray-900 outline-none bg-transparent border-none"
-                    placeholder="Subject"
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-gray-900 flex-shrink-0">Subject:</span>
+                    <input
+                      type="text"
+                      value={emailDraft.subject || ''}
+                      readOnly
+                      className="flex-1 text-sm text-gray-900 outline-none bg-transparent border-none"
+                      placeholder="Subject"
+                    />
+                  </div>
                 )}
               </div>
 
               {/* Email Body - Large Clean Area */}
               <div className="flex-1 overflow-hidden flex flex-col">
                 {isEditMode ? (
-                  <div className="flex-1 px-4 py-4 overflow-y-auto">
+                  <div className="flex-1 px-6 py-5 overflow-y-auto">
                     <textarea
                       value={editedBody}
                       onChange={(e) => setEditedBody(e.target.value)}
@@ -329,7 +510,7 @@ export function EmailDraftOverlay({
                     />
                   </div>
                 ) : (
-                  <div className="flex-1 overflow-y-auto px-4 py-4">
+                  <div className="flex-1 overflow-y-auto px-6 py-5">
                     <div className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed min-h-full">
                       {emailDraft.body || ''}
                     </div>
@@ -338,10 +519,10 @@ export function EmailDraftOverlay({
               </div>
 
               {/* Simplified Bottom Toolbar */}
-              <div className="border-t border-gray-200 bg-white px-4 py-3">
-                <div className="flex items-center justify-between">
+              <div className="border-t border-gray-200 bg-white px-6 py-3">
+                <div className="grid grid-cols-3 items-center">
                   {/* Left: Action Buttons */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 justify-start">
                     {isEditMode ? (
                       <>
                         <Button
@@ -389,37 +570,38 @@ export function EmailDraftOverlay({
                     )}
                   </div>
 
-                  {/* Center: Navigation */}
-                  {!isEditMode && (
-                    <div className="flex items-center gap-2">
-                      {onPrevious && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={onPrevious}
-                          disabled={!hasPrevious}
-                          className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          Previous
-                        </Button>
-                      )}
-                      {onNext && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={onNext}
-                          disabled={!hasNext}
-                          className="text-gray-700 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          Next
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  {isEditMode && <div className="flex-1" />}
+                  {/* Center: Navigation - Always Centered */}
+                  <div className="flex items-center justify-center gap-2">
+                    {!isEditMode && (
+                      <>
+                        {onPrevious && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onPrevious}
+                            disabled={!hasPrevious}
+                            className="text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-1.5 text-sm font-normal"
+                          >
+                            Previous
+                          </Button>
+                        )}
+                        {onNext && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onNext}
+                            disabled={!hasNext}
+                            className="text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-1.5 text-sm font-normal"
+                          >
+                            Next
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
 
-                  {/* Right: Send All (if on last item) or Close button */}
-                  <div className="flex items-center gap-2">
+                  {/* Right: Send All (if on last item) */}
+                  <div className="flex items-center gap-2 justify-end">
                     {!isEditMode && onSendAll && !hasNext && currentIndex !== undefined && totalCount !== undefined && totalCount > 0 && (
                       <Button
                         variant="primary"
@@ -430,17 +612,6 @@ export function EmailDraftOverlay({
                         Send All ({selectedCount !== undefined ? selectedCount : totalCount})
                       </Button>
                     )}
-                    {!isEditMode && (
-                      <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-gray-100 rounded transition-colors"
-                        title="Close"
-                      >
-                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>
@@ -448,6 +619,18 @@ export function EmailDraftOverlay({
           </>
         )}
       </div>
+
+      {/* Error Dialog */}
+      <ConfirmDialog
+        isOpen={errorDialog.isOpen}
+        title="Error"
+        message={errorDialog.message}
+        confirmText="OK"
+        cancelText=""
+        variant="danger"
+        onConfirm={() => setErrorDialog({ isOpen: false, message: '' })}
+        onCancel={() => setErrorDialog({ isOpen: false, message: '' })}
+      />
     </div>
   )
 }

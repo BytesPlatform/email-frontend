@@ -3,6 +3,8 @@
 import { DashboardOverview } from '@/components/dashboard/DashboardOverview'
 import { QuickActions } from '@/components/dashboard/QuickActions'
 import { RecentActivity } from '@/components/dashboard/RecentActivity'
+import { EmailAccountsCard } from '@/components/dashboard/EmailAccountsCard'
+import { PhoneAccountsCard } from '@/components/dashboard/PhoneAccountsCard'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useAuthContext } from '@/contexts/AuthContext'
 
@@ -29,6 +31,12 @@ export default function DashboardPage() {
             
             {/* Stats Overview */}
             <DashboardOverview />
+            
+            {/* Email and Phone Accounts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <EmailAccountsCard />
+              <PhoneAccountsCard />
+            </div>
             
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

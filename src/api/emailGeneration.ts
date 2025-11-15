@@ -455,6 +455,7 @@ export const emailGenerationApi = {
       bodyText?: string
       icebreaker?: string
       productsRelevant?: string
+      clientEmailId?: number
     }
   ): Promise<ApiResponse<EmailDraft>> {
     try {

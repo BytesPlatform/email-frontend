@@ -126,14 +126,16 @@ export function ConfirmDialog({
 
           {/* Actions */}
           <div className="flex items-center gap-3 justify-end">
-            <Button
-              variant="outline"
-              size="md"
-              onClick={onCancel}
-              disabled={isLoading}
-            >
-              {cancelText}
-            </Button>
+            {cancelText && (
+              <Button
+                variant="outline"
+                size="md"
+                onClick={onCancel}
+                disabled={isLoading}
+              >
+                {cancelText}
+              </Button>
+            )}
             <Button
               variant={styles.confirmButton}
               size="md"
