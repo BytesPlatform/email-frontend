@@ -451,7 +451,8 @@ export const emailGenerationApi = {
   async updateEmailDraft(
     draftId: number,
     updates: {
-      subjectLine?: string
+      subjectLines?: string[]
+      subjectLine?: string // For backward compatibility
       bodyText?: string
       icebreaker?: string
       productsRelevant?: string

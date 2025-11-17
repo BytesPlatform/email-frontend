@@ -47,7 +47,7 @@ export interface GeneratedEmail {
 // Backend email draft entity
 export interface EmailDraft {
   id: number
-  subjectLine?: string
+  subjectLines?: string[]
   bodyText?: string
   icebreaker?: string
   productsRelevant?: string
@@ -58,6 +58,7 @@ export interface EmailDraft {
   createdAt?: string
   updatedAt?: string
   // Legacy fields for backward compatibility
+  subjectLine?: string // For backward compatibility
   subject?: string
   body?: string
   tone?: string
