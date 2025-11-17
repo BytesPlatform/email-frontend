@@ -28,7 +28,7 @@ export interface ColumnMapping {
   csvColumnIndex: number
   csvColumnName: string
   mappedField: string | null
-  confidence: 'exact' | 'synonym' | 'fuzzy' | 'none'
+  confidence: 'manual' | 'none'
 }
 
 interface ValidationResult {
@@ -52,6 +52,10 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uncleanRows, setUncleanRows] = useState<Record<string, string>[]>([])
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([])
+  const [csvData, setCsvData] = useState<Record<string, string>[]>([])
+  const [manualMappings, setManualMappings] = useState<Record<string, number>>({})
+  // manualMappings: { 'business_name': 0, 'email': 2 } = requiredField -> csvColumnIndex
 
   const isValueEmpty = (value: string | undefined | null): boolean => {
     if (value === undefined || value === null) return true
@@ -59,252 +63,105 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
     return trimmed === '' || trimmed === '-' || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined'
   }
 
-  // Standard 6-column format in exact order
+  // Standard 6-column format - required fields
   const requiredColumns = ['business_name', 'zipcode', 'state', 'phone_number', 'website', 'email']
   
-  // Comprehensive synonym dictionary for each required field
-  const synonymDictionary: { [key: string]: string[] } = {
-    'business_name': [
-      'business name',
-      'business_name',
-      'company',
-      'company name',
-      'company_name',
-      'store name',
-      'store_name',
-      'organization',
-      'organization name',
-      'organization_name',
-      'firm name',
-      'firm_name',
-      'brand name',
-      'brand_name',
-      'business',
-      'trading name',
-      'trading_name',
-      'entity name',
-      'entity_name',
-      'legal name',
-      'legal_name'
-    ],
-    'zipcode': [
-      'zip code',
-      'zipcode',
-      'zip_code',
-      'postal code',
-      'postal_code',
-      'post code',
-      'post_code',
-      'zip',
-      'area code',
-      'area_code',
-      'pin code',
-      'pin_code',
-      'postal',
-      'zip number',
-      'zip_number',
-      'postal zip',
-      'postal_zip',
-      'region code',
-      'region_code',
-      'delivery code',
-      'delivery_code'
-    ],
-    'state': [
-      'state',
-      'province',
-      'region',
-      'territory',
-      'county',
-      'district',
-      'governorate',
-      'prefecture',
-      'state name',
-      'state_name',
-      'region name',
-      'region_name',
-      'administrative area',
-      'administrative_area',
-      'location state',
-      'location_state'
-    ],
-    'phone_number': [
-      'phone',
-      'phone number',
-      'phone_number',
-      'telephone',
-      'contact',
-      'contact number',
-      'contact_number',
-      'mobile',
-      'mobile number',
-      'mobile_number',
-      'cell',
-      'cell number',
-      'cell_number',
-      'work phone',
-      'work_phone',
-      'office phone',
-      'office_phone',
-      'business contact',
-      'business_contact'
-    ],
-    'website': [
-      'website',
-      'url',
-      'website url',
-      'website_url',
-      'web address',
-      'web_address',
-      'site link',
-      'site_link',
-      'company website',
-      'company_website',
-      'homepage',
-      'webpage',
-      'link',
-      'official site',
-      'official_site',
-      'domain',
-      'website address',
-      'website_address'
-    ],
-    'email': [
-      'email',
-      'email address',
-      'email_address',
-      'business email',
-      'business_email',
-      'personal email',
-      'personal_email',
-      'contact email',
-      'contact_email',
-      'work email',
-      'work_email',
-      'official email',
-      'official_email',
-      'primary email',
-      'primary_email',
-      'mail',
-      'email id',
-      'email_id',
-      'company email',
-      'company_email',
-      'registered email',
-      'registered_email'
-    ]
+  // Field display names for UI
+  const fieldDisplayNames: Record<string, string> = {
+    'business_name': 'Business Name',
+    'zipcode': 'Zipcode',
+    'state': 'State',
+    'phone_number': 'Phone Number',
+    'website': 'Website',
+    'email': 'Email'
   }
 
-  // Normalize string for comparison (lowercase, remove special chars)
-  const normalizeString = (str: string): string => {
-    return str.toLowerCase().replace(/[_\s-]/g, '').trim()
-  }
-
-  // Calculate Levenshtein distance for fuzzy matching
-  const levenshteinDistance = (str1: string, str2: string): number => {
-    const s1 = normalizeString(str1)
-    const s2 = normalizeString(str2)
-    const matrix: number[][] = []
-
-    for (let i = 0; i <= s2.length; i++) {
-      matrix[i] = [i]
-    }
-
-    for (let j = 0; j <= s1.length; j++) {
-      matrix[0][j] = j
-    }
-
-    for (let i = 1; i <= s2.length; i++) {
-      for (let j = 1; j <= s1.length; j++) {
-        if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
-          matrix[i][j] = matrix[i - 1][j - 1]
-        } else {
-          matrix[i][j] = Math.min(
-            matrix[i - 1][j - 1] + 1,
-            matrix[i][j - 1] + 1,
-            matrix[i - 1][j] + 1
-          )
-        }
-      }
-    }
-
-    return matrix[s2.length][s1.length]
-  }
-
-  // Calculate similarity score (0-1, higher is better)
-  const calculateSimilarity = (str1: string, str2: string): number => {
-    const maxLength = Math.max(str1.length, str2.length)
-    if (maxLength === 0) return 1
-    const distance = levenshteinDistance(str1, str2)
-    return 1 - distance / maxLength
-  }
-
-  // Smart column mapping function
-  const mapColumns = (headers: string[]): ColumnMapping[] => {
-    const mappings: ColumnMapping[] = headers.map((header, index) => {
-      const normalizedHeader = normalizeString(header)
-      let bestMatch: { field: string; confidence: 'exact' | 'synonym' | 'fuzzy'; score: number } | null = null
-
-      // Try to match against each required field
-      for (const requiredField of requiredColumns) {
-        const synonyms = synonymDictionary[requiredField]
-        
-        // 1. Check for exact match
-        if (normalizedHeader === normalizeString(requiredField)) {
-          bestMatch = { field: requiredField, confidence: 'exact', score: 1.0 }
-          break
-        }
-
-        // 2. Check synonym dictionary
-        for (const synonym of synonyms) {
-          if (normalizedHeader === normalizeString(synonym)) {
-            bestMatch = { field: requiredField, confidence: 'synonym', score: 0.95 }
-            break
-          }
-        }
-
-        if (bestMatch) break
-
-        // 3. Try fuzzy matching with synonyms
-        for (const synonym of synonyms) {
-          const similarity = calculateSimilarity(normalizedHeader, synonym)
-          if (similarity >= 0.7) {
-            if (!bestMatch || similarity > bestMatch.score) {
-              bestMatch = { field: requiredField, confidence: 'fuzzy', score: similarity }
-            }
-          }
-        }
-      }
-
+  // Build column mappings from manual mappings
+  const buildColumnMappings = (headers: string[], mappings: Record<string, number>): ColumnMapping[] => {
+    return headers.map((header, index) => {
+      // Find which required field this column is mapped to
+      const mappedField = Object.entries(mappings).find(([_, colIndex]) => colIndex === index)?.[0] || null
+      
       return {
         csvColumnIndex: index,
         csvColumnName: header,
-        mappedField: bestMatch ? bestMatch.field : null,
-        confidence: bestMatch ? bestMatch.confidence : 'none'
+        mappedField: mappedField,
+        confidence: mappedField ? 'manual' : 'none'
       }
     })
-
-    return mappings
   }
 
-  // Validate that all required fields are present (order doesn't matter)
-  const validateRequiredFields = (mappings: ColumnMapping[]): string[] => {
+  // Validate that all required fields are manually mapped
+  const validateRequiredFields = (mappings: Record<string, number>): string[] => {
     const errors: string[] = []
-    const mappedFields = mappings
-      .filter(m => m.mappedField !== null)
-      .map(m => m.mappedField!)
-
-    // Check if all required fields are present
-    const missingFields = requiredColumns.filter(field => !mappedFields.includes(field))
+    const missingFields = requiredColumns.filter(field => mappings[field] === undefined)
+    
     if (missingFields.length > 0) {
-      errors.push(`Missing required fields: ${missingFields.join(', ')}`)
+      errors.push(`Please map the following required fields: ${missingFields.map(f => fieldDisplayNames[f] || f).join(', ')}`)
     }
 
     return errors
   }
 
-  // Main validation function
-  const validateAndConvertCSV = (data: Record<string, string>[], headers: string[]): ValidationResult => {
+  // Handle manual mapping change
+  const handleManualMappingChange = (requiredField: string, csvColumnIndex: number | null) => {
+    const newMappings = { ...manualMappings }
+    
+    if (csvColumnIndex === null) {
+      // Remove mapping
+      delete newMappings[requiredField]
+    } else {
+      // Check if this column is already mapped to another field
+      const existingField = Object.entries(newMappings).find(([_, idx]) => idx === csvColumnIndex)?.[0]
+      if (existingField) {
+        delete newMappings[existingField]
+      }
+      
+      // Set new mapping
+      newMappings[requiredField] = csvColumnIndex
+    }
+    
+    setManualMappings(newMappings)
+    
+    // Rebuild column mappings and validate
+    const newColumnMappings = buildColumnMappings(csvHeaders, newMappings)
+    setColumnMappings(newColumnMappings)
+    
+    // Re-validate and convert data
+    const fieldErrors = validateRequiredFields(newMappings)
+    setValidationErrors(fieldErrors)
+    
+    if (fieldErrors.length === 0 && csvData.length > 0) {
+      // Convert data with new mappings
+      const validationResult = validateAndConvertCSV(csvData, csvHeaders, newMappings)
+      setParsedData(validationResult.convertedData)
+      setUncleanRows(validationResult.uncleanRows)
+      
+      // Notify parent components
+      if (onMappedDataReady) {
+        onMappedDataReady(
+          validationResult.validOriginalData,
+          validationResult.mappings,
+          validationResult.uncleanRows
+        )
+      }
+      
+      if (validationResult.isValid && onFileProcessed) {
+        onFileProcessed(validationResult.convertedData, requiredColumns)
+      } else if (onFileProcessed) {
+        onFileProcessed([], requiredColumns)
+      }
+    } else {
+      setParsedData([])
+      setUncleanRows([])
+      if (onFileProcessed) {
+        onFileProcessed([], requiredColumns)
+      }
+    }
+  }
+
+  // Main validation function - uses manual mappings
+  const validateAndConvertCSV = (data: Record<string, string>[], headers: string[], mappings: Record<string, number>): ValidationResult => {
     const errors: string[] = []
     const convertedData: CSVRecord[] = []
     const validOriginalData: Record<string, string>[] = []
@@ -316,68 +173,66 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
       return {
         isValid: false,
         errors,
-        mappings: headers.map((h, i) => ({
-          csvColumnIndex: i,
-          csvColumnName: h,
-          mappedField: null,
-          confidence: 'none'
-        })),
+        mappings: buildColumnMappings(headers, {}),
         convertedData: [],
         validOriginalData: [],
         uncleanRows: []
       }
     }
-    
-    // If more than 6 columns, log a warning but continue
-    if (headers.length > 6) {
-      console.log(`CSV has ${headers.length} columns. Extra columns will be ignored.`)
-    }
 
-    // Map columns
-    const mappings = mapColumns(headers)
+    // Build column mappings from manual mappings
+    const columnMappings = buildColumnMappings(headers, mappings)
 
-    // Check for unmapped columns (warning only, not blocking)
-    const unmappedColumns = mappings.filter(m => m.mappedField === null)
-    if (unmappedColumns.length > 0) {
-      // Don't add as error, just log for reference
-      console.log('Unmapped columns (will be ignored):', unmappedColumns.map(m => m.csvColumnName))
-    }
-
-    // Validate that all required fields are present (this is still required for conversion)
+    // Validate that all required fields are present
     const fieldErrors = validateRequiredFields(mappings)
     if (fieldErrors.length > 0) {
-      // If required fields are missing, we can't convert the data
       errors.push(...fieldErrors)
       return {
         isValid: false,
         errors,
-        mappings,
+        mappings: columnMappings,
         convertedData: [],
         validOriginalData: [],
         uncleanRows: []
       }
     }
 
-    // Process all rows - no filtering, everything goes to database
+    // Process all rows and separate invalid contacts (missing both email and phone)
     data.forEach((row) => {
       const convertedRow: CSVRecord = {}
-      mappings.forEach((mapping) => {
+      columnMappings.forEach((mapping) => {
         if (mapping.mappedField) {
           convertedRow[mapping.mappedField] = row[mapping.csvColumnName] || ''
         }
       })
 
-      validOriginalData.push(row)
-      convertedData.push(convertedRow)
+      // Check if row is invalid (missing both email and phone)
+      const emailMapping = columnMappings.find(m => m.mappedField === 'email')
+      const phoneMapping = columnMappings.find(m => m.mappedField === 'phone_number')
+      
+      const emailValue = emailMapping ? row[emailMapping.csvColumnName] : ''
+      const phoneValue = phoneMapping ? row[phoneMapping.csvColumnName] : ''
+      
+      const hasEmail = !isValueEmpty(emailValue)
+      const hasPhone = !isValueEmpty(phoneValue)
+      
+      // If missing both email and phone, add to uncleanRows
+      if (!hasEmail && !hasPhone) {
+        uncleanRows.push(row)
+      } else {
+        // Valid row - has at least email or phone
+        validOriginalData.push(row)
+        convertedData.push(convertedRow)
+      }
     })
 
     return {
       isValid: errors.length === 0,
       errors,
-      mappings,
+      mappings: columnMappings,
       convertedData,
       validOriginalData,
-      uncleanRows: [] // No unclean rows - everything goes to database
+      uncleanRows // Invalid contacts (missing both email and phone)
     }
   }
 
@@ -445,34 +300,38 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
       setFile(selectedFile)
       setUploadError(null)
       setUploadSuccess(null)
+      setManualMappings({}) // Reset manual mappings
       
       // Parse the CSV file immediately
       try {
         const text = await selectedFile.text()
         const { headers, data } = parseCSV(text)
         
-        // Validate and convert to standard format
-        const validationResult = validateAndConvertCSV(data, headers)
+        // Store headers and data for manual mapping
+        setCsvHeaders(headers)
+        setCsvData(data)
         
-        setParsedData(validationResult.convertedData)
-        setValidationErrors(validationResult.errors)
-        setColumnMappings(validationResult.mappings)
-        setUncleanRows(validationResult.uncleanRows)
+        // Initialize empty mappings - user must manually map
+        const emptyMappings: Record<string, number> = {}
+        const initialColumnMappings = buildColumnMappings(headers, emptyMappings)
+        setColumnMappings(initialColumnMappings)
         
-        // Notify parent component with mapped data for preview
-        if (onMappedDataReady) {
-          onMappedDataReady(
-            validationResult.validOriginalData,
-            validationResult.mappings,
-            validationResult.uncleanRows
-          )
+        // Validate column count
+        if (headers.length < 6) {
+          setValidationErrors([`CSV must have at least 6 columns. Found ${headers.length} columns.`])
+          setParsedData([])
+          setUncleanRows([])
+          if (onFileProcessed) {
+            onFileProcessed([], requiredColumns)
+          }
+          return
         }
         
-        // Notify parent component with converted data only if valid
-        if (validationResult.isValid && onFileProcessed) {
-          onFileProcessed(validationResult.convertedData, requiredColumns)
-        } else if (onFileProcessed) {
-          // Still notify but with empty data if invalid
+        // Show message that user needs to map columns
+        setValidationErrors(['Please map all required fields using the dropdowns below.'])
+        setParsedData([])
+        setUncleanRows([])
+        if (onFileProcessed) {
           onFileProcessed([], requiredColumns)
         }
       } catch (error) {
@@ -506,34 +365,38 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
         setFile(droppedFile)
         setUploadError(null)
         setUploadSuccess(null)
+        setManualMappings({}) // Reset manual mappings
         
         // Parse the CSV file immediately
         try {
           const text = await droppedFile.text()
           const { headers, data } = parseCSV(text)
           
-          // Validate and convert to standard format
-          const validationResult = validateAndConvertCSV(data, headers)
+          // Store headers and data for manual mapping
+          setCsvHeaders(headers)
+          setCsvData(data)
           
-          setParsedData(validationResult.convertedData)
-          setValidationErrors(validationResult.errors)
-          setColumnMappings(validationResult.mappings)
-          setUncleanRows(validationResult.uncleanRows)
+          // Initialize empty mappings - user must manually map
+          const emptyMappings: Record<string, number> = {}
+          const initialColumnMappings = buildColumnMappings(headers, emptyMappings)
+          setColumnMappings(initialColumnMappings)
           
-          // Notify parent component with mapped data for preview
-          if (onMappedDataReady) {
-            onMappedDataReady(
-              validationResult.validOriginalData,
-              validationResult.mappings,
-              validationResult.uncleanRows
-            )
+          // Validate column count
+          if (headers.length < 6) {
+            setValidationErrors([`CSV must have at least 6 columns. Found ${headers.length} columns.`])
+            setParsedData([])
+            setUncleanRows([])
+            if (onFileProcessed) {
+              onFileProcessed([], requiredColumns)
+            }
+            return
           }
           
-          // Notify parent component with converted data only if valid
-          if (validationResult.isValid && onFileProcessed) {
-            onFileProcessed(validationResult.convertedData, requiredColumns)
-          } else if (onFileProcessed) {
-            // Still notify but with empty data if invalid
+          // Show message that user needs to map columns
+          setValidationErrors(['Please map all required fields using the dropdowns below.'])
+          setParsedData([])
+          setUncleanRows([])
+          if (onFileProcessed) {
             onFileProcessed([], requiredColumns)
           }
         } catch (error) {
@@ -556,6 +419,9 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
     setUploadError(null)
     setUploadSuccess(null)
     setUploadProgress(0)
+    setCsvHeaders([])
+    setCsvData([])
+    setManualMappings({})
     
     // Clear mapped data in parent
     if (onMappedDataReady) {
@@ -587,8 +453,8 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
       return
     }
 
-    // Ensure we have data to upload
-    if (parsedData.length === 0) {
+    // Ensure we have data to upload (valid or invalid contacts)
+    if (parsedData.length === 0 && uncleanRows.length === 0) {
       setUploadError('No data to upload. Please check your CSV file.')
       return
     }
@@ -610,9 +476,22 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
         })
       }, 200)
 
-      // Rebuild CSV with only validated rows
-      const cleanedCsvContent = buildCsvContent(parsedData)
-      const cleanedFile = new File([cleanedCsvContent], file.name, { type: 'text/csv' })
+      // Rebuild CSV with ALL rows (both valid and invalid) - backend will handle validation
+      // Combine valid and invalid rows for upload
+      const allRows = [...parsedData]
+      // Add invalid rows back to the CSV content
+      uncleanRows.forEach((row) => {
+        const convertedRow: CSVRecord = {}
+        columnMappings.forEach((mapping) => {
+          if (mapping.mappedField) {
+            convertedRow[mapping.mappedField] = row[mapping.csvColumnName] || ''
+          }
+        })
+        allRows.push(convertedRow)
+      })
+      
+      const allCsvContent = buildCsvContent(allRows)
+      const cleanedFile = new File([allCsvContent], file.name, { type: 'text/csv' })
 
       // Call the API with cleaned data
       const response = await ingestionApi.uploadCsv(cleanedFile, client.id)
@@ -764,52 +643,87 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
             </div>
           )}
 
-          {/* Column Mapping Visualization - Only show mapped fields */}
-          {file && columnMappings.length > 0 && (() => {
-            const mappedColumns = columnMappings.filter(m => m.mappedField !== null)
-            return mappedColumns.length > 0 && (
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <h4 className="text-sm font-semibold text-slate-900 mb-3">Mapped Columns</h4>
-                <div className="space-y-2">
-                  {mappedColumns.map((mapping) => {
-                    const confidenceColor = 
-                      mapping.confidence === 'exact' ? 'text-green-600' :
-                      mapping.confidence === 'synonym' ? 'text-blue-600' :
-                      mapping.confidence === 'fuzzy' ? 'text-yellow-600' :
-                      'text-red-600'
-                    
-                    return (
-                      <div 
-                        key={mapping.csvColumnIndex} 
-                        className="flex items-center justify-between p-2 rounded bg-green-50 border border-green-200"
-                      >
-                        <div className="flex items-center space-x-3 flex-1">
-                          <span className="text-xs font-medium text-slate-500 w-8">#{mapping.csvColumnIndex + 1}</span>
-                          <span className="text-sm text-slate-900 flex-1">{mapping.csvColumnName}</span>
-                          <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                          </svg>
-                          <span className="text-sm font-medium text-slate-900">
-                            {mapping.mappedField}
-                          </span>
-                        </div>
-                        <span className={`text-xs font-medium ml-2 ${confidenceColor}`}>
-                          {mapping.confidence === 'exact' ? '✓ Exact' :
-                           mapping.confidence === 'synonym' ? '≈ Synonym' :
-                           mapping.confidence === 'fuzzy' ? '~ Fuzzy' : ''}
+          {/* Manual Column Mapping UI */}
+          {file && csvHeaders.length > 0 && (
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-slate-900 mb-3">Map CSV Columns to Required Fields</h4>
+              <p className="text-xs text-slate-600 mb-4">
+                Select which CSV column corresponds to each required field. All 6 fields must be mapped before upload.
+              </p>
+              <div className="space-y-3">
+                {requiredColumns.map((requiredField) => {
+                  const isMapped = manualMappings[requiredField] !== undefined
+                  const selectedColumnIndex = manualMappings[requiredField]
+                  const selectedColumnName = selectedColumnIndex !== undefined ? csvHeaders[selectedColumnIndex] : ''
+                  
+                  return (
+                    <div 
+                      key={requiredField}
+                      className={`flex items-center justify-between p-3 rounded border ${
+                        isMapped 
+                          ? 'bg-green-50 border-green-200' 
+                          : 'bg-white border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3 flex-1">
+                        <span className="text-sm font-medium text-slate-900 w-32">
+                          {fieldDisplayNames[requiredField]}
+                          <span className="text-red-500 ml-1">*</span>
                         </span>
+                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                        <select
+                          value={selectedColumnIndex !== undefined ? selectedColumnIndex : ''}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            handleManualMappingChange(
+                              requiredField,
+                              value === '' ? null : parseInt(value, 10)
+                            )
+                          }}
+                          className={`flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                            isMapped 
+                              ? 'border-green-300 bg-white' 
+                              : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          <option value="">Select CSV Column...</option>
+                          {csvHeaders.map((header, index) => {
+                            // Check if this column is already mapped to another field
+                            const alreadyMapped = Object.entries(manualMappings).find(
+                              ([field, colIdx]) => colIdx === index && field !== requiredField
+                            )
+                            const isSelected = selectedColumnIndex === index
+                            
+                            return (
+                              <option 
+                                key={index} 
+                                value={index}
+                                disabled={!!alreadyMapped && !isSelected}
+                              >
+                                {header} {alreadyMapped && !isSelected ? '(already mapped)' : ''}
+                              </option>
+                            )
+                          })}
+                        </select>
+                        {isMapped && (
+                          <span className="text-xs text-green-600 font-medium ml-2">
+                            ✓ Mapped
+                          </span>
+                        )}
                       </div>
-                    )
-                  })}
-                </div>
-                {validationErrors.length === 0 && parsedData.length > 0 && (
-                  <p className="text-xs text-green-600 mt-3 font-medium">
-                    ✓ All required columns mapped correctly
-                  </p>
-                )}
+                    </div>
+                  )
+                })}
               </div>
-            )
-          })()}
+              {validationErrors.length === 0 && parsedData.length > 0 && (
+                <p className="text-xs text-green-600 mt-3 font-medium">
+                  ✓ All required columns mapped correctly
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Validation Errors */}
           {validationErrors.length > 0 && (
@@ -829,7 +743,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
                     ))}
                   </ul>
                   <p className="text-xs text-red-600 mt-3 font-medium">
-                    Please ensure your CSV has at least 6 columns with all required fields: business_name, zipcode, state, phone_number, website, email (order doesn&apos;t matter, extra columns are allowed)
+                    Please map all required fields using the dropdowns above. Your CSV must have at least 6 columns, and you need to manually select which column corresponds to each required field.
                   </p>
                 </div>
               </div>
@@ -837,16 +751,22 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           )}
 
           {/* Success Message */}
-          {file && validationErrors.length === 0 && parsedData.length > 0 && !uploadSuccess && (
+          {file && validationErrors.length === 0 && (parsedData.length > 0 || uncleanRows.length > 0) && !uploadSuccess && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <div className="flex items-center space-x-3">
                 <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <div>
-                  <h4 className="text-sm font-medium text-green-800">CSV Validation Passed</h4>
+                  <h4 className="text-sm font-medium text-green-800">CSV Ready for Upload</h4>
                   <p className="text-sm text-green-700">
-                    {parsedData.length} records ready for upload. All 6 required columns are present and mapped correctly. All records will be uploaded to the database.
+                    {parsedData.length} valid contact{parsedData.length !== 1 ? 's' : ''} ready for upload.
+                    {uncleanRows.length > 0 && (
+                      <span className="text-amber-700 font-medium">
+                        {' '}{uncleanRows.length} invalid contact{uncleanRows.length !== 1 ? 's' : ''} (missing both email and phone) will also be uploaded but may not be usable.
+                      </span>
+                    )}
+                    {' '}All records will be uploaded to the database.
                   </p>
                 </div>
               </div>
@@ -886,7 +806,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           {/* Upload Button */}
           <Button
             onClick={handleUpload}
-            disabled={!file || isUploading || validationErrors.length > 0 || parsedData.length === 0}
+            disabled={!file || isUploading || validationErrors.length > 0 || (parsedData.length === 0 && uncleanRows.length === 0)}
             isLoading={isUploading}
             leftIcon={!isUploading ? uploadIcon : undefined}
             className="w-full"

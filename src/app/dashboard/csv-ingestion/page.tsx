@@ -21,6 +21,7 @@ export default function CSVIngestionPage() {
   const [uploadMetadata, setUploadMetadata] = useState<UploadMetadata | null>(null)
   const [mappedCsvData, setMappedCsvData] = useState<Record<string, string>[]>([])
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([])
+  const [uncleanRows, setUncleanRows] = useState<Record<string, string>[]>([])
 
   const handleFileProcessed = (data: CSVRecord[], headers: string[]) => {
     setCsvData(data)
@@ -34,7 +35,7 @@ export default function CSVIngestionPage() {
   ) => {
     setMappedCsvData(originalData)
     setColumnMappings(mappings)
-    // unclean parameter is always empty now since all records go to database
+    setUncleanRows(unclean) // Store invalid contacts for display
   }
 
   const handleUploadSuccess = (metadata: UploadMetadata) => {
@@ -92,6 +93,7 @@ export default function CSVIngestionPage() {
                   headers={csvHeaders} 
                   mappedCsvData={mappedCsvData}
                   columnMappings={columnMappings}
+                  uncleanRows={uncleanRows}
                 />
               </div>
             </div>

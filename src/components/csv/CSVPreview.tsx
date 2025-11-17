@@ -214,7 +214,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   const getContactHeaders = (contacts: Array<Record<string, unknown>>) => {
     if (contacts.length === 0) return []
     const firstContact = contacts[0]
-    const excludedKeys = ['id', 'csvUploadId', 'createdAt', 'csvUpload']
+    const excludedKeys = ['id', 'csvUploadId', 'createdAt', 'csvUpload', 'status']
     return Object.keys(firstContact).filter(key => !excludedKeys.includes(key))
   }
 
@@ -440,9 +440,9 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
           >
             <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-white">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Rows Missing Contact Info</h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  {localUncleanRows.length} row{localUncleanRows.length !== 1 ? 's' : ''} will be skipped • Each row must include an email or phone number
+                <h3 className="text-lg font-semibold text-red-900">Invalid Contacts</h3>
+                <p className="text-sm text-red-700 mt-1">
+                  {localUncleanRows.length} contact{localUncleanRows.length !== 1 ? 's' : ''} missing both email and phone number • These will be uploaded but may not be usable
                 </p>
               </div>
               <button
@@ -453,24 +453,24 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
               </button>
             </div>
             <div className="flex-1 overflow-auto p-6 bg-gray-50">
-              <div className="border border-amber-200 rounded-lg overflow-hidden bg-white shadow-sm">
+              <div className="border border-red-200 rounded-lg overflow-hidden bg-white shadow-sm">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-amber-50 sticky top-0">
+                    <thead className="bg-red-50 sticky top-0">
                       <tr>
                         {uncleanHeaders.map((header, index) => (
                           <th
                             key={index}
-                            className="px-4 py-3 text-left font-medium text-amber-900 border-r border-amber-200 last:border-r-0 whitespace-nowrap"
+                            className="px-4 py-3 text-left font-medium text-red-900 border-r border-red-200 last:border-r-0 whitespace-nowrap"
                           >
                             {header}
                           </th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-amber-200 bg-white">
+                    <tbody className="divide-y divide-red-200 bg-white">
                       {localUncleanRows.map((row, rowIndex) => (
-                        <tr key={rowIndex} className="hover:bg-amber-50/70 transition-colors">
+                        <tr key={rowIndex} className="hover:bg-red-50/70 transition-colors">
                           {uncleanHeaders.map((header, colIndex) => {
                             const mapping = columnMappings.find(m => m.csvColumnName === header)
                             const value = row[header]
@@ -480,8 +480,8 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                             return (
                               <td
                                 key={colIndex}
-                                className={`px-4 py-3 border-r border-amber-200 last:border-r-0 ${
-                                  isCritical ? 'text-red-700 font-medium' : 'text-gray-900'
+                                className={`px-4 py-3 border-r border-red-200 last:border-r-0 ${
+                                  isCritical ? 'text-red-700 font-medium bg-red-100' : 'text-gray-900'
                                 }`}
                               >
                                 {value ? String(value) : '-'}
@@ -494,8 +494,8 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                   </table>
                 </div>
               </div>
-              <p className="text-xs text-amber-700 mt-4">
-                These rows will not be uploaded because they are missing both an email address and a phone number.
+              <p className="text-xs text-red-700 mt-4 font-medium">
+                ⚠️ These contacts will be uploaded to the database but are missing both an email address and a phone number. They may not be usable for email/SMS generation until contact information is added.
               </p>
             </div>
           </div>
@@ -809,22 +809,22 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
       <CardContent>
         <div className="space-y-6">
           {localUncleanRows.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm text-amber-900 font-semibold">
-                  {localUncleanRows.length} row{localUncleanRows.length !== 1 ? 's' : ''} will be skipped during upload.
+                <p className="text-sm text-red-900 font-semibold">
+                  {localUncleanRows.length} invalid contact{localUncleanRows.length !== 1 ? 's' : ''} found (missing both email and phone number).
                 </p>
-                <p className="text-xs text-amber-700 mt-1">
-                  Each contact must include at least an email address or a phone number.
+                <p className="text-xs text-red-700 mt-1">
+                  These contacts will be uploaded but are missing both email and phone number. They may not be usable for email/SMS generation.
                 </p>
               </div>
               <Button
                 variant="outline"
                 size="sm"
-                className="border-amber-300 text-amber-900 hover:bg-amber-100"
+                className="border-red-300 text-red-900 hover:bg-red-100"
                 onClick={() => setShowUncleanOverlay(true)}
               >
-                View Unclean Rows ({localUncleanRows.length})
+                View Invalid Contacts ({localUncleanRows.length})
               </Button>
             </div>
           )}
