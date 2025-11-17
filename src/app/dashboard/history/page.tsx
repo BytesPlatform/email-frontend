@@ -10,6 +10,7 @@ import { useAuthContext } from '@/contexts/AuthContext'
 import { historyApi } from '@/api/history'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { unsubscribeApi } from '@/api/unsubscribe'
+import { clientAccountsApi } from '@/api/clientAccounts'
 import type { SmsLog, EmailLog } from '@/types/history'
 import type { UnsubscribeListItem } from '@/types/unsubscribe'
 
@@ -102,11 +103,30 @@ export default function HistoryPage() {
 
       // Always fetch Email logs (for counts)
       try {
-        // Use client.id as clientEmailId (same pattern as drafts page)
-        const emailRes = await emailGenerationApi.getEmailLogsByClientEmailId(client.id)
-        if (emailRes.success && emailRes.data) {
-          const emailItems = emailRes.data.map(transformEmailLogToHistoryItem)
+        // First, get all ClientEmails for this client
+        const clientEmailsRes = await clientAccountsApi.getClientEmails()
+        
+        if (clientEmailsRes.success && clientEmailsRes.data && clientEmailsRes.data.length > 0) {
+          // Fetch email logs for each ClientEmail
+          const allEmailLogs: EmailLog[] = []
+          
+          for (const clientEmail of clientEmailsRes.data) {
+            try {
+              const emailRes = await emailGenerationApi.getEmailLogsByClientEmailId(clientEmail.id)
+              if (emailRes.success && emailRes.data) {
+                allEmailLogs.push(...emailRes.data)
+              }
+            } catch (err) {
+              console.error(`Error fetching email logs for ClientEmail ${clientEmail.id}:`, err)
+              // Continue with other ClientEmails even if one fails
+            }
+          }
+          
+          // Transform all email logs to history items
+          const emailItems = allEmailLogs.map(transformEmailLogToHistoryItem)
           allItems.push(...emailItems)
+        } else {
+          console.log('No ClientEmails found for this client')
         }
       } catch (err) {
         console.error('Error fetching email logs:', err)
