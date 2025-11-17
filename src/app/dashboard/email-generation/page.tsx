@@ -891,7 +891,7 @@ export default function EmailGenerationPage() {
           ...record,
           emailDraftId: draftId,
           generatedEmail: {
-            subject: emailDraft.subjectLine || emailDraft.subject || 'No Subject',
+            subject: emailDraft.subjectLines?.[0] || emailDraft.subjectLine || emailDraft.subject || 'No Subject',
             body: emailDraft.bodyText || emailDraft.body || '',
             personalization: {
               businessName: record.businessName || 'Your Company',

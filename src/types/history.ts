@@ -212,7 +212,8 @@ export interface EmailLogClientEmail {
 
 export interface EmailLogDraft {
   id: number
-  subjectLine?: string | null
+  subjectLines?: string[] | null
+  subjectLine?: string | null // For backward compatibility
   bodyText?: string | null
   status?: string | null
   createdAt?: string | Date | null

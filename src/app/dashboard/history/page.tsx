@@ -54,7 +54,7 @@ export default function HistoryPage() {
       type: 'email-sent',
       contactName: log.contact?.businessName || 'Unknown Contact',
       contactId: log.contactId,
-      subject: log.emailDraft?.subjectLine || '',
+      subject: log.emailDraft?.subjectLines?.[0] || log.emailDraft?.subjectLine || '',
       message: log.emailDraft?.bodyText || '',
       sentAt: typeof log.sentAt === 'string' ? log.sentAt : log.sentAt.toISOString(),
       status: log.status,

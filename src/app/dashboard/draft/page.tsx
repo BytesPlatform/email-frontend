@@ -109,13 +109,15 @@ function DraftsPageContent() {
   // Transform API EmailDraft to component EmailDraft
   const transformEmailDraft = (apiDraft: ApiEmailDraft): EmailDraft => {
     const unsubscribeInfo = getUnsubscribeInfo(apiDraft.contactId)
+    // Get subject from subjectLines array (first element) or fallback to legacy fields
+    const subject = apiDraft.subjectLines?.[0] || apiDraft.subjectLine || apiDraft.subject || 'No Subject'
     return {
       id: apiDraft.id,
       contactId: apiDraft.contactId || 0,
       contactName: apiDraft.contact?.businessName,
       contactEmail: apiDraft.contact?.email,
       fromEmail: apiDraft.clientEmail?.emailAddress || '',
-      subject: apiDraft.subjectLine || apiDraft.subject || 'No Subject',
+      subject: subject,
       body: apiDraft.bodyText || apiDraft.body || '',
       status: (apiDraft.status as 'draft' | 'sent' | 'delivered') || 'draft',
       createdAt: apiDraft.createdAt || new Date().toISOString(),
@@ -650,8 +652,18 @@ function DraftsPageContent() {
 
   const handleEditEmailDraft = async (draftId: number, subject: string, body: string) => {
     try {
+      // Find the draft to get its subjectLines array
+      const draft = emailDrafts.find(d => d.id === draftId)
+      // If we have subjectLines from the overlay, use them; otherwise create array from subject
+      // Check if draft has subjectLines property (extended type)
+      type DraftWithSubjectLines = EmailDraft & { subjectLines?: string[] }
+      const draftWithSubjectLines = draft as DraftWithSubjectLines | undefined
+      const subjectLinesArray = draftWithSubjectLines?.subjectLines && Array.isArray(draftWithSubjectLines.subjectLines)
+        ? draftWithSubjectLines.subjectLines.map((s: string, i: number) => i === 0 ? subject : s) // Update first one
+        : [subject] // Fallback to single subject
+      
       const res = await emailGenerationApi.updateEmailDraft(draftId, {
-        subjectLine: subject,
+        subjectLines: subjectLinesArray,
         bodyText: body,
       })
       if (res.success && res.data) {

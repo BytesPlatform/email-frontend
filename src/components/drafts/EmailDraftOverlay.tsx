@@ -69,22 +69,70 @@ export function EmailDraftOverlay({
   const [isLoadingEmails, setIsLoadingEmails] = useState(false)
   const [isUpdatingFromEmail, setIsUpdatingFromEmail] = useState(false)
   const [isEmailDropdownOpen, setIsEmailDropdownOpen] = useState(false)
+  const [subjectLines, setSubjectLines] = useState<string[]>([])
+  const [selectedSubjectIndex, setSelectedSubjectIndex] = useState(0)
+  const [isLoadingDraft, setIsLoadingDraft] = useState(false)
+  const [isSubjectDropdownOpen, setIsSubjectDropdownOpen] = useState(false)
   const [errorDialog, setErrorDialog] = useState<{ isOpen: boolean; message: string }>({
     isOpen: false,
     message: '',
   })
 
-  // Load available client emails
+  // Load available client emails and full draft data
   useEffect(() => {
     if (isOpen) {
       loadAvailableEmails()
+      if (emailDraft) {
+        loadFullDraft()
+      }
     }
-  }, [isOpen])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, emailDraft?.id])
+
+  // Load full draft to get subjectLines array
+  const loadFullDraft = async () => {
+    if (!emailDraft) return
+    setIsLoadingDraft(true)
+    try {
+      const response = await emailGenerationApi.getEmailDraft(emailDraft.id)
+      if (response.success && response.data) {
+        const draft = response.data
+        // Set subject lines array, fallback to single subject if array not available
+        if (draft.subjectLines && draft.subjectLines.length > 0) {
+          setSubjectLines(draft.subjectLines)
+          setSelectedSubjectIndex(0) // Default to first subject line
+          setEditedSubject(draft.subjectLines[0])
+        } else if (draft.subjectLine) {
+          // Fallback for backward compatibility
+          setSubjectLines([draft.subjectLine])
+          setSelectedSubjectIndex(0)
+          setEditedSubject(draft.subjectLine)
+        } else {
+          setSubjectLines([emailDraft.subject || ''])
+          setSelectedSubjectIndex(0)
+          setEditedSubject(emailDraft.subject || '')
+        }
+      }
+    } catch (error) {
+      console.error('Error loading full draft:', error)
+      // Fallback to component draft data
+      if (emailDraft) {
+        setSubjectLines([emailDraft.subject || ''])
+        setSelectedSubjectIndex(0)
+        setEditedSubject(emailDraft.subject || '')
+      }
+    } finally {
+      setIsLoadingDraft(false)
+    }
+  }
 
   // Initialize edited content when draft changes or edit mode is enabled
   useEffect(() => {
     if (emailDraft) {
-      setEditedSubject(emailDraft.subject || '')
+      // Only set if we haven't loaded full draft yet
+      if (subjectLines.length === 0) {
+        setEditedSubject(emailDraft.subject || '')
+      }
       setEditedBody(emailDraft.body || '')
       setEditedEmail(emailDraft.contactEmail || '')
       // Find the selected email ID based on fromEmail
@@ -93,7 +141,7 @@ export function EmailDraftOverlay({
         setSelectedFromEmail(matchingEmail?.id || null)
       }
     }
-  }, [emailDraft, availableEmails])
+  }, [emailDraft, availableEmails, subjectLines.length])
 
   const loadAvailableEmails = async () => {
     setIsLoadingEmails(true)
@@ -152,18 +200,19 @@ export function EmailDraftOverlay({
 
   // Close dropdown when clicking outside
   useEffect(() => {
-    if (!isEmailDropdownOpen) return
+    if (!isEmailDropdownOpen && !isSubjectDropdownOpen) return
 
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement
-      if (!target.closest('.email-dropdown-container')) {
+      if (!target.closest('.email-dropdown-container') && !target.closest('.subject-dropdown-container')) {
         setIsEmailDropdownOpen(false)
+        setIsSubjectDropdownOpen(false)
       }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isEmailDropdownOpen])
+  }, [isEmailDropdownOpen, isSubjectDropdownOpen])
 
   // Reset edit mode when overlay closes
   useEffect(() => {
@@ -196,12 +245,36 @@ export function EmailDraftOverlay({
   }, [isOpen, isMinimized])
 
   const handleSave = async () => {
-    if (!emailDraft || !onEdit) return
+    if (!emailDraft) return
     
     setIsSaving(true)
     try {
-      await onEdit(emailDraft.id, editedSubject, editedBody)
-      setIsEditMode(false)
+      // Update the subjectLines array at the selected index with the edited subject
+      const updatedSubjectLines = [...subjectLines]
+      if (updatedSubjectLines.length > selectedSubjectIndex) {
+        updatedSubjectLines[selectedSubjectIndex] = editedSubject
+      } else {
+        // If index is out of bounds, add the subject
+        updatedSubjectLines.push(editedSubject)
+      }
+      
+      // Update via API with subjectLines array
+      const response = await emailGenerationApi.updateEmailDraft(emailDraft.id, {
+        subjectLines: updatedSubjectLines,
+        bodyText: editedBody,
+      })
+      
+      if (response.success && response.data) {
+        // Update local state
+        setSubjectLines(updatedSubjectLines)
+        if (onEdit) {
+          // Also call onEdit for backward compatibility
+          await onEdit(emailDraft.id, editedSubject, editedBody)
+        }
+        setIsEditMode(false)
+      } else {
+        throw new Error(response.error || 'Failed to update email draft')
+      }
     } catch (error) {
       console.error('Error saving email draft:', error)
       alert('Failed to save email draft: ' + (error instanceof Error ? error.message : 'Unknown error'))
@@ -468,32 +541,118 @@ export function EmailDraftOverlay({
                 </div>
               )}
 
-              {/* Subject Field - Clean Style */}
+              {/* Subject Field - Clean Gmail Style with Dropdown */}
               <div className="px-6 py-3 border-b border-gray-200">
-                {isEditMode ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-gray-900 flex-shrink-0">Subject:</span>
-                    <input
-                      type="text"
-                      value={editedSubject}
-                      onChange={(e) => setEditedSubject(e.target.value)}
-                      className="flex-1 text-sm text-gray-900 outline-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-2"
-                      placeholder="Subject"
-                      autoFocus
-                    />
+                <div className="flex items-center">
+                  <span className="text-sm text-gray-500 font-normal mr-3 min-w-[60px]">Subject</span>
+                  <div className="flex-1 flex items-center gap-2">
+                    {isEditMode ? (
+                      <>
+                        {subjectLines.length > 1 ? (
+                          <div className="flex-1 relative subject-dropdown-container">
+                            <button
+                              type="button"
+                              onClick={() => setIsSubjectDropdownOpen(!isSubjectDropdownOpen)}
+                              className="flex-1 text-sm text-gray-900 outline-none bg-transparent border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-left flex items-center justify-between w-full p-2"
+                            >
+                              <span className="truncate">
+                                {subjectLines[selectedSubjectIndex] || 'Select subject'}
+                              </span>
+                              <svg
+                                className={`w-4 h-4 text-gray-500 ml-2 flex-shrink-0 transition-transform ${isSubjectDropdownOpen ? 'rotate-180' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                            {isSubjectDropdownOpen && (
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                                {subjectLines.map((subject, index) => (
+                                  <button
+                                    key={index}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedSubjectIndex(index)
+                                      setEditedSubject(subjectLines[index])
+                                      setIsSubjectDropdownOpen(false)
+                                    }}
+                                    className={`w-full text-left px-4 py-3 text-sm text-gray-900 hover:bg-indigo-50 transition-colors ${
+                                      selectedSubjectIndex === index ? 'bg-indigo-50 text-indigo-700 font-medium' : ''
+                                    } first:rounded-t-lg last:rounded-b-lg`}
+                                  >
+                                    {subject}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={editedSubject}
+                            onChange={(e) => setEditedSubject(e.target.value)}
+                            className="flex-1 text-sm text-gray-900 outline-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-2"
+                            placeholder="Subject"
+                            autoFocus
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {subjectLines.length > 1 ? (
+                          <div className="flex-1 relative subject-dropdown-container">
+                            <button
+                              type="button"
+                              onClick={() => setIsSubjectDropdownOpen(!isSubjectDropdownOpen)}
+                              className="flex-1 text-sm text-gray-900 outline-none bg-transparent border-none cursor-pointer hover:text-indigo-600 transition-colors focus:text-indigo-600 text-left flex items-center justify-between w-full"
+                            >
+                              <span className="truncate">
+                                {subjectLines[selectedSubjectIndex] || emailDraft.subject || 'No Subject'}
+                              </span>
+                              <svg
+                                className={`w-4 h-4 text-gray-500 ml-2 flex-shrink-0 transition-transform ${isSubjectDropdownOpen ? 'rotate-180' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                            {isSubjectDropdownOpen && (
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                                {subjectLines.map((subject, index) => (
+                                  <button
+                                    key={index}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedSubjectIndex(index)
+                                      setIsSubjectDropdownOpen(false)
+                                    }}
+                                    className={`w-full text-left px-4 py-3 text-sm text-gray-900 hover:bg-indigo-50 transition-colors ${
+                                      selectedSubjectIndex === index ? 'bg-indigo-50 text-indigo-700 font-medium' : ''
+                                    } first:rounded-t-lg last:rounded-b-lg`}
+                                  >
+                                    {subject}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={subjectLines[selectedSubjectIndex] || emailDraft.subject || ''}
+                            readOnly
+                            className="flex-1 text-sm text-gray-900 outline-none bg-transparent border-none"
+                            placeholder="Subject"
+                          />
+                        )}
+                      </>
+                    )}
                   </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-gray-900 flex-shrink-0">Subject:</span>
-                    <input
-                      type="text"
-                      value={emailDraft.subject || ''}
-                      readOnly
-                      className="flex-1 text-sm text-gray-900 outline-none bg-transparent border-none"
-                      placeholder="Subject"
-                    />
-                  </div>
-                )}
+                </div>
               </div>
 
               {/* Email Body - Large Clean Area */}
