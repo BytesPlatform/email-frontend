@@ -570,4 +570,113 @@ export const emailGenerationApi = {
       throw error
     }
   },
+
+  /**
+   * Schedule email for later sending
+   * POST /emails/schedule
+   * Body: { draftId: number, scheduledAt: string (ISO date) }
+   */
+  async scheduleEmail(
+    draftId: number,
+    scheduledAt: string
+  ): Promise<ApiResponse<{
+    id: number
+    emailDraftId: number
+    scheduledAt: string
+    status: 'pending' | 'sent' | 'failed'
+    priority: number
+  }>> {
+    try {
+      const response = await apiClient.post<{
+        id: number
+        emailDraftId: number
+        scheduledAt: string
+        status: 'pending' | 'sent' | 'failed'
+        priority: number
+      }>('/emails/schedule', {
+        draftId,
+        scheduledAt,
+      })
+      return response
+    } catch (error) {
+      console.error('Error scheduling email:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Get email queue status
+   * GET /emails/schedule/queue/status
+   */
+  async getQueueStatus(): Promise<ApiResponse<{
+    pending: number
+    sent: number
+    failed: number
+    nextProcessing: string
+  }>> {
+    try {
+      const response = await apiClient.get<{
+        pending: number
+        sent: number
+        failed: number
+        nextProcessing: string
+      }>('/emails/schedule/queue/status')
+      return response
+    } catch (error) {
+      console.error('Error fetching queue status:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Remove email from queue (cancel scheduled email)
+   * DELETE /emails/schedule/queue/:draftId
+   */
+  async removeFromQueue(draftId: number): Promise<ApiResponse<{ message: string }>> {
+    try {
+      const response = await apiClient.delete<{ message: string }>(
+        `/emails/schedule/queue/${draftId}`
+      )
+      return response
+    } catch (error) {
+      console.error('Error removing from queue:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Get all queued emails
+   * GET /emails/schedule/queue
+   */
+  async getQueuedEmails(): Promise<ApiResponse<Array<{
+    id: number
+    emailDraftId: number
+    scheduledAt: string
+    status: 'pending' | 'sent' | 'failed'
+    priority: number
+    retryCount: number
+    nextRetryAt: string | null
+    createdAt: string
+    updatedAt: string
+    emailDraft?: EmailDraft
+  }>>> {
+    try {
+      const response = await apiClient.get<Array<{
+        id: number
+        emailDraftId: number
+        scheduledAt: string
+        status: 'pending' | 'sent' | 'failed'
+        priority: number
+        retryCount: number
+        nextRetryAt: string | null
+        createdAt: string
+        updatedAt: string
+        emailDraft?: EmailDraft
+      }>>('/emails/schedule/queue')
+      return response
+    } catch (error) {
+      console.error('Error fetching queued emails:', error)
+      throw error
+    }
+  },
 }
