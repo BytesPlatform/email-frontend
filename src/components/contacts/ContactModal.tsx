@@ -17,15 +17,31 @@ interface ContactModalProps {
   validity: ValidityDisplay | null
   isLoading: boolean
   isSaving: boolean
+  isSavingDetails: boolean
   editEmail: string
   editPhone: string
+  editBusinessName: string
+  editWebsite: string
+  editState: string
+  editZipCode: string
+  editStatus: string
+  editValidFlag: boolean | null
   onEditEmailChange: (value: string) => void
   onEditPhoneChange: (value: string) => void
+  onEditBusinessNameChange: (value: string) => void
+  onEditWebsiteChange: (value: string) => void
+  onEditStateChange: (value: string) => void
+  onEditZipCodeChange: (value: string) => void
+  onEditStatusChange: (value: string) => void
+  onEditValidFlagChange: (value: boolean) => void
   onSave: () => void
+  onSaveDetails: () => void
   onReset: () => void
   onClose: () => void
   error?: string | null
   success?: string | null
+  detailsError?: string | null
+  detailsSuccess?: string | null
   formatDateTime: (value?: string) => string
 }
 
@@ -34,15 +50,31 @@ export function ContactModal({
   validity,
   isLoading,
   isSaving,
+  isSavingDetails,
   editEmail,
   editPhone,
+  editBusinessName,
+  editWebsite,
+  editState,
+  editZipCode,
+  editStatus,
+  editValidFlag,
   onEditEmailChange,
   onEditPhoneChange,
+  onEditBusinessNameChange,
+  onEditWebsiteChange,
+  onEditStateChange,
+  onEditZipCodeChange,
+  onEditStatusChange,
+  onEditValidFlagChange,
   onSave,
+  onSaveDetails,
   onReset,
   onClose,
   error,
   success,
+  detailsError,
+  detailsSuccess,
   formatDateTime
 }: ContactModalProps) {
   // Block body scrolling when modal is open
@@ -262,6 +294,128 @@ export function ContactModal({
                       disabled={isSaving}
                     >
                       Save Contact
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={onReset}>
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Edit Form for Valid Contacts */}
+              {validity?.label !== 'Invalid' && (
+                <div className="rounded-lg border-2 border-indigo-100 bg-indigo-50/70 p-4 space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-700">Edit Contact Details</h4>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Update any field for this contact. Changes save via the ingestion service immediately.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Business Name
+                      </label>
+                      <Input
+                        value={editBusinessName}
+                        onChange={event => onEditBusinessNameChange(event.target.value)}
+                        placeholder="Business name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Website
+                      </label>
+                      <Input
+                        value={editWebsite}
+                        onChange={event => onEditWebsiteChange(event.target.value)}
+                        placeholder="https://example.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Email Address
+                      </label>
+                      <Input
+                        value={editEmail}
+                        onChange={event => onEditEmailChange(event.target.value)}
+                        placeholder="name@example.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Phone Number
+                      </label>
+                      <Input
+                        value={editPhone}
+                        onChange={event => onEditPhoneChange(event.target.value)}
+                        placeholder="(555) 123-4567"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        State
+                      </label>
+                      <Input
+                        value={editState}
+                        onChange={event => onEditStateChange(event.target.value)}
+                        placeholder="CA"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Zip Code
+                      </label>
+                      <Input
+                        value={editZipCode}
+                        onChange={event => onEditZipCodeChange(event.target.value)}
+                        placeholder="90210"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Status
+                      </label>
+                      <Input
+                        value={editStatus}
+                        onChange={event => onEditStatusChange(event.target.value)}
+                        placeholder="new | contacted | customer"
+                      />
+                    </div>
+                    <div className="flex items-center space-x-3 pt-6">
+                      <label className="flex items-center space-x-2 text-xs font-semibold text-slate-600">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          checked={Boolean(editValidFlag)}
+                          onChange={event => onEditValidFlagChange(event.target.checked)}
+                        />
+                        <span>Mark contact as valid</span>
+                      </label>
+                      {typeof contact.valid === 'boolean' && (
+                        <span className="text-[11px] text-slate-500">
+                          Current: {contact.valid ? 'Valid' : 'Invalid'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {detailsError && (
+                    <p className="text-xs font-medium text-rose-600">{detailsError}</p>
+                  )}
+                  {detailsSuccess && (
+                    <p className="text-xs font-medium text-emerald-600">{detailsSuccess}</p>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={onSaveDetails}
+                      isLoading={isSavingDetails}
+                      disabled={isSavingDetails}
+                    >
+                      Save Changes
                     </Button>
                     <Button variant="ghost" size="sm" onClick={onReset}>
                       Reset
