@@ -8,6 +8,7 @@ export type DraftViewType =
   | 'sms'
   | 'starred'
   | 'not-delivered'
+  | 'queued'
 
 interface DraftsSidebarProps {
   isCollapsed: boolean
@@ -20,6 +21,7 @@ interface DraftsSidebarProps {
   smsDraftCount: number
   starredCount: number
   notDeliveredCount: number
+  queuedCount?: number
 }
 
 export function DraftsSidebar({
@@ -33,6 +35,7 @@ export function DraftsSidebar({
   smsDraftCount,
   starredCount,
   notDeliveredCount,
+  queuedCount = 0,
 }: DraftsSidebarProps) {
   const menuItems = [
     {
@@ -85,6 +88,16 @@ export function DraftsSidebar({
         </svg>
       ),
       count: notDeliveredCount,
+    },
+    {
+      id: 'queued' as DraftViewType,
+      label: 'Queued Emails',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      count: queuedCount,
     },
   ]
 

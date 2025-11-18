@@ -77,6 +77,13 @@ export function EmailDraftOverlay({
     isOpen: false,
     message: '',
   })
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
+  const [scheduledAt, setScheduledAt] = useState('')
+  const [scheduledTime, setScheduledTime] = useState('')
+  const [isScheduling, setIsScheduling] = useState(false)
+  const [isScheduled, setIsScheduled] = useState(false)
+  const [scheduledDate, setScheduledDate] = useState<string | null>(null)
+  const [isRemovingFromQueue, setIsRemovingFromQueue] = useState(false)
 
   // Load available client emails and full draft data
   useEffect(() => {
@@ -334,6 +341,96 @@ export function EmailDraftOverlay({
     }
   }
 
+  // Check if email is scheduled
+  const checkScheduledStatus = async () => {
+    if (!emailDraft) return
+    try {
+      // We'll check queue status to see if this draft is scheduled
+      // For now, we'll use a simple approach - check if draft has a scheduled status
+      // In a real implementation, you might want to fetch queue entries for this draft
+      const queueStatus = await emailGenerationApi.getQueueStatus()
+      if (queueStatus.success) {
+        // Note: This is a simplified check. In production, you'd want to check
+        // if this specific draftId is in the queue
+        setIsScheduled(false) // Will be updated when we have a proper API
+      }
+    } catch (error) {
+      console.error('Error checking scheduled status:', error)
+    }
+  }
+
+  // Handle schedule email
+  const handleScheduleEmail = async () => {
+    if (!emailDraft) return
+    
+    if (!scheduledAt || !scheduledTime) {
+      alert('Please select both date and time')
+      return
+    }
+
+    // Combine date and time into ISO string
+    const scheduledDateTime = new Date(`${scheduledAt}T${scheduledTime}`).toISOString()
+    
+    // Validate that scheduled time is in the future
+    if (new Date(scheduledDateTime) <= new Date()) {
+      alert('Please select a future date and time')
+      return
+    }
+
+    setIsScheduling(true)
+    try {
+      const response = await emailGenerationApi.scheduleEmail(emailDraft.id, scheduledDateTime)
+      if (response.success && response.data) {
+        setIsScheduled(true)
+        setScheduledDate(scheduledDateTime)
+        setIsScheduleModalOpen(false)
+        setScheduledAt('')
+        setScheduledTime('')
+        alert('Email scheduled successfully!')
+      } else {
+        alert('Failed to schedule email: ' + (response.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Error scheduling email:', error)
+      alert('Failed to schedule email: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsScheduling(false)
+    }
+  }
+
+  // Handle remove from queue
+  const handleRemoveFromQueue = async () => {
+    if (!emailDraft) return
+    
+    if (!window.confirm('Are you sure you want to cancel this scheduled email?')) {
+      return
+    }
+
+    setIsRemovingFromQueue(true)
+    try {
+      const response = await emailGenerationApi.removeFromQueue(emailDraft.id)
+      if (response.success) {
+        setIsScheduled(false)
+        setScheduledDate(null)
+        alert('Scheduled email cancelled successfully')
+      } else {
+        alert('Failed to cancel scheduled email: ' + (response.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Error removing from queue:', error)
+      alert('Failed to cancel scheduled email: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsRemovingFromQueue(false)
+    }
+  }
+
+  // Check scheduled status when overlay opens
+  useEffect(() => {
+    if (isOpen && emailDraft) {
+      checkScheduledStatus()
+    }
+  }, [isOpen, emailDraft?.id])
+
   if (!isOpen || !emailDraft) return null
 
   const unsubscribedAtDisplay =
@@ -393,6 +490,15 @@ export function EmailDraftOverlay({
             <h3 className="text-sm font-medium truncate flex-1 min-w-0">
               {emailDraft.contactName || emailDraft.contactEmail || 'Unknown Contact'}
             </h3>
+            {/* Scheduled Badge */}
+            {isScheduled && scheduledDate && (
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs font-medium flex-shrink-0">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>Scheduled</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             {/* Unselect Checkbox */}
@@ -710,20 +816,52 @@ export function EmailDraftOverlay({
                           variant="primary"
                           size="sm"
                           onClick={() => onSend && onSend(emailDraft.id)}
-                          disabled={emailDraft.status !== 'draft'}
+                          disabled={emailDraft.status !== 'draft' || isScheduled}
                           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
+                          title={isScheduled ? 'Email is scheduled. Cancel scheduling to send now.' : undefined}
                         >
                           Send
                         </Button>
-                        {emailDraft.status === 'draft' && onEdit && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setIsEditMode(true)}
-                            className="text-gray-700 border-gray-300 hover:bg-gray-50"
-                          >
-                            Edit
-                          </Button>
+                        {emailDraft.status === 'draft' && (
+                          <>
+                            {/* Only show queue email button when NOT in bulk selection mode */}
+                            {!(selectedCount !== undefined && selectedCount > 1) && (
+                              <>
+                                {isScheduled ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleRemoveFromQueue}
+                                    disabled={isRemovingFromQueue}
+                                    isLoading={isRemovingFromQueue}
+                                    className="text-orange-700 border-orange-300 hover:bg-orange-50"
+                                    title={`Scheduled for ${scheduledDate ? new Date(scheduledDate).toLocaleString() : 'later'}`}
+                                  >
+                                    Cancel Schedule
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setIsScheduleModalOpen(true)}
+                                    className="text-indigo-700 border-indigo-300 hover:bg-indigo-50"
+                                  >
+                                    Queue Email
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                            {onEdit && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setIsEditMode(true)}
+                                className="text-gray-700 border-gray-300 hover:bg-gray-50"
+                              >
+                                Edit
+                              </Button>
+                            )}
+                          </>
                         )}
                       </>
                     )}
@@ -790,6 +928,88 @@ export function EmailDraftOverlay({
         onConfirm={() => setErrorDialog({ isOpen: false, message: '' })}
         onCancel={() => setErrorDialog({ isOpen: false, message: '' })}
       />
+
+      {/* Schedule Email Modal */}
+      {isScheduleModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setIsScheduleModalOpen(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Schedule Email</h3>
+              <button
+                onClick={() => setIsScheduleModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Time
+                </label>
+                <input
+                  type="time"
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+
+              {scheduledAt && scheduledTime && (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                  <p className="text-sm text-indigo-700">
+                    <span className="font-medium">Scheduled for:</span>{' '}
+                    {new Date(`${scheduledAt}T${scheduledTime}`).toLocaleString()}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleScheduleEmail}
+                  disabled={!scheduledAt || !scheduledTime || isScheduling}
+                  isLoading={isScheduling}
+                  className="flex-1"
+                >
+                  Schedule
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsScheduleModalOpen(false)
+                    setScheduledAt('')
+                    setScheduledTime('')
+                  }}
+                  disabled={isScheduling}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

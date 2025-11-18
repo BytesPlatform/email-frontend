@@ -10,6 +10,7 @@ import { CombinedDraftsList } from '@/components/drafts/CombinedDraftsList'
 import { EmailDraftOverlay } from '@/components/drafts/EmailDraftOverlay'
 import { SmsDraftOverlay } from '@/components/drafts/SmsDraftOverlay'
 import { Button } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { smsGenerationApi } from '@/api/smsGeneration'
 import { unsubscribeApi } from '@/api/unsubscribe'
@@ -54,6 +55,37 @@ function DraftsPageContent() {
   const [isUnsubscribeLoading, setIsUnsubscribeLoading] = useState(false)
   const [isUnsubscribeLoaded, setIsUnsubscribeLoaded] = useState(false)
   const [resubscribingDraftId, setResubscribingDraftId] = useState<number | null>(null)
+  const [queuedEmails, setQueuedEmails] = useState<Array<{
+    id: number
+    emailDraftId: number
+    scheduledAt: string
+    status: 'pending' | 'sent' | 'failed'
+    emailDraft?: EmailDraft
+  }>>([])
+  const [isLoadingQueued, setIsLoadingQueued] = useState(false)
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
+  const [scheduledAt, setScheduledAt] = useState('')
+  const [scheduledTime, setScheduledTime] = useState('')
+  const [isScheduling, setIsScheduling] = useState(false)
+  const [dequeuingIds, setDequeuingIds] = useState<Set<number>>(new Set())
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    variant: 'danger' | 'warning' | 'info'
+    onConfirm: () => void
+    onCancel?: () => void
+    confirmText?: string
+    cancelText?: string
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'info',
+    onConfirm: () => {},
+  })
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const getUnsubscribeInfo = useCallback(
     (contactId?: number | null) => {
@@ -162,6 +194,151 @@ function DraftsPageContent() {
     }
   }
 
+  // Fetch queued emails
+  const fetchQueuedEmails = async () => {
+    setIsLoadingQueued(true)
+    try {
+      const res = await emailGenerationApi.getQueuedEmails()
+      if (res.success && res.data) {
+        const queued = Array.isArray(res.data) ? res.data : []
+        setQueuedEmails(queued.map(q => ({
+          id: q.id,
+          emailDraftId: q.emailDraftId,
+          scheduledAt: q.scheduledAt,
+          status: q.status,
+          emailDraft: q.emailDraft ? transformEmailDraft(q.emailDraft) : undefined,
+        })))
+      } else {
+        setQueuedEmails([])
+      }
+    } catch (err) {
+      console.error('Error fetching queued emails:', err)
+      setQueuedEmails([])
+    } finally {
+      setIsLoadingQueued(false)
+    }
+  }
+
+  // Handle schedule emails (bulk)
+  const handleScheduleEmails = async () => {
+    if (selectedEmailDraftIds.size === 0) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'No Emails Selected',
+        message: 'Please select at least one email to schedule.',
+        variant: 'warning',
+        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+        confirmText: 'OK',
+        cancelText: '',
+      })
+      return
+    }
+
+    if (!scheduledAt || !scheduledTime) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Missing Information',
+        message: 'Please select both date and time.',
+        variant: 'warning',
+        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+        confirmText: 'OK',
+        cancelText: '',
+      })
+      return
+    }
+
+    const scheduledDateTime = new Date(`${scheduledAt}T${scheduledTime}`).toISOString()
+    if (new Date(scheduledDateTime) <= new Date()) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Invalid Date',
+        message: 'Please select a future date and time.',
+        variant: 'warning',
+        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+        confirmText: 'OK',
+        cancelText: '',
+      })
+      return
+    }
+
+    setIsScheduling(true)
+    const draftIds = Array.from(selectedEmailDraftIds)
+    let successCount = 0
+    let failCount = 0
+
+    try {
+      for (const draftId of draftIds) {
+        try {
+          const response = await emailGenerationApi.scheduleEmail(draftId, scheduledDateTime)
+          if (response.success) {
+            successCount++
+          } else {
+            failCount++
+          }
+        } catch (error) {
+          failCount++
+        }
+      }
+
+      if (failCount === 0) {
+        setSuccessMessage(`Successfully scheduled ${successCount} email(s)!`)
+        setIsScheduleModalOpen(false)
+        setScheduledAt('')
+        setScheduledTime('')
+        setSelectedEmailDraftIds(new Set())
+        if (activeView === 'queued') {
+          fetchQueuedEmails()
+        }
+        setTimeout(() => setSuccessMessage(null), 5000)
+      } else {
+        setErrorMessage(`Scheduled ${successCount} email(s), ${failCount} failed.`)
+        setTimeout(() => setErrorMessage(null), 5000)
+      }
+    } catch (error) {
+      setErrorMessage('Error scheduling emails: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      setTimeout(() => setErrorMessage(null), 5000)
+    } finally {
+      setIsScheduling(false)
+    }
+  }
+
+  // Handle dequeue email
+  const handleDequeueEmail = (draftId: number) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Remove from Queue',
+      message: 'Are you sure you want to remove this email from the queue?',
+      variant: 'warning',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+        setDequeuingIds(prev => new Set(prev).add(draftId))
+        try {
+          const response = await emailGenerationApi.removeFromQueue(draftId)
+          if (response.success) {
+            setQueuedEmails(prev => prev.filter(q => q.emailDraftId !== draftId))
+            setSuccessMessage('Email removed from queue successfully')
+            setTimeout(() => setSuccessMessage(null), 5000)
+          } else {
+            setErrorMessage('Failed to remove from queue: ' + (response.error || 'Unknown error'))
+            setTimeout(() => setErrorMessage(null), 5000)
+          }
+        } catch (error) {
+          setErrorMessage('Error removing from queue: ' + (error instanceof Error ? error.message : 'Unknown error'))
+          setTimeout(() => setErrorMessage(null), 5000)
+        } finally {
+          setDequeuingIds(prev => {
+            const next = new Set(prev)
+            next.delete(draftId)
+            return next
+          })
+        }
+      },
+      onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    })
+  }
+
   // Fetch SMS drafts using getClientSmsDrafts API (same pattern as email drafts)
   const fetchSmsDrafts = async () => {
     setIsLoading(true)
@@ -231,6 +408,8 @@ function DraftsPageContent() {
       fetchEmailDrafts()
     } else if (activeView === 'sms') {
       fetchSmsDrafts()
+    } else if (activeView === 'queued') {
+      fetchQueuedEmails()
     } else {
       // Fallback: fetch based on activeTab
       if (activeTab === 'email') {
@@ -693,9 +872,11 @@ function DraftsPageContent() {
             )
           )
         }
-        // alert('Email draft updated successfully!')
+        setSuccessMessage('Email draft updated successfully!')
+        setTimeout(() => setSuccessMessage(null), 5000)
       } else {
-        alert('Failed to update email draft: ' + (res.error || 'Unknown error'))
+        setErrorMessage('Failed to update email draft: ' + (res.error || 'Unknown error'))
+        setTimeout(() => setErrorMessage(null), 5000)
         throw new Error(res.error || 'Failed to update email draft')
       }
     } catch (err) {
@@ -707,55 +888,51 @@ function DraftsPageContent() {
   const handleResubscribeDraft = async (draftId: number) => {
     const draft = emailDrafts.find(d => d.id === draftId)
     if (!draft || !draft.contactId) {
-      alert('Draft or contact information not found.')
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'Draft or contact information not found.',
+        variant: 'warning',
+        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+        confirmText: 'OK',
+        cancelText: '',
+      })
       return
     }
 
-    if (!window.confirm('Resubscribe this contact to emails?')) {
-      return
-    }
-
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Resubscribe Contact',
+      message: 'Resubscribe this contact to emails?',
+      variant: 'info',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
     setResubscribingDraftId(draftId)
     try {
-      const res = await unsubscribeApi.resubscribeByContact(draft.contactId)
+          const res = await unsubscribeApi.resubscribeByContact(draft.contactId!)
       if (res.success && res.data) {
-        alert(res.data.message || 'Contact resubscribed successfully.')
-        setUnsubscribeMap(prev => {
-          const next = new Map(prev)
-          next.delete(draft.contactId)
-          return next
-        })
-        const clearUnsubscribeInfo = (d: EmailDraft): EmailDraft => ({
-          ...d,
-          isUnsubscribed: false,
-          unsubscribedAt: null,
-          unsubscribeReason: null,
-        })
-
-        setEmailDrafts(prevDrafts =>
-          prevDrafts.map(d => (d.id === draftId ? clearUnsubscribeInfo(d) : d))
-        )
-        setSelectedDraftsForNavigation(prev =>
-          prev.length > 0 ? prev.map(d => (d.id === draftId ? clearUnsubscribeInfo(d) : d)) : prev
-        )
-        setSelectedEmailDraft(prev =>
-          prev && prev.id === draftId ? clearUnsubscribeInfo(prev) : prev
-        )
+            setSuccessMessage(res.data.message || 'Contact resubscribed successfully.')
+            setTimeout(() => setSuccessMessage(null), 5000)
+            // Refresh unsubscribe list
         fetchUnsubscribeList(true)
       } else {
-        alert(res.error || 'Failed to resubscribe contact.')
+            setErrorMessage(res.error || 'Failed to resubscribe contact.')
+            setTimeout(() => setErrorMessage(null), 5000)
       }
     } catch (err) {
-      console.error('Error resubscribing contact:', err)
-      alert(
-        err instanceof Error
-          ? err.message
-          : 'An error occurred while attempting to resubscribe.'
-      )
+          setErrorMessage('Error resubscribing contact: ' + (err instanceof Error ? err.message : 'Unknown error'))
+          setTimeout(() => setErrorMessage(null), 5000)
     } finally {
       setResubscribingDraftId(null)
     }
+      },
+      onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+      confirmText: 'Resubscribe',
+      cancelText: 'Cancel',
+    })
+    return
   }
+
 
   const handleSendEmailDraft = async (draftId: number) => {
     try {
@@ -767,26 +944,29 @@ function DraftsPageContent() {
         
         // Show success message with spam score if available
         if (spamScore !== undefined) {
-          alert(`${message}\nSpam Score: ${spamScore}\nEmail Log ID: ${emailLogId || 'N/A'}`)
+          setSuccessMessage(`${message}\nSpam Score: ${spamScore}\nEmail Log ID: ${emailLogId || 'N/A'}`)
         } else {
-          alert(message)
+          setSuccessMessage(message)
         }
+        setTimeout(() => setSuccessMessage(null), 5000)
         
         handleCloseEmailOverlay()
         // Refresh email drafts to get updated status
         fetchEmailDrafts()
       } else {
-        alert('Failed to send email: ' + (res.error || 'Unknown error'))
+        setErrorMessage('Failed to send email: ' + (res.error || 'Unknown error'))
+        setTimeout(() => setErrorMessage(null), 5000)
       }
     } catch (err) {
       console.error('Error sending email:', err)
       // Handle BadRequestException with spam score details
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       if (errorMessage.includes('spam score') || errorMessage.includes('blocked')) {
-        alert(`Email blocked: ${errorMessage}\nPlease optimize the content and try again.`)
+        setErrorMessage(`Email blocked: ${errorMessage}\nPlease optimize the content and try again.`)
       } else {
-        alert('Error sending email: ' + errorMessage)
+        setErrorMessage('Error sending email: ' + errorMessage)
       }
+      setTimeout(() => setErrorMessage(null), 5000)
     }
   }
 
@@ -820,9 +1000,11 @@ function DraftsPageContent() {
             )
           )
         }
-        // alert('SMS draft updated successfully!')
+        setSuccessMessage('SMS draft updated successfully!')
+        setTimeout(() => setSuccessMessage(null), 5000)
       } else {
-        alert('Failed to update SMS draft: ' + (res.error || 'Unknown error'))
+        setErrorMessage('Failed to update SMS draft: ' + (res.error || 'Unknown error'))
+        setTimeout(() => setErrorMessage(null), 5000)
         throw new Error(res.error || 'Failed to update SMS draft')
       }
     } catch (err) {
@@ -859,20 +1041,23 @@ function DraftsPageContent() {
         
         // Show success message with details if available
         if (messageSid && smsLogId) {
-          alert(`${message}\nMessage SID: ${messageSid}\nSMS Log ID: ${smsLogId}`)
+          setSuccessMessage(`${message}\nMessage SID: ${messageSid}\nSMS Log ID: ${smsLogId}`)
         } else {
-          alert(message)
+          setSuccessMessage(message)
         }
+        setTimeout(() => setSuccessMessage(null), 5000)
         
         handleCloseSmsOverlay()
         // Refresh SMS drafts
         fetchSmsDrafts()
       } else {
-        alert('Failed to send SMS: ' + (res.error || 'Unknown error'))
+        setErrorMessage('Failed to send SMS: ' + (res.error || 'Unknown error'))
+        setTimeout(() => setErrorMessage(null), 5000)
       }
     } catch (err) {
       console.error('Error sending SMS:', err)
-      alert('Error sending SMS: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      setErrorMessage('Error sending SMS: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      setTimeout(() => setErrorMessage(null), 5000)
     }
   }
 
@@ -957,6 +1142,7 @@ function DraftsPageContent() {
   const notDeliveredCount =
     emailDrafts.filter(d => d.status !== 'sent' && d.status !== 'delivered').length +
     smsDrafts.filter(d => d.status !== 'sent' && d.status !== 'delivered').length
+  const queuedCount = queuedEmails.filter(q => q.status === 'pending').length
 
   // For "all" view, combine both email and SMS drafts together
   // Group by contactId to show both email and SMS for same person
@@ -1024,6 +1210,10 @@ function DraftsPageContent() {
     isEmailView = true
   } else if (activeView === 'sms') {
     displayDrafts = filteredSmsDrafts
+    isEmailView = false
+  } else if (activeView === 'queued') {
+    // Queued emails view is handled separately above
+    displayDrafts = []
     isEmailView = false
   } else {
     displayDrafts = filteredEmailDrafts
@@ -1347,11 +1537,13 @@ function DraftsPageContent() {
       // Show results
       const allSuccess = results.emailFailed === 0 && results.smsFailed === 0
       if (allSuccess) {
-        alert(`Successfully sent ${results.emailSuccess} email(s) and ${results.smsSuccess} SMS(s)!`)
+        setSuccessMessage(`Successfully sent ${results.emailSuccess} email(s) and ${results.smsSuccess} SMS(s)!`)
+        setTimeout(() => setSuccessMessage(null), 5000)
       } else {
-        alert(
+        setErrorMessage(
           `Sent ${results.emailSuccess} email(s) (${results.emailFailed} failed) and ${results.smsSuccess} SMS(s) (${results.smsFailed} failed).\n\nErrors:\n${results.errors.join('\n')}`
         )
+        setTimeout(() => setErrorMessage(null), 8000)
       }
 
       // Refresh drafts and clear selection
@@ -1364,7 +1556,8 @@ function DraftsPageContent() {
       fetchSmsDrafts()
     } catch (err) {
       console.error('Error in bulk send:', err)
-      alert('Error sending messages: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      setErrorMessage('Error sending messages: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      setTimeout(() => setErrorMessage(null), 5000)
     } finally {
       setIsBulkSending(false)
     }
@@ -1408,6 +1601,7 @@ function DraftsPageContent() {
           smsDraftCount={smsDraftCount}
           starredCount={starredCount}
           notDeliveredCount={notDeliveredCount}
+          queuedCount={queuedCount}
         />
 
         {/* Main Content Area */}
@@ -1428,6 +1622,8 @@ function DraftsPageContent() {
                           ? 'Starred Drafts'
                           : activeView === 'not-delivered'
                             ? 'Not Delivered'
+                            : activeView === 'queued'
+                              ? 'Queued Emails'
                             : 'Drafts'}
                 </h1>
               </div>
@@ -1510,6 +1706,7 @@ function DraftsPageContent() {
                    ) : (
                      <>
                        {selectedEmailDraftIds.size > 0 && (
+                         <>
                          <Button
                            variant="primary"
                            size="sm"
@@ -1524,6 +1721,20 @@ function DraftsPageContent() {
                          >
                            Review & Send Email ({selectedEmailDraftIds.size})
                          </Button>
+                           <Button
+                             variant="outline"
+                             size="sm"
+                             onClick={() => setIsScheduleModalOpen(true)}
+                             className="text-indigo-700 border-indigo-300 hover:bg-indigo-50"
+                             leftIcon={
+                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                               </svg>
+                             }
+                           >
+                             Queue Email ({selectedEmailDraftIds.size})
+                           </Button>
+                         </>
                        )}
                        {selectedSmsDraftIds.size > 0 && (
                          <Button
@@ -1561,7 +1772,132 @@ function DraftsPageContent() {
           {/* Main Content */}
           <div className="flex-1 overflow-y-auto bg-white">
             <div className="px-4 py-4">
-              {showCombinedView ? (
+              {activeView === 'queued' ? (
+                <div className="space-y-4">
+                  {isLoadingQueued ? (
+                    <div className="space-y-3">
+                      {[1, 2, 3].map((i) => (
+                        <div
+                          key={i}
+                          className="rounded-xl border-2 border-gray-200 bg-white p-5 animate-pulse"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start space-x-4 flex-1">
+                              <div className="h-12 w-12 rounded-full bg-gray-200"></div>
+                              <div className="flex-1 space-y-2">
+                                <div className="h-5 w-48 bg-gray-200 rounded"></div>
+                                <div className="h-4 w-64 bg-gray-200 rounded"></div>
+                                <div className="h-3 w-32 bg-gray-200 rounded"></div>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <div className="h-8 w-20 bg-gray-200 rounded"></div>
+                              <div className="h-8 w-16 bg-gray-200 rounded"></div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : queuedEmails.length === 0 ? (
+                    <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
+                      <div className="flex flex-col items-center justify-center space-y-3">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                          <svg className="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-700 mb-1">
+                            No queued emails
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Emails scheduled for later sending will appear here.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {queuedEmails.map((queued) => (
+                        <div
+                          key={queued.id}
+                          className="group rounded-xl border-2 border-gray-200 bg-white p-5 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all duration-200"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start space-x-4 flex-1">
+                              <div className="flex-shrink-0">
+                                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center">
+                                  <svg className="h-6 w-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                  </svg>
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <h4 className="text-base font-semibold text-gray-900">
+                                    {queued.emailDraft?.contactName || queued.emailDraft?.contactEmail || `Draft #${queued.emailDraftId}`}
+                                  </h4>
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    queued.status === 'pending' 
+                                      ? 'bg-indigo-100 text-indigo-700' 
+                                      : queued.status === 'sent'
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : 'bg-rose-100 text-rose-700'
+                                  }`}>
+                                    {queued.status}
+                                  </span>
+                                </div>
+                                {queued.emailDraft && (
+                                  <p className="text-sm text-gray-600 mb-1 truncate">
+                                    {queued.emailDraft.subject || 'No Subject'}
+                                  </p>
+                                )}
+                                <div className="flex items-center gap-4 text-xs text-gray-500">
+                                  <span className="flex items-center gap-1">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Scheduled: {new Date(queued.scheduledAt).toLocaleString()}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {queued.status === 'pending' && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDequeueEmail(queued.emailDraftId)}
+                                  disabled={dequeuingIds.has(queued.emailDraftId)}
+                                  isLoading={dequeuingIds.has(queued.emailDraftId)}
+                                  className="text-orange-700 border-orange-300 hover:bg-orange-50"
+                                  leftIcon={
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  }
+                                >
+                                  Dequeue
+                                </Button>
+                              )}
+                              {queued.emailDraft && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleViewDraft(queued.emailDraftId, 'email')}
+                                  className="text-gray-700 border-gray-300 hover:bg-gray-50"
+                                >
+                                  View
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : showCombinedView ? (
                 <CombinedDraftsList
                   combinedDrafts={combinedDrafts.slice(
                     (currentPage - 1) * itemsPerPage,
@@ -1773,6 +2109,90 @@ function DraftsPageContent() {
           resubscribingDraftId === selectedEmailDraft.id
         }
       />
+
+      {/* Bulk Schedule Email Modal */}
+      {isScheduleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setIsScheduleModalOpen(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Schedule {selectedEmailDraftIds.size} Email{selectedEmailDraftIds.size !== 1 ? 's' : ''}
+              </h3>
+              <button
+                onClick={() => setIsScheduleModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Time
+                </label>
+                <input
+                  type="time"
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+
+              {scheduledAt && scheduledTime && (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                  <p className="text-sm text-indigo-700">
+                    <span className="font-medium">Scheduled for:</span>{' '}
+                    {new Date(`${scheduledAt}T${scheduledTime}`).toLocaleString()}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleScheduleEmails}
+                  disabled={!scheduledAt || !scheduledTime || isScheduling}
+                  isLoading={isScheduling}
+                  className="flex-1"
+                >
+                  Schedule
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsScheduleModalOpen(false)
+                    setScheduledAt('')
+                    setScheduledTime('')
+                  }}
+                  disabled={isScheduling}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SMS Draft Overlay */}
       <SmsDraftOverlay
