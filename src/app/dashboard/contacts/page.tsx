@@ -141,10 +141,18 @@ export default function ContactsPage() {
   const [isLoadingDetail, setIsLoadingDetail] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [isSavingContact, setIsSavingContact] = useState(false)
+  const [editBusinessName, setEditBusinessName] = useState('')
+  const [editWebsite, setEditWebsite] = useState('')
+  const [editStateValue, setEditStateValue] = useState('')
+  const [editZipCode, setEditZipCode] = useState('')
+  const [editStatus, setEditStatus] = useState('')
+  const [editValidFlag, setEditValidFlag] = useState<boolean | null>(null)
   const [editEmail, setEditEmail] = useState('')
   const [editPhone, setEditPhone] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
   const [editSuccess, setEditSuccess] = useState<string | null>(null)
+  const [detailsError, setDetailsError] = useState<string | null>(null)
+  const [detailsSuccess, setDetailsSuccess] = useState<string | null>(null)
   const [selectedContactIds, setSelectedContactIds] = useState<Set<number>>(new Set())
   const [bulkContactData, setBulkContactData] = useState<Map<number, { email: string; phone: string }>>(new Map())
   const [isBulkSaving, setIsBulkSaving] = useState(false)
@@ -156,6 +164,7 @@ export default function ContactsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleteSuccess, setDeleteSuccess] = useState<string | null>(null)
   const [invalidContacts, setInvalidContacts] = useState<ClientContact[]>([]) // Store fetched invalid contacts separately
+  const [isSavingDetails, setIsSavingDetails] = useState(false)
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean
     type: 'single' | 'bulk' | null
@@ -378,10 +387,24 @@ export default function ContactsPage() {
       if (response.success && response.data) {
         const contact = response.data
         setSelectedContact(contact)
+        setEditBusinessName(contact.businessName || '')
+        setEditWebsite(contact.website || '')
+        setEditStateValue(contact.state || '')
+        setEditZipCode(contact.zipCode || '')
+        setEditStatus(contact.status || '')
+        setEditValidFlag(
+          typeof contact.valid === 'boolean'
+            ? contact.valid
+            : typeof contact.computedValid === 'boolean'
+            ? contact.computedValid
+            : null
+        )
         setEditEmail(contact.email || '')
         setEditPhone(contact.phone || '')
         setEditError(null)
         setEditSuccess(null)
+        setDetailsError(null)
+        setDetailsSuccess(null)
       } else {
         setDetailError(response.error || 'Unable to load contact details')
       }
@@ -396,10 +419,18 @@ export default function ContactsPage() {
     setSelectedContactId(null)
     setSelectedContact(null)
     setDetailError(null)
+    setDetailsError(null)
+    setDetailsSuccess(null)
     setEditEmail('')
     setEditPhone('')
     setEditError(null)
     setEditSuccess(null)
+    setEditBusinessName('')
+    setEditWebsite('')
+    setEditStateValue('')
+    setEditZipCode('')
+    setEditStatus('')
+    setEditValidFlag(null)
   }
 
   const handleSaveContact = async () => {
@@ -447,7 +478,37 @@ export default function ContactsPage() {
         )
       })
       setSelectedContact(updatedContact)
+      setInvalidContacts(prev => prev.filter(contact => contact.id !== updatedContact.id))
+      setSelectedContactIds(prev => {
+        if (!prev.has(updatedContact.id)) {
+          return prev
+        }
+        const next = new Set(prev)
+        next.delete(updatedContact.id)
+        return next
+      })
+      setBulkContactData(prev => {
+        if (!prev.has(updatedContact.id)) {
+          return prev
+        }
+        const next = new Map(prev)
+        next.delete(updatedContact.id)
+        return next
+      })
+      setEditBusinessName(updatedContact.businessName || '')
+      setEditWebsite(updatedContact.website || '')
+      setEditStateValue(updatedContact.state || '')
+      setEditZipCode(updatedContact.zipCode || '')
+      setEditStatus(updatedContact.status || '')
+      setEditValidFlag(
+        typeof updatedContact.valid === 'boolean'
+          ? updatedContact.valid
+          : typeof updatedContact.computedValid === 'boolean'
+          ? updatedContact.computedValid
+          : null
+      )
       setEditSuccess(response.data.message || 'Contact updated successfully.')
+      setDetailsError(null)
     } catch (error) {
       setEditError(
         error instanceof Error ? error.message : 'Unable to update contact. Please try again.'
@@ -726,6 +787,85 @@ export default function ContactsPage() {
 
   const handleCancelDelete = () => {
     setConfirmDialog({ isOpen: false, type: null })
+  }
+
+  const handleSaveContactDetails = async () => {
+    if (!selectedContactId) {
+      setDetailsError('Select a contact first.')
+      return
+    }
+
+    setIsSavingDetails(true)
+    setDetailsError(null)
+    setDetailsSuccess(null)
+
+    const normalizeNullable = (value: string) => {
+      const trimmed = value.trim()
+      return trimmed.length > 0 ? trimmed : null
+    }
+
+    const normalizeString = (value: string) => {
+      const trimmed = value.trim()
+      return trimmed.length > 0 ? trimmed : undefined
+    }
+
+    try {
+      const payload = {
+        businessName: normalizeString(editBusinessName),
+        email: normalizeNullable(editEmail),
+        phone: normalizeNullable(editPhone),
+        website: normalizeNullable(editWebsite),
+        state: normalizeNullable(editStateValue),
+        zipCode: normalizeNullable(editZipCode),
+        status: normalizeString(editStatus),
+        valid: typeof editValidFlag === 'boolean' ? editValidFlag : undefined
+      }
+
+      const response = await ingestionApi.updateContact(selectedContactId, payload)
+      if (!response.success || !response.data || !response.data.contact) {
+        setDetailsError(response.error || 'Unable to update contact. Please try again.')
+        return
+      }
+
+      const updatedContact = response.data.contact
+      if (!updatedContact || typeof updatedContact.id !== 'number') {
+        setDetailsError('Contact updated but response was missing contact details.')
+        return
+      }
+
+      setContacts(prev => {
+        if (!Array.isArray(prev) || prev.length === 0) {
+          return prev
+        }
+        return prev.map(contact =>
+          contact.id === updatedContact.id ? updatedContact : contact
+        )
+      })
+      setSelectedContact(updatedContact)
+      setEditBusinessName(updatedContact.businessName || '')
+      setEditWebsite(updatedContact.website || '')
+      setEditStateValue(updatedContact.state || '')
+      setEditZipCode(updatedContact.zipCode || '')
+      setEditStatus(updatedContact.status || '')
+      setEditValidFlag(
+        typeof updatedContact.valid === 'boolean'
+          ? updatedContact.valid
+          : typeof updatedContact.computedValid === 'boolean'
+          ? updatedContact.computedValid
+          : null
+      )
+      setEditEmail(updatedContact.email || '')
+      setEditPhone(updatedContact.phone || '')
+      setDetailsSuccess(response.data.message || 'Contact details updated successfully.')
+      setEditError(null)
+      setEditSuccess(null)
+    } catch (error) {
+      setDetailsError(
+        error instanceof Error ? error.message : 'Unable to update contact. Please try again.'
+      )
+    } finally {
+      setIsSavingDetails(false)
+    }
   }
 
   const handleSubmitBulkUpdates = async () => {
@@ -1277,22 +1417,52 @@ export default function ContactsPage() {
               validity={selectedContactValidity}
               isLoading={isLoadingDetail}
               isSaving={isSavingContact}
+              isSavingDetails={isSavingDetails}
               editEmail={editEmail}
               editPhone={editPhone}
+              editBusinessName={editBusinessName}
+              editWebsite={editWebsite}
+              editState={editStateValue}
+              editZipCode={editZipCode}
+              editStatus={editStatus}
+              editValidFlag={editValidFlag}
               onEditEmailChange={setEditEmail}
               onEditPhoneChange={setEditPhone}
+              onEditBusinessNameChange={setEditBusinessName}
+              onEditWebsiteChange={setEditWebsite}
+              onEditStateChange={setEditStateValue}
+              onEditZipCodeChange={setEditZipCode}
+              onEditStatusChange={setEditStatus}
+              onEditValidFlagChange={setEditValidFlag}
               onSave={handleSaveContact}
+               onSaveDetails={handleSaveContactDetails}
               onReset={() => {
                 if (selectedContact) {
                   setEditEmail(selectedContact.email || '')
                   setEditPhone(selectedContact.phone || '')
+                  setEditBusinessName(selectedContact.businessName || '')
+                  setEditWebsite(selectedContact.website || '')
+                  setEditStateValue(selectedContact.state || '')
+                  setEditZipCode(selectedContact.zipCode || '')
+                  setEditStatus(selectedContact.status || '')
+                  setEditValidFlag(
+                    typeof selectedContact.valid === 'boolean'
+                      ? selectedContact.valid
+                      : typeof selectedContact.computedValid === 'boolean'
+                      ? selectedContact.computedValid
+                      : null
+                  )
                   setEditError(null)
                   setEditSuccess(null)
+                  setDetailsError(null)
+                  setDetailsSuccess(null)
                 }
               }}
               onClose={handleClearSelection}
               error={detailError || editError}
               success={editSuccess}
+              detailsError={detailsError}
+              detailsSuccess={detailsSuccess}
               formatDateTime={formatDateTime}
             />
 
