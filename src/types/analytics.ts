@@ -14,6 +14,8 @@ export interface EmailAnalyticsOverview {
     opened: number
     clicked: number
     bounced: number
+    hardBounces: number
+    softBounces: number
     spamReports: number
     unsubscribes: number
   }
@@ -22,6 +24,8 @@ export interface EmailAnalyticsOverview {
     openRate: number
     clickRate: number
     bounceRate: number
+    hardBounceRate: number
+    softBounceRate: number
     spamReportRate: number
   }
 }
