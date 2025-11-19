@@ -34,16 +34,6 @@ const EVENT_ACCENTS: Record<EmailAnalyticsEvent['type'], string> = {
   click: 'bg-cyan-100 text-cyan-700',
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  processed: 'Processed',
-  deferred: 'Deferred',
-  delivered: 'Delivered',
-  bounced: 'Bounced',
-  blocked: 'Blocked',
-  dropped: 'Dropped',
-  spamreport: 'Spam Report',
-}
-
 type EventFilterKey = 'all' | 'delivery' | 'engagement' | 'compliance'
 
 const FILTER_OPTIONS: Array<{ key: EventFilterKey; label: string }> = [
@@ -149,18 +139,11 @@ export function AnalyticsEventsTable({ events, isLoading = false }: AnalyticsEve
               {rows.map(event => (
                 <tr key={event.id}>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${EVENT_ACCENTS[event.type]}`}
-                      >
-                        {EVENT_LABELS[event.type]}
-                      </span>
-                      {event.status && STATUS_LABELS[event.status] && (
-                        <span className="text-xs uppercase tracking-wide text-slate-400">
-                          {STATUS_LABELS[event.status]}
-                        </span>
-                      )}
-                    </div>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${EVENT_ACCENTS[event.type]}`}
+                    >
+                      {EVENT_LABELS[event.type]}
+                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
                     {event.contactName || '—'}
