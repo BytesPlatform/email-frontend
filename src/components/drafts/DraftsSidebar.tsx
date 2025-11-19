@@ -10,7 +10,7 @@ export type DraftViewType =
   | 'not-delivered'
   | 'queued'
 
-interface DraftsSidebarProps {
+export interface DraftsSidebarProps {
   isCollapsed: boolean
   activeView: DraftViewType
   activeTab?: 'email' | 'sms'
