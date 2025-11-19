@@ -286,7 +286,7 @@ function DraftsPageContent() {
         setScheduledAt('')
         setScheduledTime('')
         setSelectedEmailDraftIds(new Set())
-        if (activeView === 'queued') {
+        if (activeView === 'queued' as DraftViewType) {
           fetchQueuedEmails()
         }
         setTimeout(() => setSuccessMessage(null), 5000)
@@ -408,8 +408,11 @@ function DraftsPageContent() {
       fetchEmailDrafts()
     } else if (activeView === 'sms') {
       fetchSmsDrafts()
-    } else if (activeView === 'queued') {
+    } else if (activeView === 'queued' as DraftViewType) {
       fetchQueuedEmails()
+    } else if (activeView === 'not-delivered') {
+      fetchEmailDrafts()
+      fetchSmsDrafts()
     } else {
       // Fallback: fetch based on activeTab
       if (activeTab === 'email') {
@@ -1772,7 +1775,7 @@ function DraftsPageContent() {
           {/* Main Content */}
           <div className="flex-1 overflow-y-auto bg-white">
             <div className="px-4 py-4">
-              {activeView === 'queued' ? (
+              {activeView === ('queued' as DraftViewType) ? (
                 <div className="space-y-4">
                   {isLoadingQueued ? (
                     <div className="space-y-3">
@@ -2244,6 +2247,38 @@ function DraftsPageContent() {
           }
         }}
       />
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        variant={confirmDialog.variant}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={confirmDialog.onCancel || (() => setConfirmDialog(prev => ({ ...prev, isOpen: false })))}
+      />
+
+      {/* Success Message Toast */}
+      {successMessage && (
+        <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span>{successMessage}</span>
+        </div>
+      )}
+
+      {/* Error Message Toast */}
+      {errorMessage && (
+        <div className="fixed top-4 right-4 z-50 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          <span>{errorMessage}</span>
+        </div>
+      )}
     </AuthGuard>
   )
 }

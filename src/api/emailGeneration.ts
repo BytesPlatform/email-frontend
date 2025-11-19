@@ -57,9 +57,13 @@ export const emailGenerationApi = {
    * Body: { contactIds: number[] }
    */
   async bulkSummarizeContacts(contactIds: number[]): Promise<ApiResponse<{
+    message: string
+    success: boolean
     totalProcessed: number
     successful: number
     failed: number
+    totalTimeSeconds: number
+    estimatedTimeSeconds: number
     results: Array<{
       contactId: number
       success: boolean
@@ -75,6 +79,8 @@ export const emailGenerationApi = {
         totalProcessed: number
         successful: number
         failed: number
+        totalTimeSeconds: number
+        estimatedTimeSeconds: number
         results: Array<{
           contactId: number
           success: boolean
@@ -187,6 +193,8 @@ export const emailGenerationApi = {
     totalProcessed: number
     successful: number
     failed: number
+    totalTimeSeconds: number
+    estimatedTimeSeconds: number
     results: Array<{
       contactId: number
       summaryId: number
@@ -201,6 +209,8 @@ export const emailGenerationApi = {
         totalProcessed: number
         successful: number
         failed: number
+        totalTimeSeconds: number
+        estimatedTimeSeconds: number
         results: Array<{
           contactId: number
           summaryId: number

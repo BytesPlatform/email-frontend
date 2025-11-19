@@ -1280,7 +1280,7 @@ export default function EmailGenerationPage() {
       const res = await emailGenerationApi.bulkSummarizeContacts(contactIdsToProcess)
       
       if (res.success && res.data) {
-        const { totalProcessed, successful, failed, results } = res.data
+        const { totalProcessed, successful, failed, totalTimeSeconds, estimatedTimeSeconds, results } = res.data
 
         const prefetchedSummaries = new Map<number, BusinessSummary>()
         results.forEach(result => {
@@ -1294,9 +1294,13 @@ export default function EmailGenerationPage() {
 
         await hydrateSummariesForRecords(processedRecords, prefetchedSummaries, { force: true })
 
+        const timeInfo = totalTimeSeconds > 0 
+          ? `\n\nTime: ${Math.round(totalTimeSeconds)}s (estimated: ${Math.round(estimatedTimeSeconds)}s)`
+          : ''
+        
         showDialog(
           'Bulk Summary Generation Completed',
-          `Bulk summary generation completed: ${successful} succeeded, ${failed} failed out of ${totalProcessed} total`,
+          `Bulk summary generation completed: ${successful} succeeded, ${failed} failed out of ${totalProcessed} total${timeInfo}`,
           'info'
         )
         setSelectedRecordIds(new Set())
@@ -1356,7 +1360,7 @@ export default function EmailGenerationPage() {
       const res = await emailGenerationApi.bulkGenerateEmailDrafts(requests)
       
       if (res.success && res.data) {
-        const { totalProcessed, successful, failed, results } = res.data
+        const { totalProcessed, successful, failed, totalTimeSeconds, estimatedTimeSeconds, results } = res.data
         
         // Update records with generated email drafts
         const draftMap = new Map<number, number>()
@@ -1382,9 +1386,13 @@ export default function EmailGenerationPage() {
           })
         }))
 
+        const timeInfo = totalTimeSeconds > 0 
+          ? `\n\nTime: ${Math.round(totalTimeSeconds)}s (estimated: ${Math.round(estimatedTimeSeconds)}s)`
+          : ''
+
         showDialog(
           'Bulk Email Generation Completed',
-          `Bulk email generation completed: ${successful} succeeded, ${failed} failed out of ${totalProcessed} total`,
+          `Bulk email generation completed: ${successful} succeeded, ${failed} failed out of ${totalProcessed} total${timeInfo}`,
           'info'
         )
         setSelectedRecordIds(new Set())
