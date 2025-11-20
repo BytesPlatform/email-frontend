@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense, useCallback } from 'react'
+import { useState, useEffect, Suspense, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { DraftsSidebar, type DraftViewType } from '@/components/drafts/DraftsSidebar'
@@ -9,11 +9,13 @@ import { SmsDraftsList, type SmsDraft } from '@/components/drafts/SmsDraftsList'
 import { CombinedDraftsList } from '@/components/drafts/CombinedDraftsList'
 import { EmailDraftOverlay } from '@/components/drafts/EmailDraftOverlay'
 import { SmsDraftOverlay } from '@/components/drafts/SmsDraftOverlay'
+import { GamifiedQueueProgress } from '@/components/drafts/GamifiedQueueProgress'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { smsGenerationApi } from '@/api/smsGeneration'
 import { unsubscribeApi } from '@/api/unsubscribe'
+import { clientAccountsApi, type ClientEmail } from '@/api/clientAccounts'
 import { useAuthContext } from '@/contexts/AuthContext'
 import type { EmailDraft as ApiEmailDraft } from '@/types/emailGeneration'
 import type { SMSDraft } from '@/types/smsGeneration'
@@ -67,6 +69,9 @@ function DraftsPageContent() {
   const [scheduledAt, setScheduledAt] = useState('')
   const [scheduledTime, setScheduledTime] = useState('')
   const [isScheduling, setIsScheduling] = useState(false)
+  const [availableMailboxes, setAvailableMailboxes] = useState<ClientEmail[]>([])
+  const [selectedMailboxIds, setSelectedMailboxIds] = useState<number[]>([])
+  const [isLoadingMailboxes, setIsLoadingMailboxes] = useState(false)
   const [dequeuingIds, setDequeuingIds] = useState<Set<number>>(new Set())
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean
@@ -86,6 +91,10 @@ function DraftsPageContent() {
   })
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  // Refs to prevent concurrent calls and track polling interval
+  const isFetchingQueuedRef = useRef(false)
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const getUnsubscribeInfo = useCallback(
     (contactId?: number | null) => {
@@ -195,7 +204,13 @@ function DraftsPageContent() {
   }
 
   // Fetch queued emails
-  const fetchQueuedEmails = async () => {
+  const fetchQueuedEmails = useCallback(async () => {
+    // Prevent concurrent calls
+    if (isFetchingQueuedRef.current) {
+      return
+    }
+    
+    isFetchingQueuedRef.current = true
     setIsLoadingQueued(true)
     try {
       const res = await emailGenerationApi.getQueuedEmails()
@@ -216,8 +231,66 @@ function DraftsPageContent() {
       setQueuedEmails([])
     } finally {
       setIsLoadingQueued(false)
+      isFetchingQueuedRef.current = false
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Poll for queue updates when on queued view
+  useEffect(() => {
+    // Clear any existing interval first to prevent duplicates
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+
+    if (activeView !== 'queued') {
+      return
+    }
+
+    // Initial fetch
+    fetchQueuedEmails()
+
+    // Poll every 5 seconds for real-time updates
+    pollingIntervalRef.current = setInterval(() => {
+      fetchQueuedEmails()
+    }, 5000)
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView])
+
+  // Fetch available mailboxes
+  const fetchMailboxes = useCallback(async () => {
+    setIsLoadingMailboxes(true)
+    try {
+      const response = await clientAccountsApi.getClientEmails()
+      if (response.success && response.data) {
+        // Filter to active mailboxes only
+        const activeMailboxes = response.data.filter(m => m.status === 'active')
+        setAvailableMailboxes(activeMailboxes)
+      }
+    } catch (error) {
+      console.error('Error fetching mailboxes:', error)
+      setAvailableMailboxes([])
+    } finally {
+      setIsLoadingMailboxes(false)
+    }
+  }, [])
+
+  // Load mailboxes when schedule modal opens and reset selections
+  useEffect(() => {
+    if (isScheduleModalOpen) {
+      fetchMailboxes()
+      // Reset mailbox selections when modal opens - user must manually select
+      setSelectedMailboxIds([])
+    }
+  }, [isScheduleModalOpen, fetchMailboxes])
 
   // Handle schedule emails (bulk)
   const handleScheduleEmails = async () => {
@@ -261,37 +334,62 @@ function DraftsPageContent() {
       return
     }
 
+    // Validate mailbox selection - required
+    if (selectedMailboxIds.length === 0) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'No Mailboxes Selected',
+        message: 'Please select at least one mailbox.',
+        variant: 'warning',
+        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+        confirmText: 'OK',
+        cancelText: '',
+      })
+      return
+    }
+
+    // Validate number of emails >= number of selected mailboxes
+      const draftCount = selectedEmailDraftIds.size
+      const mailboxCount = selectedMailboxIds.length
+      
+      if (draftCount < mailboxCount) {
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Invalid Selection',
+          message: `You selected ${mailboxCount} mailbox(es) but only ${draftCount} email(s). ` +
+                   `Number of emails must be greater than or equal to the number of selected mailboxes.`,
+          variant: 'warning',
+          onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+          confirmText: 'OK',
+          cancelText: '',
+        })
+        return
+    }
+
     setIsScheduling(true)
     const draftIds = Array.from(selectedEmailDraftIds)
-    let successCount = 0
-    let failCount = 0
 
     try {
-      for (const draftId of draftIds) {
-        try {
-          const response = await emailGenerationApi.scheduleEmail(draftId, scheduledDateTime)
-          if (response.success) {
-            successCount++
-          } else {
-            failCount++
-          }
-        } catch (error) {
-          failCount++
-        }
-      }
+      // Use batch API with selected mailboxes
+      const response = await emailGenerationApi.scheduleBatch(
+        draftIds,
+        scheduledDateTime,
+        selectedMailboxIds
+      )
 
-      if (failCount === 0) {
-        setSuccessMessage(`Successfully scheduled ${successCount} email(s)!`)
+      if (response.success) {
+        setSuccessMessage(`Successfully scheduled ${response.data?.count || draftIds.length} email(s)!`)
         setIsScheduleModalOpen(false)
         setScheduledAt('')
         setScheduledTime('')
         setSelectedEmailDraftIds(new Set())
+        setSelectedMailboxIds([])
         if (activeView === 'queued' as DraftViewType) {
           fetchQueuedEmails()
         }
         setTimeout(() => setSuccessMessage(null), 5000)
       } else {
-        setErrorMessage(`Scheduled ${successCount} email(s), ${failCount} failed.`)
+        setErrorMessage('Failed to schedule emails: ' + (response.error || 'Unknown error'))
         setTimeout(() => setErrorMessage(null), 5000)
       }
     } catch (error) {
@@ -300,6 +398,37 @@ function DraftsPageContent() {
     } finally {
       setIsScheduling(false)
     }
+  }
+
+  // Handle mailbox selection toggle with validation
+  const handleMailboxToggle = (mailboxId: number) => {
+    const emailCount = selectedEmailDraftIds.size
+    
+    setSelectedMailboxIds(prev => {
+      const isCurrentlySelected = prev.includes(mailboxId)
+      
+      // If unselecting, always allow
+      if (isCurrentlySelected) {
+        return prev.filter(id => id !== mailboxId)
+      }
+      
+      // If selecting, check if we've reached the limit
+      if (prev.length >= emailCount) {
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Maximum Mailboxes Reached',
+          message: `You can only select up to ${emailCount} mailbox(es) for ${emailCount} email(s). ` +
+                   `Number of emails must be greater than or equal to the number of selected mailboxes.`,
+          variant: 'warning',
+          onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+          confirmText: 'OK',
+          cancelText: '',
+        })
+        return prev
+      }
+      
+      return [...prev, mailboxId]
+    })
   }
 
   // Handle dequeue email
@@ -409,10 +538,8 @@ function DraftsPageContent() {
     } else if (activeView === 'sms') {
       fetchSmsDrafts()
     } else if (activeView === 'queued' as DraftViewType) {
-      fetchQueuedEmails()
-    } else if (activeView === 'not-delivered') {
-      fetchEmailDrafts()
-      fetchSmsDrafts()
+      // Don't call fetchQueuedEmails here - the polling effect handles it
+      // This prevents duplicate calls when switching to queued view
     } else {
       // Fallback: fetch based on activeTab
       if (activeTab === 'email') {
@@ -1106,9 +1233,6 @@ function DraftsPageContent() {
 
     if (activeView === 'starred') {
       drafts = drafts.filter(d => starredEmailDraftIds.has(d.id))
-    
-    } else if (activeView === 'not-delivered') {
-      drafts = drafts.filter(d => d.status !== 'sent' && d.status !== 'delivered')
     } 
 
     // Filter by status filter (from dropdown)
@@ -1140,8 +1264,6 @@ function DraftsPageContent() {
 
     if (activeView === 'starred') {
       drafts = drafts.filter(d => starredSmsDraftIds.has(d.id))
-    } else if (activeView === 'not-delivered') {
-      drafts = drafts.filter(d => d.status !== 'sent' && d.status !== 'delivered')
     }
 
     // Filter by status filter (from dropdown)
@@ -1173,9 +1295,6 @@ function DraftsPageContent() {
   const emailDraftCount = emailDrafts.filter(d => d.status === 'draft').length
   const smsDraftCount = smsDrafts.filter(d => d.status === 'draft').length
   const starredCount = starredEmailDraftIds.size + starredSmsDraftIds.size
-  const notDeliveredCount =
-    emailDrafts.filter(d => d.status !== 'sent' && d.status !== 'delivered').length +
-    smsDrafts.filter(d => d.status !== 'sent' && d.status !== 'delivered').length
   const queuedCount = queuedEmails.filter(q => q.status === 'pending').length
 
   // For "all" view, combine both email and SMS drafts together
@@ -1224,12 +1343,6 @@ function DraftsPageContent() {
     })
     displayDrafts = combinedDrafts.map(c => c.draft)
     isEmailView = true
-  } else if (activeView === 'not-delivered') {
-    showCombinedView = true
-    combinedDrafts = [
-      ...filteredEmailDrafts.map(d => ({ type: 'email' as const, draft: d, contactId: d.contactId })),
-      ...filteredSmsDrafts.map(d => ({ type: 'sms' as const, draft: d, contactId: d.contactId }))
-    ]
     combinedDrafts.sort((a, b) => {
       if (a.contactId !== b.contactId) return a.contactId - b.contactId
       if (a.type !== b.type) return a.type === 'email' ? -1 : 1
@@ -1634,7 +1747,6 @@ function DraftsPageContent() {
           emailDraftCount={emailDraftCount}
           smsDraftCount={smsDraftCount}
           starredCount={starredCount}
-          notDeliveredCount={notDeliveredCount}
           queuedCount={queuedCount}
         />
 
@@ -1654,8 +1766,6 @@ function DraftsPageContent() {
                         ? 'SMS Drafts'
                         : activeView === 'starred'
                           ? 'Starred Drafts'
-                          : activeView === 'not-delivered'
-                            ? 'Not Delivered'
                             : activeView === 'queued'
                               ? 'Queued Emails'
                             : 'Drafts'}
@@ -1896,63 +2006,27 @@ function DraftsPageContent() {
 
                     return (
                       <>
-                        {/* Progress Line - Only show if there are pending emails */}
-                        {pendingCount > 0 && totalQueued > 0 && (
-                          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-                            <div className="mb-4">
-                              <div className="flex items-center justify-between text-sm mb-2">
-                                <span className="text-gray-600">Queue Progress</span>
-                                <span className="font-semibold text-gray-900">
-                                  {sentCount} / {totalQueued} sent • {pendingCount} pending
-                                </span>
-                              </div>
-                              {/* Progress bar container */}
-                              <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
-                                {/* Animated progress line */}
-                                <div 
-                                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full transition-all duration-1000 ease-out"
-                                  style={{ width: `${progressPercentage}%` }}
-                                >
-                                  {/* Animated shimmer effect */}
-                                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent" style={{ animation: 'shimmer 2s infinite linear' }}></div>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* Email markers on timeline - only pending emails */}
-                            {paginatedQueuedEmails.length > 0 && (
-                              <div className="relative mt-6 pt-4">
-                                <div className="absolute top-4 left-0 right-0 h-0.5 bg-gray-200"></div>
-                                <div className="relative flex justify-between">
-                                  {paginatedQueuedEmails.map((queued) => {
-                                    const scheduledDate = new Date(queued.scheduledAt)
-                                    const timeStr = scheduledDate.toLocaleTimeString('en-US', { 
-                                      hour: 'numeric', 
-                                      minute: '2-digit',
-                                      hour12: true 
-                                    })
+                        {/* Gamified Queue Progress - Only show if there are pending emails */}
+                        {pendingCount > 0 && totalQueued > 0 && (() => {
+                          // Calculate next email time (first pending email)
+                          const nextEmail = pendingQueuedEmails.length > 0 
+                            ? pendingQueuedEmails[0] 
+                            : null
+                          const nextEmailTime = nextEmail ? new Date(nextEmail.scheduledAt) : null
+                          const now = new Date()
+                          const timeUntilNext = nextEmailTime ? Math.max(0, nextEmailTime.getTime() - now.getTime()) : 0
                                     
                                     return (
-                                      <div 
-                                        key={queued.id} 
-                                        className="flex flex-col items-center"
-                                      >
-                                        {/* Tick mark - blue circle for pending */}
-                                        <div className="relative z-10 flex items-center justify-center w-5 h-5 rounded-full border-2 border-white shadow-sm bg-indigo-500">
-                                          <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
-                                        </div>
-                                        {/* Time label */}
-                                        <div className="mt-1.5 text-[10px] font-medium text-gray-600 whitespace-nowrap">
-                                          {timeStr}
-                                        </div>
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                            <GamifiedQueueProgress
+                              sentCount={sentCount}
+                              totalQueued={totalQueued}
+                              pendingCount={pendingCount}
+                              progressPercentage={progressPercentage}
+                              queuedEmails={pendingQueuedEmails.slice(0, 10)} // Show up to 10 markers on timeline
+                              countdown={timeUntilNext}
+                            />
+                          )
+                        })()}
 
                         {/* Email Cards - Only pending emails */}
                         <div className="space-y-3">
@@ -2282,8 +2356,13 @@ function DraftsPageContent() {
             : filteredEmailDrafts.length
         }
         selectedCount={
-          selectedDraftsForNavigation.length > 0
+          selectedEmailDraftIds.size + selectedSmsDraftIds.size > 0
             ? selectedEmailDraftIds.size + selectedSmsDraftIds.size // Actual selected count for Send All button
+            : undefined
+        }
+        selectedDraftIds={
+          selectedEmailDraftIds.size > 0
+            ? Array.from(selectedEmailDraftIds)
             : undefined
         }
         isSelected={selectedEmailDraft ? selectedEmailDraftIds.has(selectedEmailDraft.id) : false}
@@ -2301,6 +2380,32 @@ function DraftsPageContent() {
             }
           }
         }}
+        onScheduleAll={async (draftIds: number[], scheduledAt: string, clientEmailIds?: number[]) => {
+          // Use the same logic as handleScheduleEmails but with provided parameters
+          setIsScheduling(true)
+          try {
+            const response = await emailGenerationApi.scheduleBatch(
+              draftIds,
+              scheduledAt,
+              clientEmailIds
+            )
+
+            if (response.success) {
+              // Success dialog is shown in EmailDraftOverlay component
+              if (activeView === 'queued' as DraftViewType) {
+                fetchQueuedEmails()
+              }
+            } else {
+              setErrorMessage('Failed to schedule emails: ' + (response.error || 'Unknown error'))
+              setTimeout(() => setErrorMessage(null), 5000)
+            }
+          } catch (error) {
+            setErrorMessage('Error scheduling emails: ' + (error instanceof Error ? error.message : 'Unknown error'))
+            setTimeout(() => setErrorMessage(null), 5000)
+          } finally {
+            setIsScheduling(false)
+          }
+        }}
         subscriptionDataLoaded={isUnsubscribeLoaded}
         onResubscribe={handleResubscribeDraft}
         isResubscribing={
@@ -2315,13 +2420,18 @@ function DraftsPageContent() {
       {isScheduleModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setIsScheduleModalOpen(false)} />
-          <div className="relative bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-md p-6">
+          <div className="relative bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
                 Schedule {selectedEmailDraftIds.size} Email{selectedEmailDraftIds.size !== 1 ? 's' : ''}
               </h3>
               <button
-                onClick={() => setIsScheduleModalOpen(false)}
+                onClick={() => {
+                  setIsScheduleModalOpen(false)
+                  setScheduledAt('')
+                  setScheduledTime('')
+                  setSelectedMailboxIds([])
+                }}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2331,6 +2441,68 @@ function DraftsPageContent() {
             </div>
             
             <div className="space-y-4">
+              {/* Mailbox Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Mailboxes
+                </label>
+                
+                {/* Mailbox selection */}
+                  <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
+                    {isLoadingMailboxes ? (
+                      <p className="text-sm text-gray-500">Loading mailboxes...</p>
+                    ) : availableMailboxes.length === 0 ? (
+                      <p className="text-sm text-gray-500">No active mailboxes available</p>
+                    ) : (
+                      <div className="space-y-2">
+                      {availableMailboxes.map((mailbox) => {
+                        const emailCount = selectedEmailDraftIds.size
+                        const maxMailboxes = emailCount
+                        const isAtLimit = selectedMailboxIds.length >= maxMailboxes
+                        const isSelected = selectedMailboxIds.includes(mailbox.id)
+                        const isDisabled = !isSelected && isAtLimit
+                        
+                        return (
+                          <label
+                            key={mailbox.id}
+                            className={`flex items-center gap-2 p-2 rounded ${
+                              isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-gray-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleMailboxToggle(mailbox.id)}
+                              disabled={isDisabled}
+                              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:cursor-not-allowed"
+                            />
+                            <span className={`text-sm ${isDisabled ? 'text-gray-400' : 'text-gray-700'}`}>
+                              {mailbox.emailAddress}
+                            </span>
+                          </label>
+                        )
+                      })}
+                      </div>
+                    )}
+                  </div>
+
+                {selectedMailboxIds.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    {selectedMailboxIds.length} mailbox{selectedMailboxIds.length !== 1 ? 'es' : ''} selected
+                    {selectedEmailDraftIds.size > 0 && selectedMailboxIds.length >= selectedEmailDraftIds.size && (
+                      <span className="text-orange-600 ml-1">
+                        (Maximum {selectedEmailDraftIds.size} for {selectedEmailDraftIds.size} email{selectedEmailDraftIds.size !== 1 ? 's' : ''})
+                      </span>
+                    )}
+                  </p>
+                )}
+                {selectedEmailDraftIds.size > 0 && selectedMailboxIds.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Select up to {selectedEmailDraftIds.size} mailbox{selectedEmailDraftIds.size !== 1 ? 'es' : ''} for {selectedEmailDraftIds.size} email{selectedEmailDraftIds.size !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Date
@@ -2370,7 +2542,7 @@ function DraftsPageContent() {
                   variant="primary"
                   size="sm"
                   onClick={handleScheduleEmails}
-                  disabled={!scheduledAt || !scheduledTime || isScheduling}
+                  disabled={!scheduledAt || !scheduledTime || isScheduling || selectedMailboxIds.length === 0}
                   isLoading={isScheduling}
                   className="flex-1"
                 >
@@ -2383,6 +2555,7 @@ function DraftsPageContent() {
                     setIsScheduleModalOpen(false)
                     setScheduledAt('')
                     setScheduledTime('')
+                    setSelectedMailboxIds([])
                   }}
                   disabled={isScheduling}
                   className="flex-1"

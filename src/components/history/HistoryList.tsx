@@ -153,9 +153,44 @@ export function HistoryList({
       )
     }
     if (status === 'sent') {
-    return (
+      return (
         <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
           Sent
+        </span>
+      )
+    }
+    if (status === 'deferred') {
+      return (
+        <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-medium">
+          Deferred
+        </span>
+      )
+    }
+    if (status === 'bounced') {
+      return (
+        <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium">
+          Bounced
+        </span>
+      )
+    }
+    if (status === 'dropped') {
+      return (
+        <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">
+          Dropped
+        </span>
+      )
+    }
+    if (status === 'blocked') {
+      return (
+        <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">
+          Blocked
+        </span>
+      )
+    }
+    if (status === 'spamreport') {
+      return (
+        <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">
+          Spam Report
         </span>
       )
     }

@@ -27,9 +27,11 @@ interface EmailDraftOverlayProps {
   currentIndex?: number
   totalCount?: number
   selectedCount?: number // Actual count of selected drafts (for Send All button)
+  selectedDraftIds?: number[] // Array of selected draft IDs for bulk operations
   isSelected?: boolean
   onToggleSelect?: (draftId: number, selected: boolean) => void
   onSendAll?: () => void
+  onScheduleAll?: (draftIds: number[], scheduledAt: string, clientEmailIds?: number[]) => Promise<void>
   subscriptionDataLoaded?: boolean
   onResubscribe?: (draftId: number) => void
   isResubscribing?: boolean
@@ -50,9 +52,11 @@ export function EmailDraftOverlay({
   currentIndex,
   totalCount,
   selectedCount,
+  selectedDraftIds,
   isSelected = false,
   onToggleSelect,
   onSendAll,
+  onScheduleAll,
   subscriptionDataLoaded = false,
   onResubscribe,
   isResubscribing = false,
@@ -109,6 +113,18 @@ export function EmailDraftOverlay({
     message: '',
     variant: 'info',
   })
+  const [sendConfirmDialog, setSendConfirmDialog] = useState<{
+    isOpen: boolean
+    count: number
+    isBulk: boolean
+  }>({
+    isOpen: false,
+    count: 0,
+    isBulk: false,
+  })
+  const [availableMailboxes, setAvailableMailboxes] = useState<ClientEmail[]>([])
+  const [selectedMailboxIds, setSelectedMailboxIds] = useState<number[]>([])
+  const [isLoadingMailboxes, setIsLoadingMailboxes] = useState(false)
 
   // Load available client emails and full draft data
   useEffect(() => {
@@ -120,6 +136,15 @@ export function EmailDraftOverlay({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, emailDraft?.id])
+
+  // Load mailboxes when schedule modal opens and reset selections
+  useEffect(() => {
+    if (isScheduleModalOpen) {
+      loadMailboxes()
+      // Reset mailbox selections when modal opens - user must manually select
+      setSelectedMailboxIds([])
+    }
+  }, [isScheduleModalOpen])
 
   // Load full draft to get subjectLines array
   const loadFullDraft = async () => {
@@ -186,6 +211,23 @@ export function EmailDraftOverlay({
       console.error('Error loading available emails:', error)
     } finally {
       setIsLoadingEmails(false)
+    }
+  }
+
+  const loadMailboxes = async () => {
+    setIsLoadingMailboxes(true)
+    try {
+      const response = await clientAccountsApi.getClientEmails()
+      if (response.success && response.data) {
+        // Filter to active mailboxes only
+        const activeMailboxes = response.data.filter(m => m.status === 'active')
+        setAvailableMailboxes(activeMailboxes)
+      }
+    } catch (error) {
+      console.error('Error loading mailboxes:', error)
+      setAvailableMailboxes([])
+    } finally {
+      setIsLoadingMailboxes(false)
     }
   }
 
@@ -410,6 +452,39 @@ export function EmailDraftOverlay({
     }
   }
 
+  // Handle mailbox selection toggle
+  const handleMailboxToggle = (mailboxId: number) => {
+    // Determine if this is bulk or single scheduling
+    const isBulkMode = selectedCount !== undefined && selectedCount > 1 && selectedDraftIds && selectedDraftIds.length > 1
+    const emailCount = isBulkMode ? selectedDraftIds.length : 1
+    
+    setSelectedMailboxIds(prev => {
+      const isCurrentlySelected = prev.includes(mailboxId)
+      
+      // If unselecting, always allow
+      if (isCurrentlySelected) {
+        return prev.filter(id => id !== mailboxId)
+      }
+      
+      // If selecting, check if we've reached the limit
+      if (prev.length >= emailCount) {
+        setScheduleDialog({
+          isOpen: true,
+          title: 'Maximum Mailboxes Reached',
+          message: `You can only select up to ${emailCount} mailbox(es) for ${emailCount} email(s). ` +
+                   `Number of emails must be greater than or equal to the number of selected mailboxes.`,
+          variant: 'warning',
+          onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+        })
+        return prev
+      }
+      
+      // Allow selection
+      return [...prev, mailboxId]
+    })
+  }
+
+
   // Handle schedule email
   const handleScheduleEmail = async () => {
     if (!emailDraft) return
@@ -419,6 +494,38 @@ export function EmailDraftOverlay({
         isOpen: true,
         title: 'Missing Information',
         message: 'Please select both date and time',
+        variant: 'warning',
+        onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+      })
+      return
+    }
+
+    // Validate mailbox selection - at least one mailbox must be selected
+    if (selectedMailboxIds.length === 0) {
+      setScheduleDialog({
+        isOpen: true,
+        title: 'No Mailboxes Selected',
+        message: 'Please select at least one mailbox.',
+        variant: 'warning',
+        onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+      })
+      return
+    }
+
+    // Determine if this is bulk or single scheduling
+    const isBulkMode = selectedCount !== undefined && selectedCount > 1 && selectedDraftIds && selectedDraftIds.length > 1
+    const emailCount = isBulkMode ? selectedDraftIds.length : 1
+    const draftIds = isBulkMode ? selectedDraftIds : [emailDraft.id]
+
+    // Validate number of emails >= number of selected mailboxes
+    const mailboxCount = selectedMailboxIds.length
+    
+    if (emailCount < mailboxCount) {
+      setScheduleDialog({
+        isOpen: true,
+        title: 'Invalid Selection',
+        message: `You selected ${mailboxCount} mailbox(es) but only ${emailCount} email(s). ` +
+                 `Number of emails must be greater than or equal to the number of selected mailboxes.`,
         variant: 'warning',
         onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
       })
@@ -442,29 +549,54 @@ export function EmailDraftOverlay({
 
     setIsScheduling(true)
     try {
-      const response = await emailGenerationApi.scheduleEmail(emailDraft.id, scheduledDateTime)
-      if (response.success && response.data) {
-        setIsScheduled(true)
-        setScheduledDate(scheduledDateTime)
-        setIsScheduleModalOpen(false)
-        setScheduledAt('')
-        setScheduledTime('')
+      const clientEmailIdsToUse = selectedMailboxIds
+      
+      // Use onScheduleAll callback if available and in bulk mode, otherwise use API directly
+      if (isBulkMode && onScheduleAll) {
+        await onScheduleAll(draftIds, scheduledDateTime, clientEmailIdsToUse)
         setScheduleDialog({
           isOpen: true,
           title: 'Success',
-          message: 'Email scheduled successfully!',
+          message: `Successfully scheduled ${emailCount} email(s)!`,
           variant: 'info',
           onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
         })
       } else {
-        setScheduleDialog({
-          isOpen: true,
-          title: 'Schedule Failed',
-          message: 'Failed to schedule email: ' + (response.error || 'Unknown error'),
-          variant: 'warning',
-          onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
-        })
+        // Single email or fallback to API
+        const response = await emailGenerationApi.scheduleBatch(
+          draftIds,
+          scheduledDateTime,
+          clientEmailIdsToUse
+        )
+        
+        if (response.success && response.data) {
+          setIsScheduled(true)
+          setScheduledDate(scheduledDateTime)
+          setScheduleDialog({
+            isOpen: true,
+            title: 'Success',
+            message: isBulkMode 
+              ? `Successfully scheduled ${response.data?.count || draftIds.length} email(s)!`
+              : 'Email scheduled successfully!',
+            variant: 'info',
+            onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+          })
+        } else {
+          setScheduleDialog({
+            isOpen: true,
+            title: 'Schedule Failed',
+            message: 'Failed to schedule email: ' + (response.error || 'Unknown error'),
+            variant: 'warning',
+            onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+          })
+        }
       }
+      
+      // Close modal and reset state
+      setIsScheduleModalOpen(false)
+      setScheduledAt('')
+      setScheduledTime('')
+      setSelectedMailboxIds([])
     } catch (error) {
       console.error('Error scheduling email:', error)
       setScheduleDialog({
@@ -901,48 +1033,38 @@ export function EmailDraftOverlay({
                         <Button
                           variant="primary"
                           size="sm"
-                          onClick={() => onSend && onSend(emailDraft.id)}
+                          onClick={() => {
+                            // Show confirmation dialog for both single and bulk sends
+                            if (selectedCount !== undefined && selectedCount > 1 && onSendAll) {
+                              // Bulk send
+                              setSendConfirmDialog({
+                                isOpen: true,
+                                count: selectedCount,
+                                isBulk: true,
+                              })
+                            } else if (onSend) {
+                              // Single email send - show confirmation
+                              setSendConfirmDialog({
+                                isOpen: true,
+                                count: 1,
+                                isBulk: false,
+                              })
+                            }
+                          }}
                           disabled={emailDraft.status !== 'draft' || isScheduled}
                           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
                           title={isScheduled ? 'Email is scheduled. Cancel scheduling to send now.' : undefined}
                         >
-                          Send
+                          {selectedCount !== undefined && selectedCount > 1 ? `Send (${selectedCount})` : 'Send'}
                         </Button>
                         {emailDraft.status === 'draft' && (
                           <>
-                            {/* Only show queue email button when NOT in bulk selection mode */}
-                            {!(selectedCount !== undefined && selectedCount > 1) && (
-                              <>
-                                {isScheduled ? (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={handleRemoveFromQueue}
-                                    disabled={isRemovingFromQueue}
-                                    isLoading={isRemovingFromQueue}
-                                    className="text-orange-700 border-orange-300 hover:bg-orange-50"
-                                    title={`Scheduled for ${scheduledDate ? new Date(scheduledDate).toLocaleString() : 'later'}`}
-                                  >
-                                    Cancel Schedule
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setIsScheduleModalOpen(true)}
-                                    className="text-indigo-700 border-indigo-300 hover:bg-indigo-50"
-                                  >
-                                    Queue Email
-                                  </Button>
-                                )}
-                              </>
-                            )}
                             {onEdit && (
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setIsEditMode(true)}
-                                className="text-gray-700 border-gray-300 hover:bg-gray-50"
+                                className="text-gray-700 border-gray-300 hover:bg-gray-50 px-4 py-1.5 text-sm font-normal"
                               >
                                 Edit
                               </Button>
@@ -983,17 +1105,33 @@ export function EmailDraftOverlay({
                     )}
                   </div>
 
-                  {/* Right: Send All (if on last item) */}
+                  {/* Right: Queue Email */}
                   <div className="flex items-center gap-2 justify-end">
-                    {!isEditMode && onSendAll && !hasNext && currentIndex !== undefined && totalCount !== undefined && totalCount > 0 && (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={onSendAll}
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2"
-                      >
-                        Send All ({selectedCount !== undefined ? selectedCount : totalCount})
-                      </Button>
+                    {!isEditMode && emailDraft.status === 'draft' && (
+                      <>
+                        {isScheduled ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRemoveFromQueue}
+                            disabled={isRemovingFromQueue}
+                            isLoading={isRemovingFromQueue}
+                            className="text-orange-700 border-orange-300 hover:bg-orange-50"
+                            title={`Scheduled for ${scheduledDate ? new Date(scheduledDate).toLocaleString() : 'later'}`}
+                          >
+                            Cancel Schedule
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsScheduleModalOpen(true)}
+                            className="text-gray-700 border-gray-300 hover:bg-gray-50 px-10 py-1.5 text-sm font-normal whitespace-nowrap"
+                          >
+                            {selectedCount !== undefined && selectedCount > 1 ? `Queue (${selectedCount})` : 'Queue Email'}
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -1019,11 +1157,18 @@ export function EmailDraftOverlay({
       {isScheduleModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setIsScheduleModalOpen(false)} />
-          <div className="relative bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-md p-6">
+          <div className="relative bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Schedule Email</h3>
+              <h3 className="text-lg font-semibold text-gray-900">
+                Schedule {selectedCount !== undefined && selectedCount > 1 ? `${selectedCount} Emails` : '1 Email'}
+              </h3>
               <button
-                onClick={() => setIsScheduleModalOpen(false)}
+                onClick={() => {
+                  setIsScheduleModalOpen(false)
+                  setScheduledAt('')
+                  setScheduledTime('')
+                  setSelectedMailboxIds([])
+                }}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1033,6 +1178,78 @@ export function EmailDraftOverlay({
             </div>
             
             <div className="space-y-4">
+              {/* Mailbox Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Mailboxes
+                </label>
+                
+                {/* Mailbox selection */}
+                {(() => {
+                  // Determine if this is bulk or single scheduling
+                  const isBulkMode = selectedCount !== undefined && selectedCount > 1 && selectedDraftIds && selectedDraftIds.length > 1
+                  const emailCount = isBulkMode ? selectedDraftIds.length : 1
+                  const maxMailboxes = emailCount
+                  const isAtLimit = selectedMailboxIds.length >= maxMailboxes
+                  
+                  return (
+                    <>
+                      <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
+                        {isLoadingMailboxes ? (
+                          <p className="text-sm text-gray-500">Loading mailboxes...</p>
+                        ) : availableMailboxes.length === 0 ? (
+                          <p className="text-sm text-gray-500">No active mailboxes available</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {availableMailboxes.map((mailbox) => {
+                              const isSelected = selectedMailboxIds.includes(mailbox.id)
+                              const isDisabled = !isSelected && isAtLimit
+                              
+                              return (
+                                <label
+                                  key={mailbox.id}
+                                  className={`flex items-center gap-2 p-2 rounded ${
+                                    isDisabled 
+                                      ? 'cursor-not-allowed opacity-50' 
+                                      : 'cursor-pointer hover:bg-gray-50'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => handleMailboxToggle(mailbox.id)}
+                                    disabled={isDisabled}
+                                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:cursor-not-allowed"
+                                  />
+                                  <span className={`text-sm ${isDisabled ? 'text-gray-400' : 'text-gray-700'}`}>
+                                    {mailbox.emailAddress}
+                                  </span>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      {selectedMailboxIds.length > 0 && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          {selectedMailboxIds.length} mailbox{selectedMailboxIds.length !== 1 ? 'es' : ''} selected
+                          {isAtLimit && (
+                            <span className="text-orange-600 ml-1">
+                              (Maximum {maxMailboxes} for {emailCount} email{emailCount !== 1 ? 's' : ''})
+                            </span>
+                          )}
+                        </p>
+                      )}
+                      {!isAtLimit && selectedMailboxIds.length === 0 && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          Select up to {maxMailboxes} mailbox{maxMailboxes !== 1 ? 'es' : ''} for {emailCount} email{emailCount !== 1 ? 's' : ''}
+                        </p>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Date
@@ -1072,7 +1289,7 @@ export function EmailDraftOverlay({
                   variant="primary"
                   size="sm"
                   onClick={handleScheduleEmail}
-                  disabled={!scheduledAt || !scheduledTime || isScheduling}
+                  disabled={!scheduledAt || !scheduledTime || isScheduling || selectedMailboxIds.length === 0}
                   isLoading={isScheduling}
                   className="flex-1"
                 >
@@ -1085,6 +1302,7 @@ export function EmailDraftOverlay({
                     setIsScheduleModalOpen(false)
                     setScheduledAt('')
                     setScheduledTime('')
+                    setSelectedMailboxIds([])
                   }}
                   disabled={isScheduling}
                   className="flex-1"
@@ -1126,6 +1344,27 @@ export function EmailDraftOverlay({
         }}
         onCancel={() => setScheduleDialog(prev => ({ ...prev, isOpen: false }))}
         isLoading={isRemovingFromQueue}
+      />
+
+      {/* Send Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={sendConfirmDialog.isOpen}
+        title={sendConfirmDialog.isBulk ? "Send All Emails" : "Send Email"}
+        message={sendConfirmDialog.isBulk 
+          ? `Are you sure you want to send ${sendConfirmDialog.count} email(s)?`
+          : "Are you sure you want to send this email?"}
+        variant="warning"
+        confirmText={sendConfirmDialog.isBulk ? "Yes, Send All" : "Yes, Send"}
+        cancelText="Cancel"
+        onConfirm={() => {
+          if (sendConfirmDialog.isBulk && onSendAll) {
+            onSendAll()
+          } else if (!sendConfirmDialog.isBulk && onSend && emailDraft) {
+            onSend(emailDraft.id)
+          }
+          setSendConfirmDialog({ isOpen: false, count: 0, isBulk: false })
+        }}
+        onCancel={() => setSendConfirmDialog({ isOpen: false, count: 0, isBulk: false })}
       />
     </div>
   )

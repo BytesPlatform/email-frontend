@@ -615,6 +615,49 @@ export const emailGenerationApi = {
   },
 
   /**
+   * Schedule multiple emails with mailbox selection and proportional distribution
+   * POST /emails/schedule/batch
+   * Body: { draftIds: number[], startTime: string, clientEmailIds?: number[] }
+   */
+  async scheduleBatch(
+    draftIds: number[],
+    startTime: string,
+    clientEmailIds?: number[]
+  ): Promise<ApiResponse<{
+    count: number
+    mailboxesUsed: number | string
+    data: Array<{
+      id: number
+      emailDraftId: number
+      scheduledAt: string
+      status: 'pending' | 'sent' | 'failed'
+      priority: number
+    }>
+  }>> {
+    try {
+      const response = await apiClient.post<{
+        count: number
+        mailboxesUsed: number | string
+        data: Array<{
+          id: number
+          emailDraftId: number
+          scheduledAt: string
+          status: 'pending' | 'sent' | 'failed'
+          priority: number
+        }>
+      }>('/emails/schedule/batch', {
+        draftIds,
+        startTime,
+        ...(clientEmailIds && clientEmailIds.length > 0 ? { clientEmailIds } : {}),
+      })
+      return response
+    } catch (error) {
+      console.error('Error scheduling batch emails:', error)
+      throw error
+    }
+  },
+
+  /**
    * Get email queue status
    * GET /emails/schedule/queue/status
    */
