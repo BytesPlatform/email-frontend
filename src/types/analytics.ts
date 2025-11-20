@@ -1,6 +1,7 @@
 export interface AnalyticsQueryParams {
   from?: string
   to?: string
+  fromEmail?: string
 }
 
 export interface EmailAnalyticsOverview {

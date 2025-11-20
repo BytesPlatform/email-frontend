@@ -33,6 +33,7 @@ interface EmailDraftOverlayProps {
   subscriptionDataLoaded?: boolean
   onResubscribe?: (draftId: number) => void
   isResubscribing?: boolean
+  onContactEmailChange?: (contactId: number, email: string) => void
 }
 
 export function EmailDraftOverlay({
@@ -55,6 +56,7 @@ export function EmailDraftOverlay({
   subscriptionDataLoaded = false,
   onResubscribe,
   isResubscribing = false,
+  onContactEmailChange,
 }: EmailDraftOverlayProps) {
   const [isMinimized, setIsMinimized] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
@@ -84,6 +86,29 @@ export function EmailDraftOverlay({
   const [isScheduled, setIsScheduled] = useState(false)
   const [scheduledDate, setScheduledDate] = useState<string | null>(null)
   const [isRemovingFromQueue, setIsRemovingFromQueue] = useState(false)
+  const [emailUpdateDialog, setEmailUpdateDialog] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    variant: 'info' | 'warning' | 'danger'
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'info',
+  })
+  const [scheduleDialog, setScheduleDialog] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    variant: 'info' | 'warning' | 'danger'
+    onConfirm?: () => void
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'info',
+  })
 
   // Load available client emails and full draft data
   useEffect(() => {
@@ -304,14 +329,24 @@ export function EmailDraftOverlay({
     
     const trimmedEmail = editedEmail.trim()
     if (!trimmedEmail) {
-      alert('Please enter a valid email address')
+      setEmailUpdateDialog({
+        isOpen: true,
+        title: 'Invalid Email',
+        message: 'Please enter a valid email address',
+        variant: 'warning',
+      })
       return
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(trimmedEmail)) {
-      alert('Please enter a valid email address')
+      setEmailUpdateDialog({
+        isOpen: true,
+        title: 'Invalid Email Format',
+        message: 'Please enter a valid email address',
+        variant: 'warning',
+      })
       return
     }
 
@@ -327,15 +362,31 @@ export function EmailDraftOverlay({
       })
       
       if (response.success && response.data?.contact) {
-        // Update the local draft state - this will be reflected when parent component refreshes
-        // For now, we'll just show a success message
-        alert('Email address updated successfully')
+        const updatedEmail = response.data.contact.email ?? trimmedEmail
+        setEditedEmail(updatedEmail)
+        onContactEmailChange?.(emailDraft.contactId, updatedEmail)
+        setEmailUpdateDialog({
+          isOpen: true,
+          title: 'Success',
+          message: 'Email address updated successfully',
+          variant: 'info',
+        })
       } else {
-        alert('Failed to update email address: ' + (response.error || 'Unknown error'))
+        setEmailUpdateDialog({
+          isOpen: true,
+          title: 'Update Failed',
+          message: 'Failed to update email address: ' + (response.error || 'Unknown error'),
+          variant: 'warning',
+        })
       }
     } catch (error) {
       console.error('Error updating contact email:', error)
-      alert('Failed to update email address: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      setEmailUpdateDialog({
+        isOpen: true,
+        title: 'Update Failed',
+        message: 'Failed to update email address: ' + (error instanceof Error ? error.message : 'Unknown error'),
+        variant: 'warning',
+      })
     } finally {
       setIsSavingEmail(false)
     }
@@ -364,7 +415,13 @@ export function EmailDraftOverlay({
     if (!emailDraft) return
     
     if (!scheduledAt || !scheduledTime) {
-      alert('Please select both date and time')
+      setScheduleDialog({
+        isOpen: true,
+        title: 'Missing Information',
+        message: 'Please select both date and time',
+        variant: 'warning',
+        onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+      })
       return
     }
 
@@ -373,7 +430,13 @@ export function EmailDraftOverlay({
     
     // Validate that scheduled time is in the future
     if (new Date(scheduledDateTime) <= new Date()) {
-      alert('Please select a future date and time')
+      setScheduleDialog({
+        isOpen: true,
+        title: 'Invalid Date',
+        message: 'Please select a future date and time',
+        variant: 'warning',
+        onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+      })
       return
     }
 
@@ -386,42 +449,83 @@ export function EmailDraftOverlay({
         setIsScheduleModalOpen(false)
         setScheduledAt('')
         setScheduledTime('')
-        alert('Email scheduled successfully!')
+        setScheduleDialog({
+          isOpen: true,
+          title: 'Success',
+          message: 'Email scheduled successfully!',
+          variant: 'info',
+          onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+        })
       } else {
-        alert('Failed to schedule email: ' + (response.error || 'Unknown error'))
+        setScheduleDialog({
+          isOpen: true,
+          title: 'Schedule Failed',
+          message: 'Failed to schedule email: ' + (response.error || 'Unknown error'),
+          variant: 'warning',
+          onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+        })
       }
     } catch (error) {
       console.error('Error scheduling email:', error)
-      alert('Failed to schedule email: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      setScheduleDialog({
+        isOpen: true,
+        title: 'Schedule Error',
+        message: 'Failed to schedule email: ' + (error instanceof Error ? error.message : 'Unknown error'),
+        variant: 'warning',
+        onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+      })
     } finally {
       setIsScheduling(false)
     }
   }
 
   // Handle remove from queue
-  const handleRemoveFromQueue = async () => {
+  const handleRemoveFromQueue = () => {
     if (!emailDraft) return
     
-    if (!window.confirm('Are you sure you want to cancel this scheduled email?')) {
-      return
-    }
-
-    setIsRemovingFromQueue(true)
-    try {
-      const response = await emailGenerationApi.removeFromQueue(emailDraft.id)
-      if (response.success) {
-        setIsScheduled(false)
-        setScheduledDate(null)
-        alert('Scheduled email cancelled successfully')
-      } else {
-        alert('Failed to cancel scheduled email: ' + (response.error || 'Unknown error'))
-      }
-    } catch (error) {
-      console.error('Error removing from queue:', error)
-      alert('Failed to cancel scheduled email: ' + (error instanceof Error ? error.message : 'Unknown error'))
-    } finally {
-      setIsRemovingFromQueue(false)
-    }
+    setScheduleDialog({
+      isOpen: true,
+      title: 'Cancel Scheduled Email',
+      message: 'Are you sure you want to cancel this scheduled email?',
+      variant: 'warning',
+      onConfirm: async () => {
+        setScheduleDialog(prev => ({ ...prev, isOpen: false }))
+        setIsRemovingFromQueue(true)
+        try {
+          const response = await emailGenerationApi.removeFromQueue(emailDraft.id)
+          if (response.success) {
+            setIsScheduled(false)
+            setScheduledDate(null)
+            setScheduleDialog({
+              isOpen: true,
+              title: 'Success',
+              message: 'Scheduled email cancelled successfully',
+              variant: 'info',
+              onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+            })
+          } else {
+            setScheduleDialog({
+              isOpen: true,
+              title: 'Cancel Failed',
+              message: 'Failed to cancel scheduled email: ' + (response.error || 'Unknown error'),
+              variant: 'warning',
+              onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+            })
+          }
+        } catch (error) {
+          console.error('Error removing from queue:', error)
+          setScheduleDialog({
+            isOpen: true,
+            title: 'Cancel Error',
+            message: 'Failed to cancel scheduled email: ' + (error instanceof Error ? error.message : 'Unknown error'),
+            variant: 'warning',
+            onConfirm: () => setScheduleDialog(prev => ({ ...prev, isOpen: false })),
+          })
+        } finally {
+          setIsRemovingFromQueue(false)
+        }
+      },
+    })
   }
 
   // Check scheduled status when overlay opens
@@ -616,34 +720,16 @@ export function EmailDraftOverlay({
                 </div>
               </div>
 
-              {/* Subscription Status */}
-              {subscriptionDataLoaded && (
-                <div
-                  className={`px-6 py-3 border-b ${
-                    emailDraft.isUnsubscribed
-                      ? 'bg-red-50 border-red-100 text-red-700'
-                      : 'bg-emerald-50 border-emerald-100 text-emerald-700'
-                  }`}
-                >
+              {/* Subscription Status - Only show when unsubscribed */}
+              {subscriptionDataLoaded && emailDraft.isUnsubscribed && (
+                <div className="px-6 py-3 border-b bg-red-50 border-red-100 text-red-700">
                   <p className="text-sm font-medium">
-                    {emailDraft.isUnsubscribed ? 'This contact is unsubscribed from emails.' : 'This contact is currently subscribed to emails.'}
+                    This contact is unsubscribed from emails.
                   </p>
-                  {emailDraft.isUnsubscribed && (
-                    <div className="mt-1 space-y-1 text-xs text-current">
-                      {unsubscribedAtDisplay && <p>Unsubscribed on {unsubscribedAtDisplay}</p>}
-                      {emailDraft.unsubscribeReason && <p>Reason: {emailDraft.unsubscribeReason}</p>}
-                      {onResubscribe && (
-                        <button
-                          type="button"
-                          onClick={() => onResubscribe(emailDraft.id)}
-                          disabled={isResubscribing}
-                          className="mt-2 inline-flex items-center justify-center rounded border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {isResubscribing ? 'Resubscribing…' : 'Resubscribe Contact'}
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <div className="mt-1 space-y-1 text-xs text-current">
+                    {unsubscribedAtDisplay && <p>Unsubscribed on {unsubscribedAtDisplay}</p>}
+                    {emailDraft.unsubscribeReason && <p>Reason: {emailDraft.unsubscribeReason}</p>}
+                  </div>
                 </div>
               )}
 
@@ -1010,6 +1096,37 @@ export function EmailDraftOverlay({
           </div>
         </div>
       )}
+
+      {/* Email Update Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={emailUpdateDialog.isOpen}
+        title={emailUpdateDialog.title}
+        message={emailUpdateDialog.message}
+        variant={emailUpdateDialog.variant}
+        confirmText="OK"
+        cancelText=""
+        onConfirm={() => setEmailUpdateDialog({ ...emailUpdateDialog, isOpen: false })}
+        onCancel={() => setEmailUpdateDialog({ ...emailUpdateDialog, isOpen: false })}
+      />
+
+      {/* Schedule Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={scheduleDialog.isOpen}
+        title={scheduleDialog.title}
+        message={scheduleDialog.message}
+        variant={scheduleDialog.variant}
+        confirmText={scheduleDialog.variant === 'warning' && scheduleDialog.message.includes('Are you sure') ? 'Yes, Cancel' : 'OK'}
+        cancelText={scheduleDialog.variant === 'warning' && scheduleDialog.message.includes('Are you sure') ? 'No' : ''}
+        onConfirm={() => {
+          if (scheduleDialog.onConfirm) {
+            scheduleDialog.onConfirm()
+          } else {
+            setScheduleDialog(prev => ({ ...prev, isOpen: false }))
+          }
+        }}
+        onCancel={() => setScheduleDialog(prev => ({ ...prev, isOpen: false }))}
+        isLoading={isRemovingFromQueue}
+      />
     </div>
   )
 }
