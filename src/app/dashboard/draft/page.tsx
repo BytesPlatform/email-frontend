@@ -14,6 +14,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { smsGenerationApi } from '@/api/smsGeneration'
 import { unsubscribeApi } from '@/api/unsubscribe'
+import { clientAccountsApi, type ClientEmail } from '@/api/clientAccounts'
 import { useAuthContext } from '@/contexts/AuthContext'
 import type { EmailDraft as ApiEmailDraft } from '@/types/emailGeneration'
 import type { SMSDraft } from '@/types/smsGeneration'
@@ -67,6 +68,10 @@ function DraftsPageContent() {
   const [scheduledAt, setScheduledAt] = useState('')
   const [scheduledTime, setScheduledTime] = useState('')
   const [isScheduling, setIsScheduling] = useState(false)
+  const [availableMailboxes, setAvailableMailboxes] = useState<ClientEmail[]>([])
+  const [selectedMailboxIds, setSelectedMailboxIds] = useState<number[]>([])
+  const [useExistingMailboxes, setUseExistingMailboxes] = useState(true)
+  const [isLoadingMailboxes, setIsLoadingMailboxes] = useState(false)
   const [dequeuingIds, setDequeuingIds] = useState<Set<number>>(new Set())
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean
@@ -219,6 +224,31 @@ function DraftsPageContent() {
     }
   }
 
+  // Fetch available mailboxes
+  const fetchMailboxes = useCallback(async () => {
+    setIsLoadingMailboxes(true)
+    try {
+      const response = await clientAccountsApi.getClientEmails()
+      if (response.success && response.data) {
+        // Filter to active mailboxes only
+        const activeMailboxes = response.data.filter(m => m.status === 'active')
+        setAvailableMailboxes(activeMailboxes)
+      }
+    } catch (error) {
+      console.error('Error fetching mailboxes:', error)
+      setAvailableMailboxes([])
+    } finally {
+      setIsLoadingMailboxes(false)
+    }
+  }, [])
+
+  // Load mailboxes when schedule modal opens
+  useEffect(() => {
+    if (isScheduleModalOpen) {
+      fetchMailboxes()
+    }
+  }, [isScheduleModalOpen, fetchMailboxes])
+
   // Handle schedule emails (bulk)
   const handleScheduleEmails = async () => {
     if (selectedEmailDraftIds.size === 0) {
@@ -261,37 +291,46 @@ function DraftsPageContent() {
       return
     }
 
+    // Validate mailbox selection if not using existing
+    if (!useExistingMailboxes && selectedMailboxIds.length === 0) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'No Mailboxes Selected',
+        message: 'Please select at least one mailbox or use existing mailboxes.',
+        variant: 'warning',
+        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+        confirmText: 'OK',
+        cancelText: '',
+      })
+      return
+    }
+
     setIsScheduling(true)
     const draftIds = Array.from(selectedEmailDraftIds)
-    let successCount = 0
-    let failCount = 0
 
     try {
-      for (const draftId of draftIds) {
-        try {
-          const response = await emailGenerationApi.scheduleEmail(draftId, scheduledDateTime)
-          if (response.success) {
-            successCount++
-          } else {
-            failCount++
-          }
-        } catch (error) {
-          failCount++
-        }
-      }
+      // Use batch API instead of loop
+      const clientEmailIdsToUse = useExistingMailboxes ? undefined : selectedMailboxIds
+      const response = await emailGenerationApi.scheduleBatch(
+        draftIds,
+        scheduledDateTime,
+        clientEmailIdsToUse
+      )
 
-      if (failCount === 0) {
-        setSuccessMessage(`Successfully scheduled ${successCount} email(s)!`)
+      if (response.success) {
+        setSuccessMessage(`Successfully scheduled ${response.data?.count || draftIds.length} email(s)!`)
         setIsScheduleModalOpen(false)
         setScheduledAt('')
         setScheduledTime('')
         setSelectedEmailDraftIds(new Set())
+        setSelectedMailboxIds([])
+        setUseExistingMailboxes(true)
         if (activeView === 'queued' as DraftViewType) {
           fetchQueuedEmails()
         }
         setTimeout(() => setSuccessMessage(null), 5000)
       } else {
-        setErrorMessage(`Scheduled ${successCount} email(s), ${failCount} failed.`)
+        setErrorMessage('Failed to schedule emails: ' + (response.error || 'Unknown error'))
         setTimeout(() => setErrorMessage(null), 5000)
       }
     } catch (error) {
@@ -299,6 +338,23 @@ function DraftsPageContent() {
       setTimeout(() => setErrorMessage(null), 5000)
     } finally {
       setIsScheduling(false)
+    }
+  }
+
+  // Handle mailbox selection toggle
+  const handleMailboxToggle = (mailboxId: number) => {
+    setSelectedMailboxIds(prev => 
+      prev.includes(mailboxId)
+        ? prev.filter(id => id !== mailboxId)
+        : [...prev, mailboxId]
+    )
+  }
+
+  // Handle "use existing mailboxes" toggle
+  const handleUseExistingToggle = (checked: boolean) => {
+    setUseExistingMailboxes(checked)
+    if (checked) {
+      setSelectedMailboxIds([])
     }
   }
 
@@ -2117,13 +2173,19 @@ function DraftsPageContent() {
       {isScheduleModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setIsScheduleModalOpen(false)} />
-          <div className="relative bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-md p-6">
+          <div className="relative bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
                 Schedule {selectedEmailDraftIds.size} Email{selectedEmailDraftIds.size !== 1 ? 's' : ''}
               </h3>
               <button
-                onClick={() => setIsScheduleModalOpen(false)}
+                onClick={() => {
+                  setIsScheduleModalOpen(false)
+                  setScheduledAt('')
+                  setScheduledTime('')
+                  setSelectedMailboxIds([])
+                  setUseExistingMailboxes(true)
+                }}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2133,6 +2195,60 @@ function DraftsPageContent() {
             </div>
             
             <div className="space-y-4">
+              {/* Mailbox Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Mailboxes
+                </label>
+                
+                {/* Use existing mailboxes option */}
+                <div className="mb-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useExistingMailboxes}
+                      onChange={(e) => handleUseExistingToggle(e.target.checked)}
+                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                    />
+                    <span className="text-sm text-gray-700">Use existing mailbox assignments</span>
+                  </label>
+                </div>
+
+                {/* Mailbox selection (disabled when using existing) */}
+                {!useExistingMailboxes && (
+                  <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
+                    {isLoadingMailboxes ? (
+                      <p className="text-sm text-gray-500">Loading mailboxes...</p>
+                    ) : availableMailboxes.length === 0 ? (
+                      <p className="text-sm text-gray-500">No active mailboxes available</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {availableMailboxes.map((mailbox) => (
+                          <label
+                            key={mailbox.id}
+                            className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedMailboxIds.includes(mailbox.id)}
+                              onChange={() => handleMailboxToggle(mailbox.id)}
+                              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                            />
+                            <span className="text-sm text-gray-700">{mailbox.emailAddress}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!useExistingMailboxes && selectedMailboxIds.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    {selectedMailboxIds.length} mailbox{selectedMailboxIds.length !== 1 ? 'es' : ''} selected
+                  </p>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Date
@@ -2172,7 +2288,7 @@ function DraftsPageContent() {
                   variant="primary"
                   size="sm"
                   onClick={handleScheduleEmails}
-                  disabled={!scheduledAt || !scheduledTime || isScheduling}
+                  disabled={!scheduledAt || !scheduledTime || isScheduling || (!useExistingMailboxes && selectedMailboxIds.length === 0)}
                   isLoading={isScheduling}
                   className="flex-1"
                 >
@@ -2185,6 +2301,8 @@ function DraftsPageContent() {
                     setIsScheduleModalOpen(false)
                     setScheduledAt('')
                     setScheduledTime('')
+                    setSelectedMailboxIds([])
+                    setUseExistingMailboxes(true)
                   }}
                   disabled={isScheduling}
                   className="flex-1"
