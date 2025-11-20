@@ -166,6 +166,12 @@ export default function HistoryPage() {
     if (activeView === 'sms-sent') return item.type === 'sms-sent'
     if (activeView === 'email-sent') return item.type === 'email-sent'
     if (activeView === 'email-unsubscribed') return item.type === 'email-unsubscribed'
+    if (activeView === 'not-delivered') {
+      // Show emails with SendGrid statuses: deferred, bounced, dropped
+      return item.type === 'email-sent' && 
+             item.status && 
+             ['deferred', 'bounced', 'dropped'].includes(item.status)
+    }
     return true
   })
 
@@ -212,6 +218,11 @@ export default function HistoryPage() {
     smsSent: historyItems.filter(item => item.type === 'sms-sent').length,
     emailSent: historyItems.filter(item => item.type === 'email-sent').length,
     emailUnsubscribed: historyItems.filter(item => item.type === 'email-unsubscribed').length,
+    notDelivered: historyItems.filter(item => 
+      item.type === 'email-sent' && 
+      item.status && 
+      ['deferred', 'bounced', 'dropped'].includes(item.status)
+    ).length,
   }
 
   const handleSelect = (id: number, selected: boolean) => {
@@ -315,6 +326,8 @@ export default function HistoryPage() {
         return 'Email Sent'
       case 'email-unsubscribed':
         return 'Email Unsubscribed'
+      case 'not-delivered':
+        return 'Not Delivered'
       default:
         return 'All History'
     }
@@ -332,8 +345,9 @@ export default function HistoryPage() {
             onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             allCount={counts.all}
             smsSentCount={counts.smsSent}
-            emailSentCount={counts.emailSent}
-            emailUnsubscribedCount={counts.emailUnsubscribed}
+          emailSentCount={counts.emailSent}
+          emailUnsubscribedCount={counts.emailUnsubscribed}
+          notDeliveredCount={counts.notDelivered}
           />
         </div>
 
