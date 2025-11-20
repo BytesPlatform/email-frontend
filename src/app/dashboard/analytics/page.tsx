@@ -37,13 +37,22 @@ const makeRangeParams = (days: number): AnalyticsQueryParams => {
 
 export default function AnalyticsPage() {
   const [selectedRange, setSelectedRange] = useState<number>(14)
+  const [selectedFromEmail, setSelectedFromEmail] = useState<string>('')
+  const [availableEmails, setAvailableEmails] = useState<string[]>([])
+  const [isLoadingEmails, setIsLoadingEmails] = useState<boolean>(false)
   const [overview, setOverview] = useState<EmailAnalyticsOverview | null>(null)
   const [timeline, setTimeline] = useState<EmailAnalyticsTimelinePoint[]>([])
   const [events, setEvents] = useState<EmailAnalyticsEvent[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
 
-  const rangeParams = useMemo(() => makeRangeParams(selectedRange), [selectedRange])
+  const rangeParams = useMemo(() => {
+    const params = makeRangeParams(selectedRange)
+    if (selectedFromEmail) {
+      params.fromEmail = selectedFromEmail
+    }
+    return params
+  }, [selectedRange, selectedFromEmail])
 
   const loadAnalytics = useCallback(async () => {
     setIsLoading(true)
@@ -78,6 +87,24 @@ export default function AnalyticsPage() {
       setIsLoading(false)
     }
   }, [rangeParams])
+
+  // Load available sender emails (emails that have actually sent emails)
+  useEffect(() => {
+    const loadSenderEmails = async () => {
+      setIsLoadingEmails(true)
+      try {
+        const response = await sendgridAnalyticsApi.getSenders()
+        if (response.success && response.data) {
+          setAvailableEmails(response.data)
+        }
+      } catch (err) {
+        console.error('[AnalyticsPage] Failed to load sender emails', err)
+      } finally {
+        setIsLoadingEmails(false)
+      }
+    }
+    void loadSenderEmails()
+  }, [])
 
   useEffect(() => {
     void loadAnalytics()
@@ -127,6 +154,30 @@ export default function AnalyticsPage() {
                   )
                 })}
               </div>
+
+              {/* From Email Filter */}
+              {availableEmails.length > 0 && (
+                <div className="relative">
+                  <select
+                    value={selectedFromEmail}
+                    onChange={(e) => setSelectedFromEmail(e.target.value)}
+                    disabled={isLoadingEmails}
+                    className="appearance-none bg-white border border-slate-200 rounded-full px-4 py-1.5 pr-8 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">All Email Addresses</option>
+                    {availableEmails.map((email) => (
+                      <option key={email} value={email}>
+                        {email}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                    <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+              )}
 
               <button
                 type="button"

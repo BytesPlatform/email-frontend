@@ -1,7 +1,8 @@
 'use client'
 
 import { EmailAnalyticsEvent } from '@/types/analytics'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
+import { Button } from '@/components/ui/Button'
 
 export interface AnalyticsEventsTableProps {
   events: EmailAnalyticsEvent[]
@@ -62,15 +63,27 @@ const formatDateTime = (iso: string) => {
 
 export function AnalyticsEventsTable({ events, isLoading = false }: AnalyticsEventsTableProps) {
   const [activeFilter, setActiveFilter] = useState<EventFilterKey>('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 7
+
+  const filteredEvents = useMemo(() => {
+    return activeFilter === 'all'
+      ? events
+      : events.filter(event => FILTER_MAP[activeFilter].includes(event.type))
+  }, [events, activeFilter])
+
+  const totalPages = Math.ceil(filteredEvents.length / itemsPerPage)
 
   const rows = useMemo(() => {
-    const filtered =
-      activeFilter === 'all'
-        ? events
-        : events.filter(event => FILTER_MAP[activeFilter].includes(event.type))
+    const startIndex = (currentPage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    return filteredEvents.slice(startIndex, endIndex)
+  }, [filteredEvents, currentPage, itemsPerPage])
 
-    return filtered.slice(0, 25)
-  }, [events, activeFilter])
+  // Reset to page 1 when filter changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activeFilter])
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
@@ -161,6 +174,33 @@ export function AnalyticsEventsTable({ events, isLoading = false }: AnalyticsEve
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!isLoading && filteredEvents.length > 0 && totalPages > 1 && (
+        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50">
+          <div className="text-sm text-slate-600">
+            Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredEvents.length)} of {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(currentPage - 1)}
+              disabled={currentPage === 1}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       )}
     </div>

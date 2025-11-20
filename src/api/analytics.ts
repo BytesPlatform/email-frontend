@@ -18,6 +18,10 @@ const buildQueryString = (params?: AnalyticsQueryParams) => {
     search.set('to', params.to)
   }
 
+  if (params.fromEmail) {
+    search.set('fromEmail', params.fromEmail)
+  }
+
   return search.toString() ? `?${search.toString()}` : ''
 }
 
@@ -39,6 +43,40 @@ export const sendgridAnalyticsApi = {
   ): Promise<ApiResponse<EmailAnalyticsEvent[]>> {
     const query = buildQueryString(params)
     return apiClient.get<EmailAnalyticsEvent[]>(`/emails/analytics/events${query}`)
+  },
+
+  async getSenders(): Promise<ApiResponse<string[]>> {
+    try {
+      const response = await apiClient.get<{ success: true; data: string[] }>('/emails/analytics/senders')
+      if (response.success && response.data) {
+        // Handle nested response structure
+        if ('data' in response.data && Array.isArray(response.data.data)) {
+          return {
+            success: true,
+            data: response.data.data
+          }
+        }
+        // Handle direct array response
+        if (Array.isArray(response.data)) {
+          return {
+            success: true,
+            data: response.data
+          }
+        }
+      }
+      return {
+        success: false,
+        error: 'Failed to fetch senders',
+        data: []
+      }
+    } catch (error) {
+      console.error('Error fetching senders:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch senders',
+        data: []
+      }
+    }
   },
 }
 
