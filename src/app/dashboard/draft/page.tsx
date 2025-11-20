@@ -742,6 +742,37 @@ function DraftsPageContent() {
     }
   }
 
+  const handleContactEmailChange = useCallback((contactId: number, email: string) => {
+    setEmailDrafts(prev => {
+      let changed = false
+      const next = prev.map(draft => {
+        if (draft.contactId === contactId) {
+          changed = true
+          return { ...draft, contactEmail: email }
+        }
+        return draft
+      })
+      return changed ? next : prev
+    })
+
+    setSelectedDraftsForNavigation(prev => {
+      if (!prev.length) return prev
+      let changed = false
+      const next = prev.map(draft => {
+        if (draft.contactId === contactId) {
+          changed = true
+          return { ...draft, contactEmail: email }
+        }
+        return draft
+      })
+      return changed ? next : prev
+    })
+
+    setSelectedEmailDraft(prev =>
+      prev?.contactId === contactId ? { ...prev, contactEmail: email } : prev
+    )
+  }, [])
+
   const handleNextEmailDraft = async () => {
     // Navigate through selected drafts if available
     if (selectedDraftsForNavigation.length > 0) {
@@ -1711,23 +1742,26 @@ function DraftsPageContent() {
                     </svg>
                   </button>
                 </div>
-                <div className="relative">
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2.5 pr-8 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="draft">Draft</option>
-                    <option value="sent">Sent</option>
-                    <option value="delivered">Delivered</option>
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
+                {/* Hide status filter when viewing queued emails */}
+                {activeView !== 'queued' && (
+                  <div className="relative">
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2.5 pr-8 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="draft">Draft</option>
+                      <option value="sent">Sent</option>
+                      <option value="delivered">Delivered</option>
+                    </select>
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                      <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -1829,132 +1863,295 @@ function DraftsPageContent() {
           )}
 
           {/* Main Content */}
-          <div className="flex-1 overflow-y-auto bg-white">
+          <div className="flex-1 overflow-y-auto bg-white [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <div className="px-4 py-4">
               {activeView === ('queued' as DraftViewType) ? (
                 <div className="space-y-4">
                   {isLoadingQueued ? (
-                    <div className="space-y-3">
+                    <div className="relative space-y-0">
                       {[1, 2, 3].map((i) => (
-                        <div
-                          key={i}
-                          className="rounded-xl border-2 border-gray-200 bg-white p-5 animate-pulse"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start space-x-4 flex-1">
-                              <div className="h-12 w-12 rounded-full bg-gray-200"></div>
-                              <div className="flex-1 space-y-2">
-                                <div className="h-5 w-48 bg-gray-200 rounded"></div>
-                                <div className="h-4 w-64 bg-gray-200 rounded"></div>
-                                <div className="h-3 w-32 bg-gray-200 rounded"></div>
+                        <div key={i} className="relative flex items-start gap-4 pb-8">
+                          {/* Timeline circle skeleton */}
+                          <div className="flex flex-col items-center flex-shrink-0">
+                            <div className="relative z-10 w-12 h-12 rounded-full bg-gray-200 animate-pulse border-4 border-white"></div>
+                            {i < 3 && (
+                              <div className="absolute top-12 left-1/2 transform -translate-x-1/2 w-0.5 h-full bg-gray-200"></div>
+                            )}
+                          </div>
+                          {/* Content card skeleton */}
+                          <div className="flex-1 min-w-0">
+                            <div className="rounded-xl border-2 border-gray-200 bg-white p-5 animate-pulse">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1 space-y-3">
+                                  <div className="h-5 w-48 bg-gray-200 rounded"></div>
+                                  <div className="h-4 w-64 bg-gray-200 rounded"></div>
+                                  <div className="h-3 w-32 bg-gray-200 rounded"></div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <div className="h-8 w-20 bg-gray-200 rounded"></div>
+                                  <div className="h-8 w-16 bg-gray-200 rounded"></div>
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <div className="h-8 w-20 bg-gray-200 rounded"></div>
-                              <div className="h-8 w-16 bg-gray-200 rounded"></div>
                             </div>
                           </div>
                         </div>
                       ))}
                     </div>
-                  ) : queuedEmails.length === 0 ? (
-                    <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
-                      <div className="flex flex-col items-center justify-center space-y-3">
-                        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
-                          <svg className="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-gray-700 mb-1">
-                            No queued emails
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Emails scheduled for later sending will appear here.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {queuedEmails.map((queued) => (
-                        <div
-                          key={queued.id}
-                          className="group rounded-xl border-2 border-gray-200 bg-white p-5 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all duration-200"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start space-x-4 flex-1">
-                              <div className="flex-shrink-0">
-                                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center">
-                                  <svg className="h-6 w-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                  </svg>
-                                </div>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <h4 className="text-base font-semibold text-gray-900">
-                                    {queued.emailDraft?.contactName || queued.emailDraft?.contactEmail || `Draft #${queued.emailDraftId}`}
-                                  </h4>
-                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    queued.status === 'pending' 
-                                      ? 'bg-indigo-100 text-indigo-700' 
-                                      : queued.status === 'sent'
-                                      ? 'bg-emerald-100 text-emerald-700'
-                                      : 'bg-rose-100 text-rose-700'
-                                  }`}>
-                                    {queued.status}
-                                  </span>
-                                </div>
-                                {queued.emailDraft && (
-                                  <p className="text-sm text-gray-600 mb-1 truncate">
-                                    {queued.emailDraft.subject || 'No Subject'}
-                                  </p>
-                                )}
-                                <div className="flex items-center gap-4 text-xs text-gray-500">
-                                  <span className="flex items-center gap-1">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    Scheduled: {new Date(queued.scheduledAt).toLocaleString()}
-                                  </span>
-                                </div>
-                              </div>
+                  ) : (() => {
+                    // Only show pending emails scheduled for the future (not old database records)
+                    const now = new Date()
+                    const allQueuedEmails = queuedEmails.sort((a, b) => 
+                      new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+                    )
+                    // Filter: only pending emails scheduled for the future
+                    const pendingQueuedEmails = allQueuedEmails.filter(q => 
+                      q.status === 'pending' && new Date(q.scheduledAt) > now
+                    )
+                    // For progress calculation, only count emails scheduled for the future
+                    const futureQueuedEmails = allQueuedEmails.filter(q => 
+                      new Date(q.scheduledAt) > now
+                    )
+                    const sentQueuedEmails = futureQueuedEmails.filter(q => q.status === 'sent')
+                    const totalQueued = futureQueuedEmails.length
+                    const sentCount = sentQueuedEmails.length
+                    const pendingCount = pendingQueuedEmails.length
+                    
+                    // Calculate progress: sent / total (only show if there are pending emails)
+                    const progressPercentage = totalQueued > 0 && pendingCount > 0 
+                      ? (sentCount / totalQueued) * 100 
+                      : 0
+                    
+                    const totalQueuedPages = Math.ceil(pendingQueuedEmails.length / itemsPerPage)
+                    const paginatedQueuedEmails = pendingQueuedEmails.slice(
+                      (currentPage - 1) * itemsPerPage,
+                      currentPage * itemsPerPage
+                    )
+
+                    // If no pending emails, queue is empty (even if there are sent emails)
+                    if (pendingQueuedEmails.length === 0) {
+                      return (
+                        <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
+                          <div className="flex flex-col items-center justify-center space-y-3">
+                            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                              <svg className="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
                             </div>
-                            <div className="flex items-center gap-2">
-                              {queued.status === 'pending' && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleDequeueEmail(queued.emailDraftId)}
-                                  disabled={dequeuingIds.has(queued.emailDraftId)}
-                                  isLoading={dequeuingIds.has(queued.emailDraftId)}
-                                  className="text-orange-700 border-orange-300 hover:bg-orange-50"
-                                  leftIcon={
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                  }
-                                >
-                                  Dequeue
-                                </Button>
-                              )}
-                              {queued.emailDraft && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleViewDraft(queued.emailDraftId, 'email')}
-                                  className="text-gray-700 border-gray-300 hover:bg-gray-50"
-                                >
-                                  View
-                                </Button>
-                              )}
+                            <div>
+                              <p className="text-sm font-semibold text-gray-700 mb-1">
+                                No queued emails
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Emails scheduled for later sending will appear here.
+                              </p>
                             </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      )
+                    }
+
+                    return (
+                      <>
+                        {/* Progress Line - Only show if there are pending emails */}
+                        {pendingCount > 0 && totalQueued > 0 && (
+                          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+                            <div className="mb-4">
+                              <div className="flex items-center justify-between text-sm mb-2">
+                                <span className="text-gray-600">Queue Progress</span>
+                                <span className="font-semibold text-gray-900">
+                                  {sentCount} / {totalQueued} sent • {pendingCount} pending
+                                </span>
+                              </div>
+                              {/* Progress bar container */}
+                              <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
+                                {/* Animated progress line */}
+                                <div 
+                                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full transition-all duration-1000 ease-out"
+                                  style={{ width: `${progressPercentage}%` }}
+                                >
+                                  {/* Animated shimmer effect */}
+                                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent" style={{ animation: 'shimmer 2s infinite linear' }}></div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Email markers on timeline - only pending emails */}
+                            {paginatedQueuedEmails.length > 0 && (
+                              <div className="relative mt-6 pt-4">
+                                <div className="absolute top-4 left-0 right-0 h-0.5 bg-gray-200"></div>
+                                <div className="relative flex justify-between">
+                                  {paginatedQueuedEmails.map((queued) => {
+                                    const scheduledDate = new Date(queued.scheduledAt)
+                                    const timeStr = scheduledDate.toLocaleTimeString('en-US', { 
+                                      hour: 'numeric', 
+                                      minute: '2-digit',
+                                      hour12: true 
+                                    })
+                                    
+                                    return (
+                                      <div 
+                                        key={queued.id} 
+                                        className="flex flex-col items-center"
+                                      >
+                                        {/* Tick mark - blue circle for pending */}
+                                        <div className="relative z-10 flex items-center justify-center w-5 h-5 rounded-full border-2 border-white shadow-sm bg-indigo-500">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+                                        </div>
+                                        {/* Time label */}
+                                        <div className="mt-1.5 text-[10px] font-medium text-gray-600 whitespace-nowrap">
+                                          {timeStr}
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Email Cards - Only pending emails */}
+                        <div className="space-y-3">
+                          {paginatedQueuedEmails.map((queued) => {
+                            const scheduledDate = new Date(queued.scheduledAt)
+                            const timeStr = scheduledDate.toLocaleTimeString('en-US', { 
+                              hour: 'numeric', 
+                              minute: '2-digit',
+                              hour12: true 
+                            })
+                            const dateStr = scheduledDate.toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric',
+                              year: 'numeric'
+                            })
+                            
+                            return (
+                              <div
+                                key={queued.id}
+                                className="rounded-lg border border-gray-200 bg-white p-4 hover:border-gray-300 hover:shadow-sm transition-all"
+                              >
+                                <div className="flex items-center justify-between gap-4">
+                                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                                    {/* Icon */}
+                                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                                      <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                      </svg>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-3 mb-1">
+                                        <h4 className="text-sm font-semibold text-gray-900 truncate">
+                                          {queued.emailDraft?.contactName || queued.emailDraft?.contactEmail || `Draft #${queued.emailDraftId}`}
+                                        </h4>
+                                        <span className="flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
+                                          {queued.status}
+                                        </span>
+                                      </div>
+                                      {queued.emailDraft && (
+                                        <p className="text-sm text-gray-600 truncate mb-1">
+                                          {queued.emailDraft.subject || 'No Subject'}
+                                        </p>
+                                      )}
+                                      <p className="text-xs text-gray-500">
+                                        {timeStr} • {dateStr}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {queued.status === 'pending' && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleDequeueEmail(queued.emailDraftId)}
+                                        disabled={dequeuingIds.has(queued.emailDraftId)}
+                                        isLoading={dequeuingIds.has(queued.emailDraftId)}
+                                        className="text-orange-600 border-orange-200 hover:bg-orange-50"
+                                      >
+                                        Remove
+                                      </Button>
+                                    )}
+                                    {queued.emailDraft && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleViewDraft(queued.emailDraftId, 'email')}
+                                      >
+                                        View
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Pagination for Queued Emails */}
+                        {pendingQueuedEmails.length > 0 && (
+                          <div className="flex items-center justify-between mt-4 px-4 py-3 bg-white rounded-lg border border-gray-200 mb-16">
+                            <div className="text-sm text-gray-600">
+                              {totalQueuedPages > 1 ? (
+                                <>
+                                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, pendingQueuedEmails.length)} of {pendingQueuedEmails.length} queued email{pendingQueuedEmails.length !== 1 ? 's' : ''}
+                                </>
+                              ) : (
+                                <>
+                                  Showing {pendingQueuedEmails.length} queued email{pendingQueuedEmails.length !== 1 ? 's' : ''}
+                                </>
+                              )}
+                            </div>
+                            {totalQueuedPages > 1 && (
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="xs"
+                                  onClick={() => handlePageChange(currentPage - 1)}
+                                  disabled={currentPage === 1}
+                                >
+                                  Previous
+                                </Button>
+                                <div className="flex items-center gap-1">
+                                  {Array.from({ length: Math.min(totalQueuedPages, 10) }, (_, i) => {
+                                    let page: number
+                                    if (totalQueuedPages <= 10) {
+                                      page = i + 1
+                                    } else if (currentPage <= 5) {
+                                      page = i + 1
+                                    } else if (currentPage >= totalQueuedPages - 4) {
+                                      page = totalQueuedPages - 9 + i
+                                    } else {
+                                      page = currentPage - 5 + i
+                                    }
+                                    return (
+                                      <button
+                                        key={page}
+                                        onClick={() => handlePageChange(page)}
+                                        className={`px-3 py-1 text-sm rounded transition-colors ${
+                                          currentPage === page
+                                            ? 'bg-indigo-600 text-white font-medium'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                                        }`}
+                                      >
+                                        {page}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="xs"
+                                  onClick={() => handlePageChange(currentPage + 1)}
+                                  disabled={currentPage === totalQueuedPages}
+                                >
+                                  Next
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
               ) : showCombinedView ? (
                 <CombinedDraftsList
@@ -2167,6 +2364,7 @@ function DraftsPageContent() {
           selectedEmailDraft !== null &&
           resubscribingDraftId === selectedEmailDraft.id
         }
+      onContactEmailChange={handleContactEmailChange}
       />
 
       {/* Bulk Schedule Email Modal */}
