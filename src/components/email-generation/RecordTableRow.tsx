@@ -57,7 +57,7 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
     : (record.hasSMSDraft || record.smsDraftId)
 
   return (
-    <tr key={record.id} className={`hover:bg-gray-50 cursor-pointer ${isSelected ? 'bg-blue-50' : ''}`} onClick={onRowClick}>
+    <tr key={record.id} className={`${isSelected ? 'bg-blue-50' : ''}`}>
       {!hasDraft && (
         <td className="px-2 py-2 whitespace-nowrap w-12" onClick={(e) => e.stopPropagation()}>
           <input
@@ -101,18 +101,20 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
       </td>
       <td className="px-2 py-2 whitespace-nowrap min-w-[120px]">
         <div className="flex items-center space-x-1">
-          <Button
-            onClick={async (e) => {
-              e.stopPropagation()
-              await onViewSummary(record.id)
-            }}
-            disabled={record.isLoadingSummary}
-            variant="outline"
-            size="xs"
-            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-          >
-            {record.isLoadingSummary ? 'Loading...' : 'View'}
-          </Button>
+          {record.hasSummary && (
+            <Button
+              onClick={async (e) => {
+                e.stopPropagation()
+                await onViewSummary(record.id)
+              }}
+              disabled={record.isLoadingSummary}
+              variant="outline"
+              size="xs"
+              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+            >
+              {record.isLoadingSummary ? 'Loading...' : 'View'}
+            </Button>
+          )}
         </div>
       </td>
       <td className="px-2 py-2 whitespace-nowrap text-sm font-medium min-w-[140px]">

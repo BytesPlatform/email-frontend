@@ -15,12 +15,10 @@ import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { smsGenerationApi } from '@/api/smsGeneration'
-import { unsubscribeApi } from '@/api/unsubscribe'
 import { clientAccountsApi, type ClientEmail } from '@/api/clientAccounts'
 import { useAuthContext } from '@/contexts/AuthContext'
 import type { EmailDraft as ApiEmailDraft } from '@/types/emailGeneration'
 import type { SMSDraft } from '@/types/smsGeneration'
-import type { UnsubscribeListItem } from '@/types/unsubscribe'
 
 function DraftsPageContent() {
   const searchParams = useSearchParams()
@@ -54,10 +52,6 @@ function DraftsPageContent() {
   const [selectedDraftsForNavigation, setSelectedDraftsForNavigation] = useState<EmailDraft[]>([])
   const [selectedSmsDraftsForNavigation, setSelectedSmsDraftsForNavigation] = useState<SmsDraft[]>([])
   const [selectedSmsDraftsNavigationIndex, setSelectedSmsDraftsNavigationIndex] = useState(0)
-  const [unsubscribeMap, setUnsubscribeMap] = useState<Map<number, UnsubscribeListItem>>(new Map())
-  const [isUnsubscribeLoading, setIsUnsubscribeLoading] = useState(false)
-  const [isUnsubscribeLoaded, setIsUnsubscribeLoaded] = useState(false)
-  const [resubscribingDraftId, setResubscribingDraftId] = useState<number | null>(null)
   const [queuedEmails, setQueuedEmails] = useState<Array<{
     id: number
     emailDraftId: number
@@ -98,60 +92,8 @@ function DraftsPageContent() {
   const eventSourceRef = useRef<EventSource | null>(null) // For Server-Sent Events (SSE)
   const prevQueuedEmailsRef = useRef<string>('') // Cache to prevent unnecessary re-renders
 
-  const getUnsubscribeInfo = useCallback(
-    (contactId?: number | null) => {
-      if (!contactId || Number.isNaN(contactId)) {
-        return {
-          isUnsubscribed: false,
-          unsubscribedAt: null,
-          unsubscribeReason: null,
-        }
-      }
-      const record = unsubscribeMap.get(contactId)
-      return {
-        isUnsubscribed: !!record,
-        unsubscribedAt: record?.unsubscribedAt ?? null,
-        unsubscribeReason: record?.reason ?? null,
-      }
-    },
-    [unsubscribeMap]
-  )
-
-  const fetchUnsubscribeList = useCallback(async (force = false) => {
-    if (isUnsubscribeLoading) return
-    if (!force && isUnsubscribeLoaded) return
-    setIsUnsubscribeLoading(true)
-    try {
-      const res = await unsubscribeApi.getAllUnsubscribes()
-      if (res.success && Array.isArray(res.data)) {
-        const map = new Map<number, UnsubscribeListItem>()
-        res.data.forEach((item) => {
-          if (typeof item.contactId === 'number') {
-            map.set(item.contactId, {
-              ...item,
-              unsubscribedAt: item.unsubscribedAt ? new Date(item.unsubscribedAt).toISOString() : null,
-            })
-          }
-        })
-        setUnsubscribeMap(map)
-      } else {
-        setUnsubscribeMap(new Map())
-        if (res.error) {
-          console.error('Error fetching unsubscribe list:', res.error)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching unsubscribe list:', error)
-      setUnsubscribeMap(new Map())
-    } finally {
-      setIsUnsubscribeLoading(false)
-      setIsUnsubscribeLoaded(true)
-    }
-  }, [isUnsubscribeLoading, isUnsubscribeLoaded])
-
   // Transform API EmailDraft to component EmailDraft
   const transformEmailDraft = (apiDraft: ApiEmailDraft): EmailDraft => {
-    const unsubscribeInfo = getUnsubscribeInfo(apiDraft.contactId)
     // Get subject from subjectLines array (first element) or fallback to legacy fields
     const subject = apiDraft.subjectLines?.[0] || apiDraft.subjectLine || apiDraft.subject || 'No Subject'
     return {
@@ -166,7 +108,6 @@ function DraftsPageContent() {
       createdAt: apiDraft.createdAt || new Date().toISOString(),
       opens: undefined, // Will be populated if engagement data is included
       clicks: undefined, // Will be populated if engagement data is included
-      ...unsubscribeInfo,
     }
   }
 
@@ -196,7 +137,6 @@ function DraftsPageContent() {
       } else {
         setEmailDrafts([])
       }
-      fetchUnsubscribeList(true)
     } catch (err) {
       console.error('Error fetching email drafts:', err)
       setEmailDrafts([])
@@ -261,7 +201,12 @@ function DraftsPageContent() {
     queueId?: number
     emailDraftId?: number
     status?: string
-    data?: any
+    data?: {
+      queueId?: number
+      emailDraftId?: number
+      scheduledAt?: string
+      status?: string
+    }
   }) => {
     setQueuedEmails(prev => {
       if (update.type === 'queue:sent' && update.queueId) {
@@ -274,12 +219,16 @@ function DraftsPageContent() {
         return updated
       } else if (update.type === 'queue:added' && update.data) {
         // Add new email to queue directly from event data (no API call needed)
+        // Ensure all required fields are present
+        if (!update.data.queueId || !update.data.emailDraftId || !update.data.scheduledAt) {
+          return prev // Missing required fields, skip
+        }
         const newEmail = {
           id: update.data.queueId,
           emailDraftId: update.data.emailDraftId,
           scheduledAt: update.data.scheduledAt,
           status: 'pending' as const,
-          emailDraft: undefined, // Will be populated if user views/refreshes
+          emailDraft: undefined as EmailDraft | undefined, // Will be populated if user views/refreshes
         }
         // Check if email already exists (avoid duplicates)
         const exists = prev.some(q => q.id === newEmail.id || q.emailDraftId === newEmail.emailDraftId)
@@ -368,7 +317,7 @@ function DraftsPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView, updateQueuedEmailFromEvent])
 
-  // Fetch available mailboxes
+  // Fetch available mailboxes - load once on mount and cache
   const fetchMailboxes = useCallback(async () => {
     setIsLoadingMailboxes(true)
     try {
@@ -386,14 +335,17 @@ function DraftsPageContent() {
     }
   }, [])
 
-  // Load mailboxes when schedule modal opens and reset selections
+  // Load mailboxes once on mount instead of every time modal opens
+  useEffect(() => {
+    fetchMailboxes()
+  }, [fetchMailboxes])
+
+  // Reset mailbox selections when schedule modal opens
   useEffect(() => {
     if (isScheduleModalOpen) {
-      fetchMailboxes()
-      // Reset mailbox selections when modal opens - user must manually select
       setSelectedMailboxIds([])
     }
-  }, [isScheduleModalOpen, fetchMailboxes])
+  }, [isScheduleModalOpen])
 
   // Handle schedule emails (bulk)
   const handleScheduleEmails = async () => {
@@ -623,42 +575,21 @@ function DraftsPageContent() {
     }
   }, [])
 
-  useEffect(() => {
-    if (activeTab === 'email') {
-      fetchUnsubscribeList()
-    }
-  }, [activeTab, fetchUnsubscribeList])
-
-  // Initial load: Ensure both drafts are fetched on mount (for accurate sidebar counts)
-  // This ensures email drafts are fetched immediately, and SMS drafts when client is available
-  useEffect(() => {
-    // Always fetch email drafts on initial load
-    fetchEmailDrafts()
-    
-    // Fetch SMS drafts when client becomes available
-    if (client?.id) {
-      fetchSmsDrafts()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client?.id]) // Re-run when client becomes available
-
-  // Fetch drafts when view/tab changes
-  useEffect(() => {
-    // Fetch both types when view needs both (all, starred)
+  // Consolidated effect: Fetch drafts based on view/tab - prevents duplicate calls
+  const loadDrafts = useCallback(() => {
+    // Determine what to fetch based on activeView
     if (activeView === 'all' || activeView === 'starred') {
+      // Fetch both types when view needs both
       fetchEmailDrafts()
       if (client?.id) {
         fetchSmsDrafts()
       }
     } else if (activeView === 'email') {
       fetchEmailDrafts()
-    } else if (activeView === 'sms') {
-      if (client?.id) {
-        fetchSmsDrafts()
-      }
-    } else if (activeView === 'queued' as DraftViewType) {
-      // Don't call fetchQueuedEmails here - the SSE effect handles it
-      // This prevents duplicate calls when switching to queued view
+    } else if (activeView === 'sms' && client?.id) {
+      fetchSmsDrafts()
+    } else if (activeView === 'queued') {
+      // Queued view handled by SSE - don't fetch drafts
     } else {
       // Fallback: fetch based on activeTab
       if (activeTab === 'email') {
@@ -667,8 +598,12 @@ function DraftsPageContent() {
         fetchSmsDrafts()
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, activeView, client?.id])
+  }, [activeView, activeTab, client?.id])
+
+  // Single effect to handle all draft loading - prevents duplicate calls on initial load
+  useEffect(() => {
+    loadDrafts()
+  }, [loadDrafts])
 
   // Handle query parameters to open specific draft
   useEffect(() => {
@@ -695,55 +630,6 @@ function DraftsPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, emailDrafts, smsDrafts])
 
-  useEffect(() => {
-    setEmailDrafts((prevDrafts) => {
-      let hasChanges = false
-      const nextDrafts = prevDrafts.map((draft) => {
-        const info = getUnsubscribeInfo(draft.contactId)
-        if (
-          draft.isUnsubscribed === info.isUnsubscribed &&
-          draft.unsubscribedAt === info.unsubscribedAt &&
-          draft.unsubscribeReason === info.unsubscribeReason
-        ) {
-          return draft
-        }
-        hasChanges = true
-        return { ...draft, ...info }
-      })
-      return hasChanges ? nextDrafts : prevDrafts
-    })
-
-    setSelectedDraftsForNavigation((prevDrafts) => {
-      if (prevDrafts.length === 0) return prevDrafts
-      let hasChanges = false
-      const nextDrafts = prevDrafts.map((draft) => {
-        const info = getUnsubscribeInfo(draft.contactId)
-        if (
-          draft.isUnsubscribed === info.isUnsubscribed &&
-          draft.unsubscribedAt === info.unsubscribedAt &&
-          draft.unsubscribeReason === info.unsubscribeReason
-        ) {
-          return draft
-        }
-        hasChanges = true
-        return { ...draft, ...info }
-      })
-      return hasChanges ? nextDrafts : prevDrafts
-    })
-
-    setSelectedEmailDraft((prevDraft) => {
-      if (!prevDraft) return prevDraft
-      const info = getUnsubscribeInfo(prevDraft.contactId)
-      if (
-        prevDraft.isUnsubscribed === info.isUnsubscribed &&
-        prevDraft.unsubscribedAt === info.unsubscribedAt &&
-        prevDraft.unsubscribeReason === info.unsubscribeReason
-      ) {
-        return prevDraft
-      }
-      return { ...prevDraft, ...info }
-    })
-  }, [getUnsubscribeInfo])
 
   const handleViewChange = (view: DraftViewType) => {
     setActiveView(view)
@@ -1165,53 +1051,6 @@ function DraftsPageContent() {
     }
   }
 
-  const handleResubscribeDraft = async (draftId: number) => {
-    const draft = emailDrafts.find(d => d.id === draftId)
-    if (!draft || !draft.contactId) {
-      setConfirmDialog({
-        isOpen: true,
-        title: 'Error',
-        message: 'Draft or contact information not found.',
-        variant: 'warning',
-        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
-        confirmText: 'OK',
-        cancelText: '',
-      })
-      return
-    }
-
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Resubscribe Contact',
-      message: 'Resubscribe this contact to emails?',
-      variant: 'info',
-      onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
-    setResubscribingDraftId(draftId)
-    try {
-          const res = await unsubscribeApi.resubscribeByContact(draft.contactId!)
-      if (res.success && res.data) {
-            setSuccessMessage(res.data.message || 'Contact resubscribed successfully.')
-            setTimeout(() => setSuccessMessage(null), 5000)
-            // Refresh unsubscribe list
-        fetchUnsubscribeList(true)
-      } else {
-            setErrorMessage(res.error || 'Failed to resubscribe contact.')
-            setTimeout(() => setErrorMessage(null), 5000)
-      }
-    } catch (err) {
-          setErrorMessage('Error resubscribing contact: ' + (err instanceof Error ? err.message : 'Unknown error'))
-          setTimeout(() => setErrorMessage(null), 5000)
-    } finally {
-      setResubscribingDraftId(null)
-    }
-      },
-      onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
-      confirmText: 'Resubscribe',
-      cancelText: 'Cancel',
-    })
-    return
-  }
 
 
   const handleSendEmailDraft = async (draftId: number) => {
@@ -2493,9 +2332,6 @@ function DraftsPageContent() {
                   onSend={(draftId, type) => {
                     handleSendDraft(draftId)
                   }}
-                  subscriptionDataLoaded={isUnsubscribeLoaded}
-                  onEmailResubscribe={handleResubscribeDraft}
-                  resubscribingEmailDraftId={resubscribingDraftId}
                 />
               ) : isEmailView ? (
               <EmailDraftsList
@@ -2515,9 +2351,6 @@ function DraftsPageContent() {
                 onView={handleViewDraft}
                 onEdit={handleEditDraft}
                 onSend={handleSendDraft}
-                subscriptionDataLoaded={isUnsubscribeLoaded}
-                onResubscribe={handleResubscribeDraft}
-                resubscribingDraftId={resubscribingDraftId}
               />
             ) : (
               <SmsDraftsList
@@ -2689,13 +2522,6 @@ function DraftsPageContent() {
             setIsScheduling(false)
           }
         }}
-        subscriptionDataLoaded={isUnsubscribeLoaded}
-        onResubscribe={handleResubscribeDraft}
-        isResubscribing={
-          resubscribingDraftId !== null &&
-          selectedEmailDraft !== null &&
-          resubscribingDraftId === selectedEmailDraft.id
-        }
       onContactEmailChange={handleContactEmailChange}
       />
 

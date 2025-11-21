@@ -501,24 +501,14 @@ export const emailGenerationApi = {
         if (Array.isArray(rawData)) {
           return {
             success: true,
-            data: rawData.map(entry => ({
-              ...entry,
-              hasSMSDraft: false,
-              smsDraftId: null,
-              smsStatus: null,
-            })),
+            data: rawData,
           }
         }
 
         if (rawData && Array.isArray(rawData.data)) {
           return {
             success: true,
-            data: rawData.data.map(entry => ({
-              ...entry,
-              hasSMSDraft: false,
-              smsDraftId: null,
-              smsStatus: null,
-            })),
+            data: rawData.data,
           }
         }
       }
@@ -541,6 +531,10 @@ export const emailGenerationApi = {
   /**
    * Get email logs for a specific client email
    * GET /emails/logs/client-email/:clientEmailId
+   */
+  /**
+   * Get email logs by clientEmailId (DEPRECATED - use getEmailLogsByClientId instead)
+   * @deprecated Use getEmailLogsByClientId for better performance
    */
   async getEmailLogsByClientEmailId(clientEmailId: number): Promise<ApiResponse<EmailLog[]>> {
     try {
@@ -577,6 +571,78 @@ export const emailGenerationApi = {
       }
     } catch (error) {
       console.error('Error fetching email logs:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Get all email logs for a specific clientId
+   * OPTIMIZED: Single query instead of N queries (one per clientEmailId)
+   * OPTIMIZED: Pagination, date filtering, and reduced payload size
+   * GET /emails/logs/client/:clientId?limit=100&offset=0&dateFrom=...&dateTo=...&includeFullBody=false
+   */
+  async getEmailLogsByClientId(
+    clientId: number,
+    options?: {
+      limit?: number
+      offset?: number
+      dateFrom?: string
+      dateTo?: string
+      includeFullBody?: boolean
+    }
+  ): Promise<ApiResponse<EmailLog[]> & { total?: number; limit?: number; offset?: number }> {
+    try {
+      const params = new URLSearchParams()
+      if (options?.limit) params.append('limit', options.limit.toString())
+      if (options?.offset) params.append('offset', options.offset.toString())
+      if (options?.dateFrom) params.append('dateFrom', options.dateFrom)
+      if (options?.dateTo) params.append('dateTo', options.dateTo)
+      if (options?.includeFullBody !== undefined) params.append('includeFullBody', options.includeFullBody.toString())
+      
+      const queryString = params.toString()
+      const url = `/emails/logs/client/${clientId}${queryString ? `?${queryString}` : ''}`
+      
+      const res = await apiClient.get<EmailLogsResponse & { total?: number }>(url)
+      
+      if (res.success && res.data) {
+        // Check if data is nested (response.data.data) or direct array
+        const data = res.data as EmailLogsResponse | EmailLog[]
+        if (Array.isArray(data)) {
+          // Direct array
+          return {
+            success: true,
+            data: data as EmailLog[]
+          }
+        } else if (data.data && Array.isArray(data.data)) {
+          // Nested structure: response.data.data
+          const responseData = data as EmailLogsResponse & { total?: number; limit?: number; offset?: number }
+          return {
+            success: true,
+            data: data.data as EmailLog[],
+            total: responseData.total,
+            limit: responseData.limit,
+            offset: responseData.offset,
+          }
+        } else if (data.count !== undefined && data.data && Array.isArray(data.data)) {
+          // Response structure: { message, success, count, total, limit, offset, data }
+          const responseData = data as EmailLogsResponse & { total?: number; limit?: number; offset?: number }
+          return {
+            success: true,
+            data: data.data as EmailLog[],
+            total: responseData.total,
+            limit: responseData.limit,
+            offset: responseData.offset,
+          }
+        }
+      }
+      
+      return {
+        success: false,
+        error: 'Failed to fetch email logs',
+        data: []
+      }
+    } catch (error) {
+      console.error('Error fetching email logs by clientId:', error)
       throw error
     }
   },

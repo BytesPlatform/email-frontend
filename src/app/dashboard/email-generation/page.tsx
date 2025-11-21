@@ -215,111 +215,85 @@ export default function EmailGenerationPage() {
     }
   }, [applySmsBulkStatus, setState])
 
-  // Load scraped records on component mount
-  useEffect(() => {
-    const loadScrapedRecords = async () => {
-      if (!client?.id) return
+  // Load scraped records and bulk status - refetch when page changes
+  const loadData = useCallback(async () => {
+    if (!client?.id) return
+    
+    setState(prev => ({ 
+      ...prev, 
+      isLoadingRecords: true, 
+      isLoadingBulkStatus: true,
+      error: null 
+    }))
+    
+    try {
+      // Step 1: Fetch scraping history first
+      const historyRes = await historyApi.getClientScrapingHistory(client.id, {
+        status: 'success', // Only get successful scrapes
+        limit: state.recordsPerPage, // 8 per page
+        page: state.currentPage // Pass current page for server-side pagination
+      })
       
-      setState(prev => ({ ...prev, isLoadingRecords: true, error: null }))
-      
-      try {
-        // Get client scraping history to fetch all scraped records
-        const historyRes = await historyApi.getClientScrapingHistory(client.id, {
-          status: 'success', // Only get successful scrapes
-          limit: 100 // Get up to 100 records
-        })
+      if (historyRes.success && historyRes.data) {
+        const recentActivity = historyRes.data.recentActivity || []
         
-        if (historyRes.success && historyRes.data) {
-          console.log('History API Response:', historyRes.data)
-          console.log('Recent Activity:', historyRes.data.recentActivity)
-          
-          // Check if recentActivity exists and is an array
-          const recentActivity = historyRes.data.recentActivity || []
-          console.log('Recent Activity Length:', recentActivity.length)
-          
-          if (recentActivity.length === 0) {
-            console.log('No recent activity found - showing empty state')
-            setState(prev => ({ 
-              ...prev, 
-              scrapedRecords: [],
-              isLoadingRecords: false 
-            }))
-            return
-          }
-          
-          // Convert ScrapingHistoryItem to ScrapedRecord format
-          const scrapedRecords: ScrapedRecord[] = recentActivity.map((item: ScrapingHistoryItem) => ({
-            id: item.id,
-            contactId: item.contactId,
-            businessName: item.businessName || undefined,
-            website: item.website || undefined,
-            email: item.email,
-            state: undefined, // Not available in history API
-            zipCode: undefined, // Not available in history API
-            status: item.success ? 'scraped' : 'scrape_failed',
-            scrapedData: {
-              id: item.id,
-              contactId: item.contactId,
-              method: (item.method as string) as 'direct_url' | 'email_domain' | 'business_search',
-              url: item.discoveredUrl,
-              pageTitle: undefined,
-              metaDescription: undefined,
-              extractedEmails: [], // Would need to fetch from individual contact history
-              extractedPhones: [],
-              homepageText: undefined,
-              servicesText: undefined,
-              productsText: undefined,
-              contactText: undefined,
-              keywords: [],
-              scrapeSuccess: item.success,
-              errorMessage: item.errorMessage,
-              timestamp: typeof item.scrapedAt === 'string' ? item.scrapedAt : item.scrapedAt.toISOString()
-            }
-          }))
-          
-          console.log('Converted Scraped Records:', scrapedRecords)
-          
-          // Set records first to show them immediately
-          setState(prev => ({ 
-            ...prev, 
-            scrapedRecords,
-            isLoadingRecords: false,
-          currentPage: 1 // Reset to first page when new data is loaded
+        // Convert ScrapingHistoryItem to ScrapedRecord format
+        const scrapedRecords: ScrapedRecord[] = recentActivity.map((item: ScrapingHistoryItem) => ({
+          id: item.id,
+          contactId: item.contactId,
+          businessName: item.businessName || undefined,
+          website: item.website || undefined,
+          email: item.email,
+          state: undefined,
+          zipCode: undefined,
+          status: item.success ? 'scraped' : 'scrape_failed',
         }))
         
-          // No immediate bulk status fetch here; handled by separate effect
-      } else {
-        console.log('History API Error:', historyRes.error)
-          setState(prev => ({ 
-            ...prev, 
-            error: historyRes.error || 'Failed to load scraped records',
-            isLoadingRecords: false 
-          }))
-        }
-      } catch (error) {
+        // Store totalItems from API for pagination
+        const totalItems = historyRes.data.pagination?.totalItems || 0
+        
+        // IMPORTANT: Set records FIRST so bulk status can update them correctly
+        // This ensures applyEmailBulkStatus/applySmsBulkStatus can find the records to update
         setState(prev => ({ 
           ...prev, 
-          error: error instanceof Error ? error.message : 'Failed to load scraped records',
-          isLoadingRecords: false 
+          scrapedRecords,
+          totalItems, // Store for pagination
+          isLoadingRecords: false,
+        }))
+        
+        // NOW call bulk status APIs - it will update the records we just set in state
+        const contactIds = scrapedRecords.map((record) => record.contactId)
+        if (contactIds.length > 0) {
+          // Always fetch email bulk status first to get hasSummary (needed for ACTIONS column)
+          await fetchEmailBulkStatus(contactIds)
+          
+          // If in SMS mode, also fetch SMS bulk status to get SMS draft info
+          if (mode === 'sms') {
+            await fetchSmsBulkStatus(contactIds)
+          }
+        }
+      } else {
+        setState(prev => ({ 
+          ...prev, 
+          error: historyRes.error || 'Failed to load scraped records',
+          isLoadingRecords: false,
+          isLoadingBulkStatus: false
         }))
       }
+    } catch (error) {
+      setState(prev => ({ 
+        ...prev, 
+        error: error instanceof Error ? error.message : 'Failed to load scraped records',
+        isLoadingRecords: false,
+        isLoadingBulkStatus: false
+      }))
     }
-    
-    loadScrapedRecords()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client?.id, setState])
+  }, [client?.id, mode, state.currentPage, state.recordsPerPage, fetchEmailBulkStatus, fetchSmsBulkStatus, setState])
 
-  // Fetch bulk status when mode changes or records are loaded
+  // Load data on mount and when page/mode changes
   useEffect(() => {
-    const contactIds = state.scrapedRecords.map((record) => record.contactId)
-    if (contactIds.length === 0) return
-
-    if (mode === 'email') {
-      fetchEmailBulkStatus(contactIds)
-    } else {
-      fetchSmsBulkStatus(contactIds)
-    }
-  }, [mode, state.scrapedRecords.length, fetchEmailBulkStatus, fetchSmsBulkStatus])
+    loadData()
+  }, [loadData])
 
   // Cleanup effect to restore body scroll when component unmounts
   useEffect(() => {
@@ -1223,12 +1197,9 @@ export default function EmailGenerationPage() {
 
   const handleSelectAll = (selected: boolean) => {
     if (selected) {
-      const currentPageRecords = state.scrapedRecords.slice(
-        (state.currentPage - 1) * state.recordsPerPage,
-        state.currentPage * state.recordsPerPage
-      )
+      // Server-side pagination: all records in state.scrapedRecords are the current page
       // Only select records that don't have drafts
-      const selectableRecords = currentPageRecords.filter(r => {
+      const selectableRecords = state.scrapedRecords.filter(r => {
         if (mode === 'email') {
           return !r.hasEmailDraft && !r.emailDraftId
         } else {
@@ -1562,7 +1533,7 @@ export default function EmailGenerationPage() {
               selectedRecordIds={selectedRecordIds}
               onSelectRecord={handleSelectRecord}
               onSelectAll={handleSelectAll}
-              onRecordClick={(record) => openDrawer(record)}
+              onRecordClick={() => {}} // Disabled - no longer opens drawer
               onViewSummary={handleViewSummary}
               onViewEmailBody={handleViewEmailBody}
               onViewSMSBody={handleViewSMSBody}
@@ -1577,7 +1548,7 @@ export default function EmailGenerationPage() {
             {/* Pagination Controls */}
             <PaginationControls
               currentPage={state.currentPage}
-              recordsCount={state.scrapedRecords.length}
+              recordsCount={state.totalItems || state.scrapedRecords.length}
               recordsPerPage={state.recordsPerPage}
               onPageChange={handlePageChange}
               onPreviousPage={handlePreviousPage}
@@ -1590,330 +1561,7 @@ export default function EmailGenerationPage() {
         </div>
       </div>
 
-      {/* Detail Drawer */}
-      {isDrawerOpen && selectedRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop - blurred page background */}
-          <div 
-            className="absolute inset-0 backdrop-blur-md cursor-pointer"
-            onClick={closeDrawer}
-          />
-          
-          {/* Drawer */}
-          <div className="relative w-full max-w-5xl h-[85vh] bg-white rounded-2xl shadow-2xl border border-gray-200 transform transition-transform overflow-hidden">
-            <div className="flex flex-col h-full">
-              {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 rounded-t-2xl flex-shrink-0">
-                <div className="flex items-center space-x-3">
-                  <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                    <span className="text-white font-semibold text-lg">
-                      {selectedRecord.businessName?.[0]?.toUpperCase() || 'B'}
-                    </span>
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900">
-                      {selectedRecord.businessName || 'Unknown Business'}
-                    </h2>
-                    <p className="text-sm text-gray-500">Contact ID: {selectedRecord.contactId}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={closeDrawer}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
-                >
-                  <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 relative overflow-hidden">
-                {/* Scroll indicator at top */}
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-b from-gray-200 to-transparent z-10 pointer-events-none"></div>
-                
-                {/* Scrollable content */}
-                <div className="h-full p-6 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                  <div className="space-y-6">
-                  {/* Basic Information - Only show business name in summary-only mode */}
-                  {drawerViewMode === 'full' ? (
-                    <>
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Basic Information</h3>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <label className="text-sm font-medium text-gray-500">Business Name</label>
-                        <p className="text-sm text-gray-900 mt-1">{selectedRecord.businessName || 'N/A'}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <label className="text-sm font-medium text-gray-500">Email</label>
-                        <p className="text-sm text-gray-900 mt-1">{selectedRecord.email || 'N/A'}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <label className="text-sm font-medium text-gray-500">Website</label>
-                        <p className="text-sm text-gray-900 mt-1">
-                          {selectedRecord.website ? (
-                            <a href={selectedRecord.website} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 cursor-pointer">
-                              {selectedRecord.website}
-                            </a>
-                          ) : 'N/A'}
-                        </p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <label className="text-sm font-medium text-gray-500">Location</label>
-                        <p className="text-sm text-gray-900 mt-1">
-                          {selectedRecord.state || 'N/A'} {selectedRecord.zipCode ? `(${selectedRecord.zipCode})` : ''}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Scraping Details */}
-                  {selectedRecord.scrapedData && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Scraping Details</h3>
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <label className="text-sm font-medium text-gray-500">Method</label>
-                          <p className="text-sm text-gray-900 mt-1 capitalize">{selectedRecord.scrapedData.method || 'N/A'}</p>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <label className="text-sm font-medium text-gray-500">Status</label>
-                          <p className="text-sm text-gray-900 mt-1">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              selectedRecord.scrapedData.scrapeSuccess 
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {selectedRecord.scrapedData.scrapeSuccess ? 'Success' : 'Failed'}
-                            </span>
-                          </p>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <label className="text-sm font-medium text-gray-500">Scraped URL</label>
-                          <p className="text-sm text-gray-900 mt-1">
-                            {selectedRecord.scrapedData.url ? (
-                              <a href={selectedRecord.scrapedData.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 break-all cursor-pointer">
-                                {selectedRecord.scrapedData.url}
-                              </a>
-                            ) : 'N/A'}
-                          </p>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <label className="text-sm font-medium text-gray-500">Scraped At</label>
-                          <p className="text-sm text-gray-900 mt-1">
-                            {selectedRecord.scrapedData.timestamp ? new Date(selectedRecord.scrapedData.timestamp).toLocaleString() : 'N/A'}
-                          </p>
-                        </div>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    // Summary-only mode: Show just business name info
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Business Information</h3>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <label className="text-sm font-medium text-gray-500">Business Name</label>
-                        <p className="text-sm text-gray-900 mt-1">{selectedRecord.businessName || 'N/A'}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Generated Summary */}
-                  {selectedRecord.generatedSummary && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Generated Summary</h3>
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-                        <div className="flex items-center justify-between mb-4">
-                          <span className="text-lg font-semibold text-green-800">Business Overview</span>
-                          <Button
-                            onClick={() => copyToClipboard(selectedRecord.generatedSummary!.summaryText || selectedRecord.generatedSummary!.summary || '')}
-                            variant="outline"
-                            size="sm"
-                            className="bg-white hover:bg-gray-50"
-                          >
-                            Copy Summary
-                          </Button>
-                        </div>
-                        <div className="bg-white rounded-lg p-4 mb-4">
-                          <p className="text-sm text-gray-800 leading-relaxed">
-                            {selectedRecord.generatedSummary.summaryText || selectedRecord.generatedSummary.summary}
-                          </p>
-                        </div>
-                        {/* Display new BusinessSummary fields if available */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {selectedRecord.generatedSummary.painPoints && selectedRecord.generatedSummary.painPoints.length > 0 && (
-                            <div className="bg-white rounded-lg p-4">
-                              <h4 className="text-sm font-semibold text-red-800 mb-3 flex items-center">
-                                <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
-                                Pain Points
-                              </h4>
-                              <ul className="text-sm text-gray-700 space-y-2">
-                                {selectedRecord.generatedSummary.painPoints.map((point, index) => (
-                                  <li key={index} className="flex items-start">
-                                    <span className="text-red-500 mr-2">•</span>
-                                    <span>{point}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          
-                          {selectedRecord.generatedSummary.strengths && selectedRecord.generatedSummary.strengths.length > 0 && (
-                            <div className="bg-white rounded-lg p-4">
-                              <h4 className="text-sm font-semibold text-green-800 mb-3 flex items-center">
-                                <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                                Strengths
-                              </h4>
-                              <ul className="text-sm text-gray-700 space-y-2">
-                                {selectedRecord.generatedSummary.strengths.map((strength, index) => (
-                                  <li key={index} className="flex items-start">
-                                    <span className="text-green-500 mr-2">•</span>
-                                    <span>{strength}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          
-                          {selectedRecord.generatedSummary.opportunities && selectedRecord.generatedSummary.opportunities.length > 0 && (
-                            <div className="bg-white rounded-lg p-4">
-                              <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center">
-                                <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                                Opportunities
-                              </h4>
-                              <ul className="text-sm text-gray-700 space-y-2">
-                                {selectedRecord.generatedSummary.opportunities.map((opportunity, index) => (
-                                  <li key={index} className="flex items-start">
-                                    <span className="text-blue-500 mr-2">•</span>
-                                    <span>{opportunity}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          
-                          {selectedRecord.generatedSummary.keywords && selectedRecord.generatedSummary.keywords.length > 0 && (
-                            <div className="bg-white rounded-lg p-4">
-                              <h4 className="text-sm font-semibold text-purple-800 mb-3 flex items-center">
-                                <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
-                                Keywords
-                              </h4>
-                              <div className="flex flex-wrap gap-2">
-                                {selectedRecord.generatedSummary.keywords.map((keyword, index) => (
-                                  <span key={index} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                    {keyword}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        
-                        {/* Additional Information */}
-                        {(selectedRecord.generatedSummary.industry || selectedRecord.generatedSummary.services || selectedRecord.generatedSummary.businessName) && (
-                          <div className="mt-4 bg-white rounded-lg p-4">
-                            <h4 className="text-sm font-semibold text-gray-800 mb-3">Additional Information</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                              {selectedRecord.generatedSummary.businessName && (
-                                <div>
-                                  <span className="font-medium text-gray-600">Business Name:</span>
-                                  <p className="text-gray-800 mt-1">{selectedRecord.generatedSummary.businessName}</p>
-                                </div>
-                              )}
-                              {selectedRecord.generatedSummary.industry && (
-                                <div>
-                                  <span className="font-medium text-gray-600">Industry:</span>
-                                  <p className="text-gray-800 mt-1">{selectedRecord.generatedSummary.industry}</p>
-                                </div>
-                              )}
-                              {selectedRecord.generatedSummary.services && selectedRecord.generatedSummary.services.length > 0 && (
-                                <div>
-                                  <span className="font-medium text-gray-600">Services:</span>
-                                  <p className="text-gray-800 mt-1">{selectedRecord.generatedSummary.services.join(', ')}</p>
-                                </div>
-                              )}
-                              {selectedRecord.generatedSummary.targetAudience && (
-                                <div>
-                                  <span className="font-medium text-gray-600">Target Audience:</span>
-                                  <p className="text-gray-800 mt-1">{selectedRecord.generatedSummary.targetAudience}</p>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Generated Email - Only show in full mode */}
-                  {drawerViewMode === 'full' && selectedRecord.generatedEmail && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Generated Email</h3>
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-blue-800">Email Content</span>
-                          <div className="space-x-2">
-                            <Button
-                              onClick={() => copyToClipboard(selectedRecord.generatedEmail!.subject)}
-                              variant="outline"
-                              size="sm"
-                            >
-                              Copy Subject
-                            </Button>
-                            <Button
-                              onClick={() => copyToClipboard(selectedRecord.generatedEmail!.body)}
-                              variant="outline"
-                              size="sm"
-                            >
-                              Copy Body
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <div>
-                            <label className="text-xs font-medium text-blue-800">Subject:</label>
-                            <p className="text-sm text-blue-700 font-medium mt-1">{selectedRecord.generatedEmail.subject}</p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-blue-800">Body:</label>
-                            <div className="text-sm text-blue-700 mt-1 whitespace-pre-wrap bg-white p-3 rounded border max-h-24 overflow-hidden">
-                              {selectedRecord.generatedEmail.body}
-                            </div>
-                            <Button
-                                                              onClick={() => {
-                                  setEmailBodyOverlay({
-                                    isOpen: true,
-                                    subject: selectedRecord.generatedEmail!.subject,
-                                    body: selectedRecord.generatedEmail!.body,
-                                    emailDraftId: selectedRecord.emailDraftId,
-                                    spamCheckResult: selectedRecord.spamCheckResult
-                                  })
-                                }}
-                              variant="outline"
-                              size="sm"
-                              className="mt-2"
-                            >
-                              View Full Body
-                            </Button>
-                          </div>
-                          <div className="text-xs text-blue-600">
-                            <span className="font-medium">Tone:</span> {selectedRecord.generatedEmail.tone} • 
-                            <span className="font-medium ml-2">Call to Action:</span> {selectedRecord.generatedEmail.callToAction}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Detail Drawer - Removed */}
 
               {/* Email/SMS Body Overlay */}
         {emailBodyOverlay && (
