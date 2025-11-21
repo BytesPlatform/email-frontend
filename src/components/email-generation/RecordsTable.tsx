@@ -55,7 +55,11 @@ export const RecordsTable: React.FC<RecordsTableProps> = ({
   onSendEmail,
   onSendSMS,
 }) => {
-  const currentRecords = getCurrentPageRecords(records, currentPage, recordsPerPage)
+  // Server-side pagination: records already contain only the current page
+  // Skip client-side slicing when records.length <= recordsPerPage (server-side pagination)
+  const currentRecords = records.length <= recordsPerPage 
+    ? records 
+    : getCurrentPageRecords(records, currentPage, recordsPerPage)
   // Filter out records with drafts for "select all" logic
   const selectableRecords = currentRecords.filter(r => {
     if (mode === 'email') {

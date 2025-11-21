@@ -673,26 +673,28 @@ export function EmailDraftOverlay({
     emailDraft.unsubscribedAt ? new Date(emailDraft.unsubscribedAt).toLocaleString() : null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/20 backdrop-blur-sm cursor-pointer"
-        onClick={onClose}
-      />
+    <>
+      {/* Backdrop - only show when not minimized */}
+      {!isMinimized && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/20 backdrop-blur-sm cursor-pointer"
+          onClick={onClose}
+        />
+      )}
       
       {/* Gmail-style Email Window */}
-      <div className={`relative bg-white rounded-lg shadow-2xl border border-gray-200 flex flex-col transition-all duration-300 ${
+      <div className={`z-50 bg-white shadow-2xl border border-gray-200 flex flex-col transition-all duration-300 ${
         isMinimized 
-          ? 'w-96 h-16' 
+          ? 'fixed bottom-4 right-4 w-80 h-14 pointer-events-auto rounded-lg' 
           : isMaximized 
-          ? 'w-[95vw] h-[95vh]' 
-          : 'w-[600px] h-[600px]'
+          ? 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95vw] h-[95vh] rounded-lg' 
+          : 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-lg'
       }`}>
         {/* Title Bar - Dark Grey like Gmail */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 text-white rounded-t-lg flex-shrink-0">
+        <div className={`flex items-center justify-between bg-gray-800 text-white rounded-t-lg flex-shrink-0 ${isMinimized ? 'px-3 py-1.5' : 'px-4 py-2.5'}`}>
           <div className="flex items-center gap-2.5 flex-1 min-w-0">
-            {/* Navigation Controls */}
-            {(hasPrevious || hasNext) && (
+            {/* Navigation Controls - hide when minimized */}
+            {!isMinimized && (hasPrevious || hasNext) && (
               <div className="flex items-center gap-0.5 flex-shrink-0">
                 <button
                   onClick={onPrevious}
@@ -716,18 +718,18 @@ export function EmailDraftOverlay({
                 </button>
               </div>
             )}
-            {/* Draft Counter */}
-            {currentIndex !== undefined && totalCount !== undefined && (
+            {/* Draft Counter - show when minimized */}
+            {isMinimized && currentIndex !== undefined && totalCount !== undefined && (
               <span className="text-xs text-gray-300 flex-shrink-0 font-normal">
                 {currentIndex + 1} of {totalCount}
               </span>
             )}
             {/* Contact Name */}
-            <h3 className="text-sm font-medium truncate flex-1 min-w-0">
+            <h3 className={`font-medium truncate flex-1 min-w-0 ${isMinimized ? 'text-xs' : 'text-sm'}`}>
               {emailDraft.contactName || emailDraft.contactEmail || 'Unknown Contact'}
             </h3>
-            {/* Scheduled Badge */}
-            {isScheduled && scheduledDate && (
+            {/* Scheduled Badge - hide when minimized */}
+            {!isMinimized && isScheduled && scheduledDate && (
               <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs font-medium flex-shrink-0">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -737,8 +739,8 @@ export function EmailDraftOverlay({
             )}
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
-            {/* Unselect Checkbox */}
-            {onToggleSelect && (
+            {/* Unselect Checkbox - hide when minimized */}
+            {!isMinimized && onToggleSelect && (
               <label className="flex items-center gap-2 cursor-pointer hover:bg-gray-700 rounded px-2 py-1 transition-colors">
                 <input
                   type="checkbox"
@@ -753,11 +755,17 @@ export function EmailDraftOverlay({
             <button
               onClick={() => setIsMinimized(!isMinimized)}
               className="p-1.5 hover:bg-gray-700 rounded transition-colors"
-              title="Minimize"
+              title={isMinimized ? "Restore" : "Minimize"}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-              </svg>
+              {isMinimized ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                </svg>
+              )}
             </button>
             <button
               onClick={onClose}
@@ -772,7 +780,7 @@ export function EmailDraftOverlay({
         </div>
 
         {!isMinimized && (
-          <>
+          <div className="flex-1 flex flex-col overflow-hidden bg-white">
             {/* Content Area */}
             <div className="flex-1 flex flex-col overflow-hidden bg-white">
               {/* From Field - Clean Gmail Style with Dropdown */}
@@ -1137,7 +1145,7 @@ export function EmailDraftOverlay({
                 </div>
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -1366,7 +1374,7 @@ export function EmailDraftOverlay({
         }}
         onCancel={() => setSendConfirmDialog({ isOpen: false, count: 0, isBulk: false })}
       />
-    </div>
+    </>
   )
 }
 

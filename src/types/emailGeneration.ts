@@ -177,10 +177,10 @@ export interface BulkStatusEntry {
   contactId: number
   hasSummary: boolean
   hasEmailDraft: boolean
-  hasSMSDraft: boolean
+  hasSMSDraft?: boolean // Optional - only present for SMS mode
   emailDraftId: number | null
-  smsDraftId: number | null
-  smsStatus: string | null
+  smsDraftId?: number | null // Optional - only present for SMS mode
+  smsStatus?: string | null // Optional - only present for SMS mode
 }
 
 export interface BulkStatusPagination {
@@ -232,4 +232,5 @@ export interface EmailGenerationState {
   error: string | null
   currentPage: number
   recordsPerPage: number
+  totalItems?: number // Total items from API for server-side pagination
 }

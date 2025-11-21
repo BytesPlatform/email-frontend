@@ -46,9 +46,14 @@ export default function HistoryPage() {
 
   // Transform Email log to HistoryItem
   const transformEmailLogToHistoryItem = (log: EmailLog): HistoryItem => {
-    // Calculate opens and clicks from engagements
-    const opens = log.emailEngagements?.filter(e => e.engagementType === 'open').length || 0
-    const clicks = log.emailEngagements?.filter(e => e.engagementType === 'click').length || 0
+    // OPTIMIZED: Use engagement counts if available (from backend optimization)
+    // Falls back to calculating from array if counts not present (backward compatibility)
+    const opens = log.opens !== undefined 
+      ? log.opens 
+      : log.emailEngagements?.filter(e => e.engagementType === 'open').length || 0
+    const clicks = log.clicks !== undefined
+      ? log.clicks
+      : log.emailEngagements?.filter(e => e.engagementType === 'click').length || 0
     
     return {
       id: log.id,
@@ -56,6 +61,8 @@ export default function HistoryPage() {
       contactName: log.contact?.businessName || 'Unknown Contact',
       contactId: log.contactId,
       subject: log.emailDraft?.subjectLines?.[0] || log.emailDraft?.subjectLine || '',
+      // OPTIMIZED: bodyText may be excluded from list view to reduce payload
+      // It will be empty/null for list view, can be loaded on demand for detail view
       message: log.emailDraft?.bodyText || '',
       sentAt: typeof log.sentAt === 'string' ? log.sentAt : log.sentAt.toISOString(),
       status: log.status,
@@ -103,6 +110,29 @@ export default function HistoryPage() {
 
       // Always fetch Email logs (for counts)
       try {
+        // OPTIMIZED: Fetch all email logs by clientId in a single query
+        // OPTIMIZED: Reduced payload size (excludes bodyText, only includes essential fields)
+        // OPTIMIZED: Default to last 90 days and limit 100 records for better performance
+        // This replaces the previous approach of fetching logs for each clientEmailId separately
+        const emailRes = await emailGenerationApi.getEmailLogsByClientId(client.id, {
+          limit: 100, // Limit to 100 records per page
+          offset: 0,
+          includeFullBody: false, // Exclude bodyText to reduce payload (can load on demand for detail view)
+          // Date filtering: default to last 90 days (handled by backend if not specified)
+        })
+        if (emailRes.success && emailRes.data) {
+          const emailItems = emailRes.data.map(transformEmailLogToHistoryItem)
+          allItems.push(...emailItems)
+        }
+      } catch (err) {
+        console.error('Error fetching email logs:', err)
+      }
+
+      // OLD LOGIC (COMMENTED OUT): Fetch logs for each clientEmailId separately
+      // This was inefficient - making N+1 API calls (1 to get clientEmails + N to get logs)
+      // Replaced with optimized single query by clientId above
+      /*
+      try {
         // First, get all ClientEmails for this client
         const clientEmailsRes = await clientAccountsApi.getClientEmails()
         
@@ -131,6 +161,7 @@ export default function HistoryPage() {
       } catch (err) {
         console.error('Error fetching email logs:', err)
       }
+      */
 
       // Always fetch Unsubscribes (for counts)
       try {
@@ -203,6 +234,16 @@ export default function HistoryPage() {
 
   // Pagination
   const totalPages = Math.ceil(dateFilteredItems.length / itemsPerPage)
+  
+  // Ensure current page is valid after filtering
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages)
+    } else if (currentPage > 0 && totalPages === 0) {
+      setCurrentPage(1)
+    }
+  }, [totalPages, currentPage])
+
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedItems = dateFilteredItems.slice(startIndex, endIndex)

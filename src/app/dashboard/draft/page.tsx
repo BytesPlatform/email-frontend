@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense, useCallback, useRef } from 'react'
+import { useState, useEffect, Suspense, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { DraftsSidebar, type DraftViewType } from '@/components/drafts/DraftsSidebar'
@@ -10,16 +10,15 @@ import { CombinedDraftsList } from '@/components/drafts/CombinedDraftsList'
 import { EmailDraftOverlay } from '@/components/drafts/EmailDraftOverlay'
 import { SmsDraftOverlay } from '@/components/drafts/SmsDraftOverlay'
 import { GamifiedQueueProgress } from '@/components/drafts/GamifiedQueueProgress'
+import { DraftStatusFilter } from '@/components/drafts/DraftStatusFilter'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { emailGenerationApi } from '@/api/emailGeneration'
 import { smsGenerationApi } from '@/api/smsGeneration'
-import { unsubscribeApi } from '@/api/unsubscribe'
 import { clientAccountsApi, type ClientEmail } from '@/api/clientAccounts'
 import { useAuthContext } from '@/contexts/AuthContext'
 import type { EmailDraft as ApiEmailDraft } from '@/types/emailGeneration'
 import type { SMSDraft } from '@/types/smsGeneration'
-import type { UnsubscribeListItem } from '@/types/unsubscribe'
 
 function DraftsPageContent() {
   const searchParams = useSearchParams()
@@ -31,7 +30,7 @@ function DraftsPageContent() {
   const [smsDrafts, setSmsDrafts] = useState<SmsDraft[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [dateRange, setDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all')
   const [selectedEmailDraftIds, setSelectedEmailDraftIds] = useState<Set<number>>(new Set())
   const [selectedSmsDraftIds, setSelectedSmsDraftIds] = useState<Set<number>>(new Set())
   const [starredEmailDraftIds, setStarredEmailDraftIds] = useState<Set<number>>(new Set())
@@ -53,10 +52,6 @@ function DraftsPageContent() {
   const [selectedDraftsForNavigation, setSelectedDraftsForNavigation] = useState<EmailDraft[]>([])
   const [selectedSmsDraftsForNavigation, setSelectedSmsDraftsForNavigation] = useState<SmsDraft[]>([])
   const [selectedSmsDraftsNavigationIndex, setSelectedSmsDraftsNavigationIndex] = useState(0)
-  const [unsubscribeMap, setUnsubscribeMap] = useState<Map<number, UnsubscribeListItem>>(new Map())
-  const [isUnsubscribeLoading, setIsUnsubscribeLoading] = useState(false)
-  const [isUnsubscribeLoaded, setIsUnsubscribeLoaded] = useState(false)
-  const [resubscribingDraftId, setResubscribingDraftId] = useState<number | null>(null)
   const [queuedEmails, setQueuedEmails] = useState<Array<{
     id: number
     emailDraftId: number
@@ -92,64 +87,13 @@ function DraftsPageContent() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  // Refs to prevent concurrent calls and track polling interval
+  // Refs to prevent concurrent calls and track real-time updates
   const isFetchingQueuedRef = useRef(false)
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
-
-  const getUnsubscribeInfo = useCallback(
-    (contactId?: number | null) => {
-      if (!contactId || Number.isNaN(contactId)) {
-        return {
-          isUnsubscribed: false,
-          unsubscribedAt: null,
-          unsubscribeReason: null,
-        }
-      }
-      const record = unsubscribeMap.get(contactId)
-      return {
-        isUnsubscribed: !!record,
-        unsubscribedAt: record?.unsubscribedAt ?? null,
-        unsubscribeReason: record?.reason ?? null,
-      }
-    },
-    [unsubscribeMap]
-  )
-
-  const fetchUnsubscribeList = useCallback(async (force = false) => {
-    if (isUnsubscribeLoading) return
-    if (!force && isUnsubscribeLoaded) return
-    setIsUnsubscribeLoading(true)
-    try {
-      const res = await unsubscribeApi.getAllUnsubscribes()
-      if (res.success && Array.isArray(res.data)) {
-        const map = new Map<number, UnsubscribeListItem>()
-        res.data.forEach((item) => {
-          if (typeof item.contactId === 'number') {
-            map.set(item.contactId, {
-              ...item,
-              unsubscribedAt: item.unsubscribedAt ? new Date(item.unsubscribedAt).toISOString() : null,
-            })
-          }
-        })
-        setUnsubscribeMap(map)
-      } else {
-        setUnsubscribeMap(new Map())
-        if (res.error) {
-          console.error('Error fetching unsubscribe list:', res.error)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching unsubscribe list:', error)
-      setUnsubscribeMap(new Map())
-    } finally {
-      setIsUnsubscribeLoading(false)
-      setIsUnsubscribeLoaded(true)
-    }
-  }, [isUnsubscribeLoading, isUnsubscribeLoaded])
+  const eventSourceRef = useRef<EventSource | null>(null) // For Server-Sent Events (SSE)
+  const prevQueuedEmailsRef = useRef<string>('') // Cache to prevent unnecessary re-renders
 
   // Transform API EmailDraft to component EmailDraft
   const transformEmailDraft = (apiDraft: ApiEmailDraft): EmailDraft => {
-    const unsubscribeInfo = getUnsubscribeInfo(apiDraft.contactId)
     // Get subject from subjectLines array (first element) or fallback to legacy fields
     const subject = apiDraft.subjectLines?.[0] || apiDraft.subjectLine || apiDraft.subject || 'No Subject'
     return {
@@ -164,7 +108,6 @@ function DraftsPageContent() {
       createdAt: apiDraft.createdAt || new Date().toISOString(),
       opens: undefined, // Will be populated if engagement data is included
       clicks: undefined, // Will be populated if engagement data is included
-      ...unsubscribeInfo,
     }
   }
 
@@ -194,7 +137,6 @@ function DraftsPageContent() {
       } else {
         setEmailDrafts([])
       }
-      fetchUnsubscribeList(true)
     } catch (err) {
       console.error('Error fetching email drafts:', err)
       setEmailDrafts([])
@@ -203,7 +145,7 @@ function DraftsPageContent() {
     }
   }
 
-  // Fetch queued emails
+  // Fetch queued emails (only called on initial load or manual refresh)
   const fetchQueuedEmails = useCallback(async () => {
     // Prevent concurrent calls
     if (isFetchingQueuedRef.current) {
@@ -216,56 +158,166 @@ function DraftsPageContent() {
       const res = await emailGenerationApi.getQueuedEmails()
       if (res.success && res.data) {
         const queued = Array.isArray(res.data) ? res.data : []
-        setQueuedEmails(queued.map(q => ({
+        const mappedQueued = queued.map(q => ({
           id: q.id,
           emailDraftId: q.emailDraftId,
           scheduledAt: q.scheduledAt,
           status: q.status,
           emailDraft: q.emailDraft ? transformEmailDraft(q.emailDraft) : undefined,
-        })))
+        }))
+        
+        // Only update state if data actually changed (prevent unnecessary re-renders)
+        const currentDataStr = JSON.stringify(mappedQueued)
+        if (currentDataStr !== prevQueuedEmailsRef.current) {
+          prevQueuedEmailsRef.current = currentDataStr
+          setQueuedEmails(mappedQueued)
+        }
       } else {
-        setQueuedEmails([])
+        const emptyStr = JSON.stringify([])
+        if (emptyStr !== prevQueuedEmailsRef.current) {
+          prevQueuedEmailsRef.current = emptyStr
+          setQueuedEmails([])
+        }
       }
     } catch (err) {
       console.error('Error fetching queued emails:', err)
-      setQueuedEmails([])
+      const emptyStr = JSON.stringify([])
+      if (emptyStr !== prevQueuedEmailsRef.current) {
+        prevQueuedEmailsRef.current = emptyStr
+        setQueuedEmails([])
+      }
     } finally {
       setIsLoadingQueued(false)
-      isFetchingQueuedRef.current = false
+      setTimeout(() => {
+        isFetchingQueuedRef.current = false
+      }, 200)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Poll for queue updates when on queued view
-  useEffect(() => {
-    // Clear any existing interval first to prevent duplicates
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current)
-      pollingIntervalRef.current = null
+  // Update queued emails from real-time event (without re-render if unchanged)
+  const updateQueuedEmailFromEvent = useCallback((update: {
+    type: string
+    queueId?: number
+    emailDraftId?: number
+    status?: string
+    data?: {
+      queueId?: number
+      emailDraftId?: number
+      scheduledAt?: string
+      status?: string
     }
+  }) => {
+    setQueuedEmails(prev => {
+      if (update.type === 'queue:sent' && update.queueId) {
+        // Update status of specific email
+        const updated = prev.map(q => 
+          q.id === update.queueId ? { ...q, status: 'sent' as const } : q
+        )
+        // Always update state to trigger re-render (counts need to update)
+        prevQueuedEmailsRef.current = JSON.stringify(updated)
+        return updated
+      } else if (update.type === 'queue:added' && update.data) {
+        // Add new email to queue directly from event data (no API call needed)
+        // Ensure all required fields are present
+        if (!update.data.queueId || !update.data.emailDraftId || !update.data.scheduledAt) {
+          return prev // Missing required fields, skip
+        }
+        const newEmail = {
+          id: update.data.queueId,
+          emailDraftId: update.data.emailDraftId,
+          scheduledAt: update.data.scheduledAt,
+          status: 'pending' as const,
+          emailDraft: undefined as EmailDraft | undefined, // Will be populated if user views/refreshes
+        }
+        // Check if email already exists (avoid duplicates)
+        const exists = prev.some(q => q.id === newEmail.id || q.emailDraftId === newEmail.emailDraftId)
+        if (exists) {
+          return prev // Already exists, no change
+        }
+        const updated = [...prev, newEmail]
+        // Always update state to trigger re-render (counts need to update)
+        prevQueuedEmailsRef.current = JSON.stringify(updated)
+        return updated
+      } else if (update.type === 'queue:removed' && (update.queueId || update.emailDraftId)) {
+        // Remove email from queue directly (no API call needed)
+        const updated = prev.filter(q => 
+          q.id !== update.queueId && q.emailDraftId !== update.emailDraftId
+        )
+        // Always update state to trigger re-render (counts need to update)
+        prevQueuedEmailsRef.current = JSON.stringify(updated)
+        return updated
+      }
+      return prev
+    })
+  }, [])
 
-    if (activeView !== 'queued') {
+  // Connect to real-time updates via Server-Sent Events (SSE)
+  // Always keep connection active to update counts in real-time regardless of active view
+  useEffect(() => {
+    // If already connected, don't create another connection
+    if (eventSourceRef.current) {
       return
     }
 
-    // Initial fetch
+    // Initial fetch to get current queue state
     fetchQueuedEmails()
 
-    // Poll every 5 seconds for real-time updates
-    pollingIntervalRef.current = setInterval(() => {
-      fetchQueuedEmails()
-    }, 5000)
+    // Get API base URL
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
 
+    // Create EventSource connection for real-time updates
+    // EventSource doesn't support custom headers, so we use query param as fallback
+    // Cookies are also sent automatically with withCredentials: true
+    const url = token 
+      ? `${apiUrl}/emails/queue/realtime?token=${encodeURIComponent(token)}`
+      : `${apiUrl}/emails/queue/realtime`
+    
+    const eventSource = new EventSource(url, {
+      withCredentials: true, // Send cookies automatically
+    })
+
+    eventSourceRef.current = eventSource
+
+    // Handle connection open
+    eventSource.onopen = () => {
+      console.log('✅ Connected to queue real-time updates')
+    }
+
+    // Handle incoming messages
+    eventSource.onmessage = (event) => {
+      try {
+        const update = JSON.parse(event.data)
+        
+        if (update.type === 'connected') {
+          console.log('Queue updates connected:', update.message)
+        } else if (update.type === 'queue:sent' || update.type === 'queue:added' || update.type === 'queue:removed') {
+          // Update queue from real-time event
+          updateQueuedEmailFromEvent(update)
+        }
+      } catch (err) {
+        console.error('Error parsing SSE message:', err)
+      }
+    }
+
+    // Handle errors
+    eventSource.onerror = (error) => {
+      console.error('SSE connection error:', error)
+      // EventSource will automatically try to reconnect
+    }
+
+    // Cleanup function
     return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
-        pollingIntervalRef.current = null
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView])
+  }, [activeView, updateQueuedEmailFromEvent])
 
-  // Fetch available mailboxes
+  // Fetch available mailboxes - load once on mount and cache
   const fetchMailboxes = useCallback(async () => {
     setIsLoadingMailboxes(true)
     try {
@@ -283,14 +335,17 @@ function DraftsPageContent() {
     }
   }, [])
 
-  // Load mailboxes when schedule modal opens and reset selections
+  // Load mailboxes once on mount instead of every time modal opens
+  useEffect(() => {
+    fetchMailboxes()
+  }, [fetchMailboxes])
+
+  // Reset mailbox selections when schedule modal opens
   useEffect(() => {
     if (isScheduleModalOpen) {
-      fetchMailboxes()
-      // Reset mailbox selections when modal opens - user must manually select
       setSelectedMailboxIds([])
     }
-  }, [isScheduleModalOpen, fetchMailboxes])
+  }, [isScheduleModalOpen])
 
   // Handle schedule emails (bulk)
   const handleScheduleEmails = async () => {
@@ -384,9 +439,8 @@ function DraftsPageContent() {
         setScheduledTime('')
         setSelectedEmailDraftIds(new Set())
         setSelectedMailboxIds([])
-        if (activeView === 'queued' as DraftViewType) {
-          fetchQueuedEmails()
-        }
+        // Always fetch queued emails to update count in sidebar
+        fetchQueuedEmails()
         setTimeout(() => setSuccessMessage(null), 5000)
       } else {
         setErrorMessage('Failed to schedule emails: ' + (response.error || 'Unknown error'))
@@ -445,14 +499,14 @@ function DraftsPageContent() {
           const response = await emailGenerationApi.removeFromQueue(draftId)
           if (response.success) {
             setQueuedEmails(prev => prev.filter(q => q.emailDraftId !== draftId))
-            setSuccessMessage('Email removed from queue successfully')
+            setSuccessMessage('Email removed from schedule successfully')
             setTimeout(() => setSuccessMessage(null), 5000)
           } else {
-            setErrorMessage('Failed to remove from queue: ' + (response.error || 'Unknown error'))
+            setErrorMessage('Failed to remove from schedule: ' + (response.error || 'Unknown error'))
             setTimeout(() => setErrorMessage(null), 5000)
           }
         } catch (error) {
-          setErrorMessage('Error removing from queue: ' + (error instanceof Error ? error.message : 'Unknown error'))
+          setErrorMessage('Error removing from schedule: ' + (error instanceof Error ? error.message : 'Unknown error'))
           setTimeout(() => setErrorMessage(null), 5000)
         } finally {
           setDequeuingIds(prev => {
@@ -521,35 +575,35 @@ function DraftsPageContent() {
     }
   }, [])
 
-  useEffect(() => {
-    if (activeTab === 'email') {
-      fetchUnsubscribeList()
-    }
-  }, [activeTab, fetchUnsubscribeList])
-
-  // Fetch drafts when view/tab changes
-  useEffect(() => {
-     // Fetch both types when view needs both (all, starred)
+  // Consolidated effect: Fetch drafts based on view/tab - prevents duplicate calls
+  const loadDrafts = useCallback(() => {
+    // Determine what to fetch based on activeView
     if (activeView === 'all' || activeView === 'starred') {
+      // Fetch both types when view needs both
       fetchEmailDrafts()
-      fetchSmsDrafts()
+      if (client?.id) {
+        fetchSmsDrafts()
+      }
     } else if (activeView === 'email') {
       fetchEmailDrafts()
-    } else if (activeView === 'sms') {
+    } else if (activeView === 'sms' && client?.id) {
       fetchSmsDrafts()
-    } else if (activeView === 'queued' as DraftViewType) {
-      // Don't call fetchQueuedEmails here - the polling effect handles it
-      // This prevents duplicate calls when switching to queued view
+    } else if (activeView === 'queued') {
+      // Queued view handled by SSE - don't fetch drafts
     } else {
       // Fallback: fetch based on activeTab
       if (activeTab === 'email') {
         fetchEmailDrafts()
-      } else {
+      } else if (activeTab === 'sms' && client?.id) {
         fetchSmsDrafts()
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, activeView])
+  }, [activeView, activeTab, client?.id])
+
+  // Single effect to handle all draft loading - prevents duplicate calls on initial load
+  useEffect(() => {
+    loadDrafts()
+  }, [loadDrafts])
 
   // Handle query parameters to open specific draft
   useEffect(() => {
@@ -576,55 +630,6 @@ function DraftsPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, emailDrafts, smsDrafts])
 
-  useEffect(() => {
-    setEmailDrafts((prevDrafts) => {
-      let hasChanges = false
-      const nextDrafts = prevDrafts.map((draft) => {
-        const info = getUnsubscribeInfo(draft.contactId)
-        if (
-          draft.isUnsubscribed === info.isUnsubscribed &&
-          draft.unsubscribedAt === info.unsubscribedAt &&
-          draft.unsubscribeReason === info.unsubscribeReason
-        ) {
-          return draft
-        }
-        hasChanges = true
-        return { ...draft, ...info }
-      })
-      return hasChanges ? nextDrafts : prevDrafts
-    })
-
-    setSelectedDraftsForNavigation((prevDrafts) => {
-      if (prevDrafts.length === 0) return prevDrafts
-      let hasChanges = false
-      const nextDrafts = prevDrafts.map((draft) => {
-        const info = getUnsubscribeInfo(draft.contactId)
-        if (
-          draft.isUnsubscribed === info.isUnsubscribed &&
-          draft.unsubscribedAt === info.unsubscribedAt &&
-          draft.unsubscribeReason === info.unsubscribeReason
-        ) {
-          return draft
-        }
-        hasChanges = true
-        return { ...draft, ...info }
-      })
-      return hasChanges ? nextDrafts : prevDrafts
-    })
-
-    setSelectedEmailDraft((prevDraft) => {
-      if (!prevDraft) return prevDraft
-      const info = getUnsubscribeInfo(prevDraft.contactId)
-      if (
-        prevDraft.isUnsubscribed === info.isUnsubscribed &&
-        prevDraft.unsubscribedAt === info.unsubscribedAt &&
-        prevDraft.unsubscribeReason === info.unsubscribeReason
-      ) {
-        return prevDraft
-      }
-      return { ...prevDraft, ...info }
-    })
-  }, [getUnsubscribeInfo])
 
   const handleViewChange = (view: DraftViewType) => {
     setActiveView(view)
@@ -643,7 +648,7 @@ function DraftsPageContent() {
   const handleTabChange = (tab: 'email' | 'sms') => {
     setActiveTab(tab)
     setSearchQuery('')
-    setStatusFilter('all')
+    setDateRange('all')
     setSelectedEmailDraftIds(new Set())
     setSelectedSmsDraftIds(new Set())
   }
@@ -1046,53 +1051,6 @@ function DraftsPageContent() {
     }
   }
 
-  const handleResubscribeDraft = async (draftId: number) => {
-    const draft = emailDrafts.find(d => d.id === draftId)
-    if (!draft || !draft.contactId) {
-      setConfirmDialog({
-        isOpen: true,
-        title: 'Error',
-        message: 'Draft or contact information not found.',
-        variant: 'warning',
-        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
-        confirmText: 'OK',
-        cancelText: '',
-      })
-      return
-    }
-
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Resubscribe Contact',
-      message: 'Resubscribe this contact to emails?',
-      variant: 'info',
-      onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
-    setResubscribingDraftId(draftId)
-    try {
-          const res = await unsubscribeApi.resubscribeByContact(draft.contactId!)
-      if (res.success && res.data) {
-            setSuccessMessage(res.data.message || 'Contact resubscribed successfully.')
-            setTimeout(() => setSuccessMessage(null), 5000)
-            // Refresh unsubscribe list
-        fetchUnsubscribeList(true)
-      } else {
-            setErrorMessage(res.error || 'Failed to resubscribe contact.')
-            setTimeout(() => setErrorMessage(null), 5000)
-      }
-    } catch (err) {
-          setErrorMessage('Error resubscribing contact: ' + (err instanceof Error ? err.message : 'Unknown error'))
-          setTimeout(() => setErrorMessage(null), 5000)
-    } finally {
-      setResubscribingDraftId(null)
-    }
-      },
-      onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
-      confirmText: 'Resubscribe',
-      cancelText: 'Cancel',
-    })
-    return
-  }
 
 
   const handleSendEmailDraft = async (draftId: number) => {
@@ -1111,8 +1069,11 @@ function DraftsPageContent() {
         }
         setTimeout(() => setSuccessMessage(null), 5000)
         
+        // Optimistically update draft state immediately (remove from drafts list)
+        setEmailDrafts(prev => prev.filter(d => d.id !== draftId))
+        
         handleCloseEmailOverlay()
-        // Refresh email drafts to get updated status
+        // Refresh email drafts to get updated status from server
         fetchEmailDrafts()
       } else {
         setErrorMessage('Failed to send email: ' + (res.error || 'Unknown error'))
@@ -1208,8 +1169,11 @@ function DraftsPageContent() {
         }
         setTimeout(() => setSuccessMessage(null), 5000)
         
+        // Optimistically update draft state immediately (remove from drafts list)
+        setSmsDrafts(prev => prev.filter(d => d.id !== draftId))
+        
         handleCloseSmsOverlay()
-        // Refresh SMS drafts
+        // Refresh SMS drafts to get updated status from server
         fetchSmsDrafts()
       } else {
         setErrorMessage('Failed to send SMS: ' + (res.error || 'Unknown error'))
@@ -1235,9 +1199,20 @@ function DraftsPageContent() {
       drafts = drafts.filter(d => starredEmailDraftIds.has(d.id))
     } 
 
-    // Filter by status filter (from dropdown)
-    if (statusFilter !== 'all') {
-      drafts = drafts.filter(d => d.status === statusFilter)
+    // Filter by date range
+    if (dateRange !== 'all') {
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
+      
+      drafts = drafts.filter(d => {
+        const draftDate = new Date(d.createdAt)
+        if (dateRange === 'today') return draftDate >= today
+        if (dateRange === 'week') return draftDate >= weekAgo
+        if (dateRange === 'month') return draftDate >= monthAgo
+        return true
+      })
     }
 
     // Filter by search query
@@ -1266,9 +1241,20 @@ function DraftsPageContent() {
       drafts = drafts.filter(d => starredSmsDraftIds.has(d.id))
     }
 
-    // Filter by status filter (from dropdown)
-    if (statusFilter !== 'all') {
-      drafts = drafts.filter(d => d.status === statusFilter)
+    // Filter by date range
+    if (dateRange !== 'all') {
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
+      
+      drafts = drafts.filter(d => {
+        const draftDate = new Date(d.createdAt)
+        if (dateRange === 'today') return draftDate >= today
+        if (dateRange === 'week') return draftDate >= weekAgo
+        if (dateRange === 'month') return draftDate >= monthAgo
+        return true
+      })
     }
 
     // Filter by search query
@@ -1290,12 +1276,29 @@ function DraftsPageContent() {
   // Calculate counts for sidebar - use ALL drafts (not filtered) for accurate sidebar counts
   // These counts should reflect the total available, not what's currently filtered or visible
   // "All Drafts" should show ALL drafts regardless of status (draft, sent, delivered)
-  const allDraftsCount =
-    emailDrafts.filter(d => d.status === 'draft').length + smsDrafts.filter(d => d.status === 'draft').length
-  const emailDraftCount = emailDrafts.filter(d => d.status === 'draft').length
-  const smsDraftCount = smsDrafts.filter(d => d.status === 'draft').length
-  const starredCount = starredEmailDraftIds.size + starredSmsDraftIds.size
-  const queuedCount = queuedEmails.filter(q => q.status === 'pending').length
+  // Use useMemo to ensure counts update when dependencies change
+  const allDraftsCount = useMemo(() => 
+    emailDrafts.filter(d => d.status === 'draft').length + smsDrafts.filter(d => d.status === 'draft').length,
+    [emailDrafts, smsDrafts]
+  )
+  const emailDraftCount = useMemo(() => 
+    emailDrafts.filter(d => d.status === 'draft').length,
+    [emailDrafts]
+  )
+  const smsDraftCount = useMemo(() => 
+    smsDrafts.filter(d => d.status === 'draft').length,
+    [smsDrafts]
+  )
+  const starredCount = useMemo(() => 
+    starredEmailDraftIds.size + starredSmsDraftIds.size,
+    [starredEmailDraftIds, starredSmsDraftIds]
+  )
+  const queuedCount = useMemo(() => {
+    const now = new Date()
+    return queuedEmails.filter(q => 
+      q.status === 'pending' && new Date(q.scheduledAt) > now
+    ).length
+  }, [queuedEmails])
 
   // For "all" view, combine both email and SMS drafts together
   // Group by contactId to show both email and SMS for same person
@@ -1541,6 +1544,9 @@ function DraftsPageContent() {
         alert(`Sent ${results.success} email(s), ${results.failed} failed.\n\nErrors:\n${results.errors.join('\n')}`)
       }
 
+      // Optimistically update draft state immediately (remove sent drafts)
+      setEmailDrafts(prev => prev.filter(d => !selectedEmailDraftIds.has(d.id)))
+      
       // Refresh drafts and clear selection
       setSelectedEmailDraftIds(new Set())
       setSelectedDraftsForNavigation([])
@@ -1602,6 +1608,9 @@ function DraftsPageContent() {
         alert(`Sent ${results.success} SMS(s), ${results.failed} failed.\n\nErrors:\n${results.errors.join('\n')}`)
       }
 
+      // Optimistically update draft state immediately (remove sent drafts)
+      setSmsDrafts(prev => prev.filter(d => !selectedSmsDraftIds.has(d.id)))
+      
       // Refresh drafts and clear selection
       setSelectedSmsDraftIds(new Set())
       fetchSmsDrafts()
@@ -1693,6 +1702,10 @@ function DraftsPageContent() {
         setTimeout(() => setErrorMessage(null), 8000)
       }
 
+      // Optimistically update draft state immediately (remove sent drafts)
+      setEmailDrafts(prev => prev.filter(d => !selectedEmailDraftIds.has(d.id)))
+      setSmsDrafts(prev => prev.filter(d => !selectedSmsDraftIds.has(d.id)))
+      
       // Refresh drafts and clear selection
       setSelectedEmailDraftIds(new Set())
       setSelectedSmsDraftIds(new Set())
@@ -1713,6 +1726,16 @@ function DraftsPageContent() {
   // Pagination logic
   const totalDrafts = showCombinedView ? combinedDrafts.length : displayDrafts.length
   const totalPages = Math.ceil(totalDrafts / itemsPerPage)
+  
+  // Ensure current page is valid after filtering
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages)
+    } else if (currentPage > 0 && totalPages === 0) {
+      setCurrentPage(1)
+    }
+  }, [totalPages, currentPage])
+
   const paginatedDrafts = displayDrafts.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
@@ -1727,7 +1750,7 @@ function DraftsPageContent() {
   // Reset to page 1 when filters change, tab changes, or view changes
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, activeTab, activeView])
+  }, [searchQuery, dateRange, activeTab, activeView])
 
   const hasSelection = selectedEmailDraftIds.size > 0 || selectedSmsDraftIds.size > 0
   const hasBothSelected = selectedEmailDraftIds.size > 0 && selectedSmsDraftIds.size > 0
@@ -1767,7 +1790,7 @@ function DraftsPageContent() {
                         : activeView === 'starred'
                           ? 'Starred Drafts'
                             : activeView === 'queued'
-                              ? 'Queued Emails'
+                              ? 'Scheduled Emails'
                             : 'Drafts'}
                 </h1>
               </div>
@@ -1796,25 +1819,13 @@ function DraftsPageContent() {
                     </svg>
                   </button>
                 </div>
-                {/* Hide status filter when viewing queued emails */}
+                
+                {/* Date Range Filter Dropdown */}
                 {activeView !== 'queued' && (
-                  <div className="relative">
-                    <select
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                      className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2.5 pr-8 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                    >
-                      <option value="all">All Status</option>
-                      <option value="draft">Draft</option>
-                      <option value="sent">Sent</option>
-                      <option value="delivered">Delivered</option>
-                    </select>
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                      <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
+                  <DraftStatusFilter
+                    dateRange={dateRange}
+                    onDateRangeChange={setDateRange}
+                  />
                 )}
               </div>
             </div>
@@ -1879,7 +1890,7 @@ function DraftsPageContent() {
                                </svg>
                              }
                            >
-                             Queue Email ({selectedEmailDraftIds.size})
+                             Schedule Email ({selectedEmailDraftIds.size})
                            </Button>
                          </>
                        )}
@@ -1952,37 +1963,135 @@ function DraftsPageContent() {
                       ))}
                     </div>
                   ) : (() => {
-                    // Only show pending emails scheduled for the future (not old database records)
+                    // Group emails by batch (emails scheduled within 24 hours of each other)
                     const now = new Date()
                     const allQueuedEmails = queuedEmails.sort((a, b) => 
                       new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
                     )
-                    // Filter: only pending emails scheduled for the future
-                    const pendingQueuedEmails = allQueuedEmails.filter(q => 
+                    
+                    // Group emails into batches (within 24 hours of each other)
+                    const batches: typeof allQueuedEmails[] = []
+                    let currentBatch: typeof allQueuedEmails = []
+                    
+                    for (let i = 0; i < allQueuedEmails.length; i++) {
+                      const email = allQueuedEmails[i]
+                      const emailTime = new Date(email.scheduledAt).getTime()
+                      
+                      if (currentBatch.length === 0) {
+                        currentBatch.push(email)
+                      } else {
+                        const lastEmailTime = new Date(currentBatch[currentBatch.length - 1].scheduledAt).getTime()
+                        const timeDiff = emailTime - lastEmailTime
+                        const hoursDiff = timeDiff / (1000 * 60 * 60)
+                        
+                        // If within 24 hours, add to current batch
+                        if (hoursDiff <= 24) {
+                          currentBatch.push(email)
+                        } else {
+                          // Start new batch
+                          batches.push(currentBatch)
+                          currentBatch = [email]
+                        }
+                      }
+                    }
+                    if (currentBatch.length > 0) {
+                      batches.push(currentBatch)
+                    }
+                    
+                    // Find the active batch (most recent batch with pending emails)
+                    let activeBatch: typeof allQueuedEmails = []
+                    for (let i = batches.length - 1; i >= 0; i--) {
+                      const batch = batches[i]
+                      const hasPending = batch.some(q => 
+                        q.status === 'pending' && new Date(q.scheduledAt) > now
+                      )
+                      if (hasPending || (i === batches.length - 1 && batch.length > 0)) {
+                        activeBatch = batch
+                        break
+                      }
+                    }
+                    
+                    // If no active batch found, use the most recent batch
+                    if (activeBatch.length === 0 && batches.length > 0) {
+                      activeBatch = batches[batches.length - 1]
+                    }
+                    
+                    // Separate sent and pending emails in active batch
+                    const sentQueuedEmails = activeBatch.filter(q => q.status === 'sent')
+                    const pendingQueuedEmails = activeBatch.filter(q => 
                       q.status === 'pending' && new Date(q.scheduledAt) > now
                     )
-                    // For progress calculation, only count emails scheduled for the future
-                    const futureQueuedEmails = allQueuedEmails.filter(q => 
-                      new Date(q.scheduledAt) > now
+                    
+                    // For display: show ONLY pending emails (sent emails are in history page)
+                    const allDisplayEmails = pendingQueuedEmails.sort((a, b) => 
+                      new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
                     )
-                    const sentQueuedEmails = futureQueuedEmails.filter(q => q.status === 'sent')
-                    const totalQueued = futureQueuedEmails.length
+                    
+                    // For progress calculation: use all emails in batch (sent + pending)
+                    const totalQueued = activeBatch.length
                     const sentCount = sentQueuedEmails.length
                     const pendingCount = pendingQueuedEmails.length
                     
-                    // Calculate progress: sent / total (only show if there are pending emails)
-                    const progressPercentage = totalQueued > 0 && pendingCount > 0 
+                    // Calculate progress: sent / total (for analytics when complete)
+                    const progressPercentage = totalQueued > 0 
                       ? (sentCount / totalQueued) * 100 
                       : 0
                     
-                    const totalQueuedPages = Math.ceil(pendingQueuedEmails.length / itemsPerPage)
-                    const paginatedQueuedEmails = pendingQueuedEmails.slice(
+                    const totalQueuedPages = Math.ceil(allDisplayEmails.length / itemsPerPage)
+                    const paginatedQueuedEmails = allDisplayEmails.slice(
                       (currentPage - 1) * itemsPerPage,
                       currentPage * itemsPerPage
                     )
 
-                    // If no pending emails, queue is empty (even if there are sent emails)
-                    if (pendingQueuedEmails.length === 0) {
+                    // If no pending emails, show empty state or analytics if batch is complete
+                    if (allDisplayEmails.length === 0) {
+                      // If batch is complete (all sent), show analytics
+                      if (pendingCount === 0 && sentCount > 0 && totalQueued > 0) {
+                        const sentEmails = activeBatch.filter(q => q.status === 'sent').sort((a, b) => 
+                          new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+                        )
+                        const firstSent = new Date(sentEmails[0].scheduledAt)
+                        const lastSent = new Date(sentEmails[sentEmails.length - 1].scheduledAt)
+                        const timeTaken = lastSent.getTime() - firstSent.getTime()
+                        const hours = Math.floor(timeTaken / (1000 * 60 * 60))
+                        const minutes = Math.floor((timeTaken % (1000 * 60 * 60)) / (1000 * 60))
+                        const timeTakenStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
+                        
+                        return (
+                          <>
+                            {/* Show analytics for completed batch */}
+                            {totalQueued > 0 && (
+                              <GamifiedQueueProgress
+                                sentCount={sentCount}
+                                totalQueued={totalQueued}
+                                pendingCount={0}
+                                progressPercentage={100}
+                                queuedEmails={activeBatch}
+                                countdown={0}
+                              />
+                            )}
+                            <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
+                              <div className="flex flex-col items-center justify-center space-y-3">
+                                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+                                  <svg className="h-8 w-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-700 mb-1">
+                                    All emails sent
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    View sent emails in the History section.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )
+                      }
+                      
+                      // No emails at all
                       return (
                         <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
                           <div className="flex flex-col items-center justify-center space-y-3">
@@ -1993,7 +2102,7 @@ function DraftsPageContent() {
                             </div>
                             <div>
                               <p className="text-sm font-semibold text-gray-700 mb-1">
-                                No queued emails
+                                No scheduled emails
                               </p>
                               <p className="text-xs text-gray-500">
                                 Emails scheduled for later sending will appear here.
@@ -2006,9 +2115,9 @@ function DraftsPageContent() {
 
                     return (
                       <>
-                        {/* Gamified Queue Progress - Only show if there are pending emails */}
-                        {pendingCount > 0 && totalQueued > 0 && (() => {
-                          // Calculate next email time (first pending email)
+                        {/* Schedule Progress - Show if there are any emails in active batch */}
+                        {totalQueued > 0 && (() => {
+                          // Calculate next email time (first pending email, or null if all sent)
                           const nextEmail = pendingQueuedEmails.length > 0 
                             ? pendingQueuedEmails[0] 
                             : null
@@ -2022,13 +2131,13 @@ function DraftsPageContent() {
                               totalQueued={totalQueued}
                               pendingCount={pendingCount}
                               progressPercentage={progressPercentage}
-                              queuedEmails={pendingQueuedEmails.slice(0, 10)} // Show up to 10 markers on timeline
+                              queuedEmails={activeBatch} // Show all batch emails for timeline (will be condensed)
                               countdown={timeUntilNext}
                             />
                           )
                         })()}
 
-                        {/* Email Cards - Only pending emails */}
+                        {/* Email Cards - Only pending emails (sent emails are in history) */}
                         <div className="space-y-3">
                           {paginatedQueuedEmails.map((queued) => {
                             const scheduledDate = new Date(queued.scheduledAt)
@@ -2042,17 +2151,26 @@ function DraftsPageContent() {
                               day: 'numeric',
                               year: 'numeric'
                             })
+                            const isSent = queued.status === 'sent'
                             
                             return (
                               <div
                                 key={queued.id}
-                                className="rounded-lg border border-gray-200 bg-white p-4 hover:border-gray-300 hover:shadow-sm transition-all"
+                                className={`rounded-lg border bg-white p-4 hover:shadow-sm transition-all ${
+                                  isSent 
+                                    ? 'border-green-200 bg-green-50/30' 
+                                    : 'border-gray-200 hover:border-gray-300'
+                                }`}
                               >
                                 <div className="flex items-center justify-between gap-4">
                                   <div className="flex items-center gap-4 flex-1 min-w-0">
                                     {/* Icon */}
-                                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
-                                      <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
+                                      isSent 
+                                        ? 'bg-green-100' 
+                                        : 'bg-indigo-100'
+                                    }`}>
+                                      <svg className={`w-5 h-5 ${isSent ? 'text-green-600' : 'text-indigo-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                       </svg>
                                     </div>
@@ -2061,7 +2179,11 @@ function DraftsPageContent() {
                                         <h4 className="text-sm font-semibold text-gray-900 truncate">
                                           {queued.emailDraft?.contactName || queued.emailDraft?.contactEmail || `Draft #${queued.emailDraftId}`}
                                         </h4>
-                                        <span className="flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
+                                        <span className={`flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
+                                          isSent
+                                            ? 'bg-green-100 text-green-700'
+                                            : 'bg-indigo-50 text-indigo-700'
+                                        }`}>
                                           {queued.status}
                                         </span>
                                       </div>
@@ -2104,17 +2226,17 @@ function DraftsPageContent() {
                           })}
                         </div>
 
-                        {/* Pagination for Queued Emails */}
-                        {pendingQueuedEmails.length > 0 && (
+                        {/* Pagination for Scheduled Emails */}
+                        {allDisplayEmails.length > 0 && (
                           <div className="flex items-center justify-between mt-4 px-4 py-3 bg-white rounded-lg border border-gray-200 mb-16">
                             <div className="text-sm text-gray-600">
                               {totalQueuedPages > 1 ? (
                                 <>
-                                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, pendingQueuedEmails.length)} of {pendingQueuedEmails.length} queued email{pendingQueuedEmails.length !== 1 ? 's' : ''}
+                                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, allDisplayEmails.length)} of {allDisplayEmails.length} scheduled email{allDisplayEmails.length !== 1 ? 's' : ''}
                                 </>
                               ) : (
                                 <>
-                                  Showing {pendingQueuedEmails.length} queued email{pendingQueuedEmails.length !== 1 ? 's' : ''}
+                                  Showing {allDisplayEmails.length} scheduled email{allDisplayEmails.length !== 1 ? 's' : ''}
                                 </>
                               )}
                             </div>
@@ -2210,9 +2332,6 @@ function DraftsPageContent() {
                   onSend={(draftId, type) => {
                     handleSendDraft(draftId)
                   }}
-                  subscriptionDataLoaded={isUnsubscribeLoaded}
-                  onEmailResubscribe={handleResubscribeDraft}
-                  resubscribingEmailDraftId={resubscribingDraftId}
                 />
               ) : isEmailView ? (
               <EmailDraftsList
@@ -2232,9 +2351,6 @@ function DraftsPageContent() {
                 onView={handleViewDraft}
                 onEdit={handleEditDraft}
                 onSend={handleSendDraft}
-                subscriptionDataLoaded={isUnsubscribeLoaded}
-                onResubscribe={handleResubscribeDraft}
-                resubscribingDraftId={resubscribingDraftId}
               />
             ) : (
               <SmsDraftsList
@@ -2406,13 +2522,6 @@ function DraftsPageContent() {
             setIsScheduling(false)
           }
         }}
-        subscriptionDataLoaded={isUnsubscribeLoaded}
-        onResubscribe={handleResubscribeDraft}
-        isResubscribing={
-          resubscribingDraftId !== null &&
-          selectedEmailDraft !== null &&
-          resubscribingDraftId === selectedEmailDraft.id
-        }
       onContactEmailChange={handleContactEmailChange}
       />
 

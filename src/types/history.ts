@@ -4,15 +4,16 @@ export interface ScrapingHistoryItem {
   businessName: string | null
   email: string
   website: string | null
-  scrapedAt: Date
-  method: string
-  success: boolean
+  // Make scraping details optional - not needed for table display
+  scrapedAt?: Date
+  method?: string
+  success?: boolean
   errorMessage?: string
   discoveredUrl?: string
-  pagesScraped: number
-  extractedEmails: number
-  extractedPhones: number
-  contentLength: number
+  pagesScraped?: number
+  extractedEmails?: number
+  extractedPhones?: number
+  contentLength?: number
 }
 
 export interface Pagination {
@@ -239,6 +240,9 @@ export interface EmailLog {
   contact?: EmailLogContact
   emailDraft?: EmailLogDraft
   emailEngagements?: EmailLogEngagement[]
+  // Optimized fields from backend (calculated counts instead of full array)
+  opens?: number
+  clicks?: number
 }
 
 export interface EmailLogsResponse {

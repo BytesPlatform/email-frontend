@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import {
@@ -45,6 +45,8 @@ export default function AnalyticsPage() {
   const [events, setEvents] = useState<EmailAnalyticsEvent[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
+  const [isEmailDropdownOpen, setIsEmailDropdownOpen] = useState<boolean>(false)
+  const emailDropdownRef = useRef<HTMLDivElement>(null)
 
   const rangeParams = useMemo(() => {
     const params = makeRangeParams(selectedRange)
@@ -110,6 +112,23 @@ export default function AnalyticsPage() {
     void loadAnalytics()
   }, [loadAnalytics])
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emailDropdownRef.current && !emailDropdownRef.current.contains(event.target as Node)) {
+        setIsEmailDropdownOpen(false)
+      }
+    }
+
+    if (isEmailDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isEmailDropdownOpen])
+
   return (
     <AuthGuard>
       <div className="bg-gray-50 min-h-screen py-10">
@@ -155,27 +174,65 @@ export default function AnalyticsPage() {
                 })}
               </div>
 
-              {/* From Email Filter */}
+              {/* From Email Filter - Custom Dropdown */}
               {availableEmails.length > 0 && (
-                <div className="relative">
-                  <select
-                    value={selectedFromEmail}
-                    onChange={(e) => setSelectedFromEmail(e.target.value)}
+                <div className="relative" ref={emailDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsEmailDropdownOpen(!isEmailDropdownOpen)}
                     disabled={isLoadingEmails}
-                    className="appearance-none bg-white border border-slate-200 rounded-full px-4 py-1.5 pr-8 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed min-w-[180px] justify-between"
                   >
-                    <option value="">All Email Addresses</option>
-                    {availableEmails.map((email) => (
-                      <option key={email} value={email}>
-                        {email}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                    <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <span className="truncate">
+                      {selectedFromEmail || 'All Email Addresses'}
+                    </span>
+                    <svg
+                      className={`h-4 w-4 text-slate-400 transition-transform ${isEmailDropdownOpen ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
-                  </div>
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {isEmailDropdownOpen && (
+                    <div className="absolute top-full left-0 mt-2 w-full min-w-[240px] bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-60 overflow-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedFromEmail('')
+                          setIsEmailDropdownOpen(false)
+                        }}
+                        className={`w-full text-left px-4 py-2.5 text-sm transition-colors first:rounded-t-xl ${
+                          selectedFromEmail === ''
+                            ? 'bg-indigo-50 text-indigo-700 font-medium'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        All Email Addresses
+                      </button>
+                      <div className="border-t border-slate-100" />
+                      {availableEmails.map((email) => (
+                        <button
+                          key={email}
+                          type="button"
+                          onClick={() => {
+                            setSelectedFromEmail(email)
+                            setIsEmailDropdownOpen(false)
+                          }}
+                          className={`w-full text-left px-4 py-2.5 text-sm transition-colors last:rounded-b-xl ${
+                            selectedFromEmail === email
+                              ? 'bg-indigo-50 text-indigo-700 font-medium'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {email}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -53,6 +53,7 @@ export const useEmailGenerationState = () => {
 
   const handlePageChange = useCallback((page: number) => {
     setState(prev => ({ ...prev, currentPage: page }))
+    // Note: Actual refetch is handled by useEffect in parent component
   }, [])
 
   const handlePreviousPage = useCallback(() => {
@@ -66,7 +67,9 @@ export const useEmailGenerationState = () => {
 
   const handleNextPage = useCallback(() => {
     setState(prev => {
-      const totalPages = Math.ceil(prev.scrapedRecords.length / prev.recordsPerPage)
+      // Use totalItems for server-side pagination, fallback to records.length for client-side
+      const totalItems = prev.totalItems || prev.scrapedRecords.length
+      const totalPages = Math.ceil(totalItems / prev.recordsPerPage)
       if (prev.currentPage < totalPages) {
         return { ...prev, currentPage: prev.currentPage + 1 }
       }
