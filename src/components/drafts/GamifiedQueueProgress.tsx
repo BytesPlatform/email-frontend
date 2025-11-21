@@ -27,15 +27,22 @@ export function GamifiedQueueProgress({
   countdown: initialCountdown,
 }: GamifiedQueueProgressProps) {
   const [countdown, setCountdown] = useState(initialCountdown)
-  const [currentProgress, setCurrentProgress] = useState(progressPercentage)
+  const [initialTime, setInitialTime] = useState(initialCountdown)
+  const [currentProgress, setCurrentProgress] = useState(0)
 
-  // Update countdown every second
+  // Update countdown and initial time when it changes
   useEffect(() => {
     setCountdown(initialCountdown)
+    setInitialTime(initialCountdown)
   }, [initialCountdown])
 
+  // Update countdown every second and calculate progress
   useEffect(() => {
-    if (countdown <= 0) return
+    // If countdown is 0 or less, set progress to 100% and stop updating
+    if (countdown <= 0) {
+      setCurrentProgress(100)
+      return
+    }
 
     const interval = setInterval(() => {
       setCountdown(prev => {
@@ -45,12 +52,30 @@ export function GamifiedQueueProgress({
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [countdown])
+  }, [countdown, initialCountdown])
 
-  // Animate progress smoothly
+  // Calculate progress based on countdown timer or completion status
   useEffect(() => {
-    setCurrentProgress(progressPercentage)
-  }, [progressPercentage])
+    // If batch is complete (all sent), show 100%
+    if (pendingCount === 0 && sentCount > 0) {
+      setCurrentProgress(100)
+      return
+    }
+    
+    // Otherwise use countdown-based progress
+    if (initialTime > 0 && countdown > 0) {
+      // Progress = (time elapsed / total time) * 100
+      // Time elapsed = initialTime - countdown
+      const timeElapsed = initialTime - countdown
+      const progress = Math.min(100, (timeElapsed / initialTime) * 100)
+      setCurrentProgress(progress)
+    } else if (countdown <= 0 && initialTime > 0) {
+      // When countdown reaches 0, show 100% progress
+      setCurrentProgress(100)
+    } else {
+      setCurrentProgress(0)
+    }
+  }, [countdown, initialTime, pendingCount, sentCount])
 
   const formatCountdown = (ms: number) => {
     if (ms <= 0) return '00:00:00'
@@ -61,167 +86,166 @@ export function GamifiedQueueProgress({
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
   }
 
+  const formatDuration = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000)
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`
+    }
+    return `${minutes}m`
+  }
+
+  // Check if batch is complete (all sent)
+  const isBatchComplete = pendingCount === 0 && sentCount > 0
+  
+  // Calculate batch analytics if complete
+  let batchAnalytics: { totalSent: number; timeTaken: string; startTime: string; endTime: string } | null = null
+  if (isBatchComplete && queuedEmails.length > 0) {
+    const sentEmails = queuedEmails.filter(q => q.status === 'sent').sort((a, b) => 
+      new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+    )
+    if (sentEmails.length > 0) {
+      const firstSent = new Date(sentEmails[0].scheduledAt)
+      const lastSent = new Date(sentEmails[sentEmails.length - 1].scheduledAt)
+      const timeTaken = lastSent.getTime() - firstSent.getTime()
+      
+      batchAnalytics = {
+        totalSent: sentCount,
+        timeTaken: formatDuration(timeTaken),
+        startTime: firstSent.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+        endTime: lastSent.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+      }
+    }
+  }
+
   return (
-    <div className="relative mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
-      <div className="relative bg-gradient-to-br from-indigo-50 via-indigo-100 to-blue-50 p-6">
-        {/* Subtle grid pattern */}
-        <div 
-          className="absolute inset-0 opacity-5"
-          style={{
-            backgroundImage: `
-              repeating-linear-gradient(0deg, transparent, transparent 20px, rgba(99, 102, 241, 0.1) 20px, rgba(99, 102, 241, 0.1) 21px),
-              repeating-linear-gradient(90deg, transparent, transparent 20px, rgba(99, 102, 241, 0.1) 20px, rgba(99, 102, 241, 0.1) 21px)
-            `
-          }}
-        />
-
-        <div className="relative z-10">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-xl font-bold text-gray-900 mb-1">
-                Queue Progress
-              </h3>
-              <p className="text-sm text-gray-600">
-                {sentCount} / {totalQueued} sent • {pendingCount} pending
-              </p>
-            </div>
-            
-            {/* Countdown Timer */}
+    <div className="mb-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">
+              Schedule Progress
+            </h3>
+            <p className="text-sm text-gray-600">
+              {sentCount} / {totalQueued} sent • {pendingCount} pending
+            </p>
+          </div>
+          
+          {/* Countdown Timer or Analytics */}
+          {isBatchComplete && batchAnalytics ? (
             <div className="text-right">
-              <div className="text-xs text-gray-500 mb-1 font-medium">Next Email In</div>
-              <div className="text-2xl font-bold text-indigo-600 font-mono tracking-wider">
+              <div className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">
+                Batch Complete
+              </div>
+              <div className="text-sm font-semibold text-green-600">
+                ✓ All Sent
+              </div>
+            </div>
+          ) : (
+            <div className="text-right">
+              <div className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">
+                Next Email In
+              </div>
+              <div className="text-xl font-semibold text-gray-900 font-mono">
                 {formatCountdown(countdown)}
-              </div>
-            </div>
-          </div>
-
-          {/* Delivery-style Progress Line */}
-          <div className="relative mb-4">
-            {/* Background track */}
-            <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
-              {/* Progress fill */}
-              <div 
-                className="h-full bg-gradient-to-r from-indigo-500 via-indigo-600 to-indigo-700 rounded-full transition-all duration-1000 ease-out relative overflow-hidden"
-                style={{ width: `${currentProgress}%` }}
-              >
-                {/* Shimmer effect */}
-                <div 
-                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                  style={{ 
-                    animation: 'shimmer 2s infinite linear',
-                    transform: 'translateX(-100%)',
-                  }}
-                ></div>
-              </div>
-              
-              {/* Moving mail icon at the tip of progress */}
-              <div
-                className="absolute top-1/2 -translate-y-1/2 transition-all duration-1000 ease-out"
-                style={{ 
-                  left: `calc(${currentProgress}% - 16px)`,
-                  transform: `translateY(-50%) ${currentProgress > 0 ? 'scale(1)' : 'scale(0)'}`,
-                }}
-              >
-                <div className="relative">
-                  {/* Mail icon with animation */}
-                  <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg transform transition-transform duration-300 hover:scale-110">
-                    <svg 
-                      className="w-5 h-5 text-white" 
-                      fill="none" 
-                      stroke="currentColor" 
-                      viewBox="0 0 24 24"
-                    >
-                      <path 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round" 
-                        strokeWidth={2} 
-                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" 
-                      />
-                    </svg>
-                  </div>
-                  {/* Pulse effect */}
-                  <div className="absolute inset-0 bg-indigo-400 rounded-lg animate-ping opacity-75"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Progress milestones (like delivery stops) */}
-          {queuedEmails.length > 0 && (
-            <div className="relative mt-6">
-              {/* Milestone markers */}
-              <div className="flex justify-between items-start">
-                {queuedEmails.map((queued, index) => {
-                  const scheduledDate = new Date(queued.scheduledAt)
-                  const timeStr = scheduledDate.toLocaleTimeString('en-US', { 
-                    hour: 'numeric', 
-                    minute: '2-digit',
-                    hour12: true 
-                  })
-                  const isSent = queued.status === 'sent'
-                  const position = queuedEmails.length > 1 
-                    ? (index / (queuedEmails.length - 1)) * 100 
-                    : 50
-                  const isPassed = position <= currentProgress
-                  
-                  return (
-                    <div 
-                      key={queued.id} 
-                      className="flex flex-col items-center flex-1"
-                      style={{ maxWidth: queuedEmails.length > 1 ? `${100 / queuedEmails.length}%` : '100%' }}
-                    >
-                      {/* Milestone dot */}
-                      <div className="relative mb-2">
-                        <div 
-                          className={`w-3 h-3 rounded-full transition-all duration-500 ${
-                            isSent
-                              ? 'bg-green-500 shadow-lg shadow-green-500/50'
-                              : isPassed
-                              ? 'bg-indigo-500 shadow-lg shadow-indigo-500/50'
-                              : 'bg-gray-300'
-                          }`}
-                        />
-                        {isSent && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                          </div>
-                        )}
-                      </div>
-                      {/* Time label */}
-                      <div className={`text-xs font-medium text-center transition-colors ${
-                        isSent 
-                          ? 'text-green-600' 
-                          : isPassed 
-                          ? 'text-indigo-600' 
-                          : 'text-gray-500'
-                      }`}>
-                        {timeStr}
-                      </div>
-                    </div>
-                  )
-                })}
               </div>
             </div>
           )}
         </div>
-      </div>
 
-      {/* Inline style for shimmer animation */}
-      <style dangerouslySetInnerHTML={{
-        __html: `
-          @keyframes shimmer {
-            0% {
-              transform: translateX(-100%);
-            }
-            100% {
-              transform: translateX(200%);
-            }
-          }
-        `
-      }} />
+        {/* Professional Progress Bar */}
+        <div className="relative mb-6">
+          {/* Background track */}
+          <div className="relative h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            {/* Progress fill */}
+            <div 
+              className={`h-full rounded-full transition-all duration-1000 ease-out ${
+                isBatchComplete ? 'bg-green-600' : 'bg-blue-600'
+              }`}
+              style={{ width: `${isBatchComplete ? 100 : currentProgress}%` }}
+            />
+          </div>
+          
+          {/* Progress percentage indicator */}
+          <div className="flex justify-between items-center mt-2">
+            <span className={`text-xs font-medium ${
+              isBatchComplete ? 'text-green-600' : 'text-gray-500'
+            }`}>
+              {isBatchComplete ? '100% Complete' : `${Math.round(currentProgress)}% Complete`}
+            </span>
+            <div className="flex items-center gap-1 text-xs text-gray-500">
+              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              <span className="font-medium">Email Delivery</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Batch Analytics (when complete) or Simplified Timeline */}
+        {isBatchComplete && batchAnalytics ? (
+          <div className="border-t border-gray-100 pt-4">
+            <div className="bg-green-50 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-1">
+                    Batch Completed Successfully
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-gray-600">
+                    <span className="flex items-center gap-1">
+                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="font-medium text-gray-900">{batchAnalytics.totalSent}</span> emails sent
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="font-medium text-gray-900">{batchAnalytics.timeTaken}</span> total time
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right text-xs text-gray-500">
+                  <div>{batchAnalytics.startTime} - {batchAnalytics.endTime}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : queuedEmails.length > 0 ? (
+          <div className="border-t border-gray-100 pt-4">
+            {/* Simplified Timeline - Just show summary */}
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2 text-gray-600">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>
+                  {(() => {
+                    const firstEmail = queuedEmails[0]
+                    const lastEmail = queuedEmails[queuedEmails.length - 1]
+                    const firstDate = new Date(firstEmail.scheduledAt)
+                    const lastDate = new Date(lastEmail.scheduledAt)
+                    const firstStr = firstDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                    const lastStr = lastDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                    
+                    if (firstStr === lastStr) {
+                      return `Scheduled for ${firstStr}`
+                    }
+                    return `Scheduled from ${firstStr} to ${lastStr}`
+                  })()}
+                </span>
+              </div>
+              <div className="text-xs text-gray-500">
+                {sentCount} sent • {pendingCount} pending
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

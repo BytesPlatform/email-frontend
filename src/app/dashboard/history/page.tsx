@@ -203,6 +203,16 @@ export default function HistoryPage() {
 
   // Pagination
   const totalPages = Math.ceil(dateFilteredItems.length / itemsPerPage)
+  
+  // Ensure current page is valid after filtering
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages)
+    } else if (currentPage > 0 && totalPages === 0) {
+      setCurrentPage(1)
+    }
+  }, [totalPages, currentPage])
+
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedItems = dateFilteredItems.slice(startIndex, endIndex)
