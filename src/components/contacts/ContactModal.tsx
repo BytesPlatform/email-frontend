@@ -24,7 +24,6 @@ interface ContactModalProps {
   editWebsite: string
   editState: string
   editZipCode: string
-  editStatus: string
   editValidFlag: boolean | null
   onEditEmailChange: (value: string) => void
   onEditPhoneChange: (value: string) => void
@@ -32,7 +31,6 @@ interface ContactModalProps {
   onEditWebsiteChange: (value: string) => void
   onEditStateChange: (value: string) => void
   onEditZipCodeChange: (value: string) => void
-  onEditStatusChange: (value: string) => void
   onEditValidFlagChange: (value: boolean) => void
   onSave: () => void
   onSaveDetails: () => void
@@ -57,7 +55,6 @@ export function ContactModal({
   editWebsite,
   editState,
   editZipCode,
-  editStatus,
   editValidFlag,
   onEditEmailChange,
   onEditPhoneChange,
@@ -65,7 +62,6 @@ export function ContactModal({
   onEditWebsiteChange,
   onEditStateChange,
   onEditZipCodeChange,
-  onEditStatusChange,
   onEditValidFlagChange,
   onSave,
   onSaveDetails,
@@ -220,7 +216,7 @@ export function ContactModal({
                     Zip Code
                   </dt>
                   <dd className="text-sm text-slate-700">
-                    {contact.zipCode || '—'}
+                    {contact.zipCode ? String(contact.zipCode) : '—'}
                   </dd>
                 </div>
                 <div>
@@ -367,19 +363,10 @@ export function ContactModal({
                         Zip Code
                       </label>
                       <Input
-                        value={editZipCode}
+                        type="text"
+                        value={String(editZipCode || '')}
                         onChange={event => onEditZipCodeChange(event.target.value)}
                         placeholder="90210"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Status
-                      </label>
-                      <Input
-                        value={editStatus}
-                        onChange={event => onEditStatusChange(event.target.value)}
-                        placeholder="new | contacted | customer"
                       />
                     </div>
                     <div className="flex items-center space-x-3 pt-6">

@@ -59,17 +59,17 @@ export function ContactsTable({
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
-      <div className="overflow-x-auto">
-        <table className="w-full divide-y divide-slate-200">
+      <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <table className="w-full divide-y divide-slate-200 table-fixed">
           <colgroup>
-            {showCheckboxes && <col className="w-12" />}
-            <col className="w-auto" style={{ minWidth: '200px' }} />
-            <col className="w-20" />
-            <col className="w-24" />
-            <col className="w-auto" style={{ minWidth: '120px' }} />
-            <col className="w-auto" style={{ minWidth: '140px' }} />
-            <col className="w-auto" style={{ minWidth: '180px' }} />
-            <col className="w-28" />
+            {showCheckboxes && <col style={{ width: '40px' }} />}
+            <col style={{ width: '18%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '16%' }} />
+            <col style={{ width: '20%' }} />
+            <col style={{ width: '12%' }} />
           </colgroup>
           <thead className="bg-gradient-to-r from-slate-50 to-slate-100">
             <tr>
@@ -78,39 +78,63 @@ export function ContactsTable({
                   <span className="sr-only">Select</span>
                 </th>
               )}
-              <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
+              <th className="px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
                 Business
               </th>
-              <th className="px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
+              <th className="px-2 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
                 State
               </th>
-              <th className="px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
+              <th className="px-2 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
                 Zip
               </th>
-              <th className="px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
+              <th className="px-2 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
                 Phone
               </th>
-              <th className="px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
+              <th className="px-2 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
                 Website
               </th>
-              <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
+              <th className="px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
                 Email
               </th>
-              <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
+              <th className="px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
                 Status
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-100">
             {isLoading && (
-              <tr>
-                <td colSpan={showCheckboxes ? 8 : 7} className="px-6 py-12 text-center">
-                  <div className="flex flex-col items-center justify-center space-y-3">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                    <p className="text-sm text-slate-500 font-medium">Loading contacts…</p>
-                  </div>
-                </td>
-              </tr>
+              <>
+                {[...Array(10)].map((_, index) => (
+                  <tr key={`skeleton-${index}`} className="animate-pulse">
+                    {showCheckboxes && (
+                      <td className="px-3 py-4">
+                        <div className="h-4 w-4 bg-slate-200 rounded"></div>
+                      </td>
+                    )}
+                    <td className="px-3 py-4">
+                      <div className="h-5 bg-slate-200 rounded w-3/4"></div>
+                    </td>
+                    <td className="px-2 py-4">
+                      <div className="h-6 bg-slate-200 rounded-full w-16"></div>
+                    </td>
+                    <td className="px-2 py-4">
+                      <div className="h-4 bg-slate-200 rounded w-12"></div>
+                    </td>
+                    <td className="px-2 py-4">
+                      <div className="h-4 bg-slate-200 rounded w-24"></div>
+                    </td>
+                    <td className="px-2 py-4">
+                      <div className="h-4 bg-slate-200 rounded w-32"></div>
+                    </td>
+                    <td className="px-3 py-4">
+                      <div className="h-4 bg-slate-200 rounded w-40"></div>
+                    </td>
+                    <td className="px-3 py-4">
+                      <div className="h-6 bg-slate-200 rounded-full w-20"></div>
+                    </td>
+                  </tr>
+                ))}
+              </>
             )}
 
             {error && !isLoading && (
@@ -160,7 +184,7 @@ export function ContactsTable({
                     }`}
                   >
                     {showCheckboxes && (
-                      <td className="px-4 py-4" onClick={event => event.stopPropagation()}>
+                      <td className="px-3 py-4" onClick={event => event.stopPropagation()}>
                         {isInvalid ? (
                           <label className="flex items-center cursor-pointer">
                             <input
@@ -177,7 +201,7 @@ export function ContactsTable({
                       </td>
                     )}
                     <td
-                      className="px-4 py-4 cursor-pointer group"
+                      className="px-3 py-4 cursor-pointer group"
                       onClick={() => onSelectContact(contact.id)}
                     >
                       <div className="flex items-center space-x-2 min-w-0">
@@ -192,7 +216,7 @@ export function ContactsTable({
                       </div>
                     </td>
                     <td
-                      className="px-3 py-4 text-slate-700 cursor-pointer"
+                      className="px-2 py-4 text-slate-700 cursor-pointer"
                       onClick={() => onSelectContact(contact.id)}
                     >
                       {contact.state ? (
@@ -204,13 +228,17 @@ export function ContactsTable({
                       )}
                     </td>
                     <td
-                      className="px-3 py-4 text-slate-600 cursor-pointer text-sm"
+                      className="px-2 py-4 text-slate-600 cursor-pointer text-sm"
                       onClick={() => onSelectContact(contact.id)}
                     >
-                      {contact.zipCode || <span className="text-slate-400">—</span>}
+                      {contact.zipCode ? (() => {
+                        const zipStr = String(contact.zipCode)
+                        // Remove trailing .0 if present (e.g., "2138.0" -> "2138")
+                        return zipStr.replace(/\.0+$/, '')
+                      })() : <span className="text-slate-400">—</span>}
                     </td>
                     <td
-                      className="px-3 py-4 cursor-pointer"
+                      className="px-2 py-4 cursor-pointer"
                       onClick={() => onSelectContact(contact.id)}
                     >
                       {contact.phone ? (
@@ -225,7 +253,7 @@ export function ContactsTable({
                       )}
                     </td>
                     <td
-                      className="px-3 py-4 cursor-pointer"
+                      className="px-2 py-4 cursor-pointer"
                       onClick={() => onSelectContact(contact.id)}
                     >
                       {contact.website ? (
@@ -250,7 +278,7 @@ export function ContactsTable({
                       )}
                     </td>
                     <td
-                      className="px-4 py-4 cursor-pointer"
+                      className="px-3 py-4 cursor-pointer"
                       onClick={() => onSelectContact(contact.id)}
                     >
                       {contact.email ? (
@@ -265,7 +293,7 @@ export function ContactsTable({
                       )}
                     </td>
                     <td
-                      className="px-4 py-4 cursor-pointer"
+                      className="px-3 py-4 cursor-pointer"
                       onClick={() => onSelectContact(contact.id)}
                     >
                       <span

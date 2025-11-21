@@ -1,3 +1,12 @@
+export interface ProductService {
+  id?: number
+  name: string
+  description?: string | null
+  type?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
 export interface Client {
   id: number
   email: string
@@ -8,6 +17,7 @@ export interface Client {
   address?: string
   createdAt: string
   updatedAt?: string
+  productsServices?: ProductService[]
 }
 
 export interface ProfileResponse {
@@ -21,6 +31,7 @@ export interface UpdateProfileDto {
   city?: string
   country?: string
   address?: string
+  productsServices?: ProductServiceInput[]
 }
 
 export interface UpdateProfileResponse {
@@ -33,6 +44,12 @@ export interface LoginCredentials {
   password: string
 }
 
+export interface ProductServiceInput {
+  name: string
+  description?: string | null
+  type?: string | null
+}
+
 export interface RegisterData {
   email: string
   password: string
@@ -41,6 +58,9 @@ export interface RegisterData {
   city?: string
   country?: string
   address?: string
+  companyName?: string
+  companyDescription?: string
+  productsServices?: ProductServiceInput[]
 }
 
 export interface AuthResponse {

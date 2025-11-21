@@ -84,6 +84,14 @@ export default function ScrapingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client?.id])
 
+  // Recalculate stats when contacts change and we're showing all contacts
+  useEffect(() => {
+    if (showAllContacts && readyContacts.length > 0) {
+      const calculatedStats = calculateStatsFromContacts(readyContacts)
+      setStats(calculatedStats)
+    }
+  }, [readyContacts, showAllContacts])
+
   
 
   const handleContactSelect = (contactId: number) => {
@@ -110,6 +118,29 @@ export default function ScrapingPage() {
 
   // ===== Backend API integration (batch, stats, ready) =====
   
+  // Calculate stats from contacts array
+  const calculateStatsFromContacts = (contacts: ReadyContact[]) => {
+    const totalContacts = contacts.length
+    const readyToScrape = contacts.filter(c => c.status === 'ready_to_scrape').length
+    const scraping = contacts.filter(c => c.status === 'scraping').length
+    const scraped = contacts.filter(c => c.status === 'scraped').length
+    const scrapeFailed = contacts.filter(c => c.status === 'scrape_failed').length
+
+    return {
+      uploadId: 0, // No specific upload when showing all contacts
+      totalContacts,
+      readyToScrape,
+      scraping,
+      scraped,
+      scrapeFailed,
+      byStatus: {
+        ready_to_scrape: readyToScrape,
+        scraping,
+        scraped,
+        scrape_failed: scrapeFailed,
+      }
+    }
+  }
 
   const fetchStats = async () => {
     if (!currentUploadId) return
@@ -158,10 +189,7 @@ export default function ScrapingPage() {
         setReadyContacts(transformed)
         setHasFetchedReadyAndStats(true)
         
-        // Fetch stats after getting all contacts (if currentUploadId exists)
-        if (currentUploadId) {
-          await fetchStats()
-        }
+        // Stats will be calculated automatically by useEffect when readyContacts changes
         
         // Auto-open modal to manage records (only if not preserving filter)
         if (!preserveFilter) {

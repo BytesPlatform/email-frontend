@@ -1,11 +1,22 @@
 import { useState, useEffect } from 'react'
-import { Client, AuthState } from '@/types/auth'
+import { Client, AuthState, ProductServiceInput } from '@/types/auth'
 import { auth } from '@/api/auth'
 
 export function useAuth(): AuthState & {
   user: Client | null
   login: (email: string, password: string) => Promise<boolean>
-  register: (email: string, password: string, name: string, phone?: string, city?: string, country?: string, address?: string) => Promise<boolean>
+  register: (
+    email: string,
+    password: string,
+    name: string,
+    phone?: string,
+    city?: string,
+    country?: string,
+    address?: string,
+    companyName?: string,
+    companyDescription?: string,
+    productsServices?: ProductServiceInput[]
+  ) => Promise<boolean>
   logout: () => Promise<void>
   updateProfile: (data: { name?: string; email?: string; currentPassword?: string; newPassword?: string }) => Promise<boolean>
 } {
@@ -57,18 +68,43 @@ export function useAuth(): AuthState & {
     }
   }
 
-  const register = async (email: string, password: string, name: string, phone?: string, city?: string, country?: string, address?: string): Promise<boolean> => {
+  const register = async (
+    email: string,
+    password: string,
+    name: string,
+    phone?: string,
+    city?: string,
+    country?: string,
+    address?: string,
+    companyName?: string,
+    companyDescription?: string,
+    productsServices?: ProductServiceInput[]
+  ): Promise<boolean> => {
     setIsLoading(true)
     setError(null)
 
     try {
       // Filter out undefined or empty values to avoid sending them to backend
-      const registerData: { email: string; password: string; name: string; phone?: string; city?: string; country?: string; address?: string } = { email, password, name }
+      const registerData: {
+        email: string
+        password: string
+        name: string
+        phone?: string
+        city?: string
+        country?: string
+        address?: string
+        companyName?: string
+        companyDescription?: string
+        productsServices?: ProductServiceInput[]
+      } = { email, password, name }
       
       if (phone && phone.trim()) registerData.phone = phone.trim()
       if (city && city.trim()) registerData.city = city.trim()
       if (country && country.trim()) registerData.country = country.trim()
       if (address && address.trim()) registerData.address = address.trim()
+      if (companyName && companyName.trim()) registerData.companyName = companyName.trim()
+      if (companyDescription && companyDescription.trim()) registerData.companyDescription = companyDescription.trim()
+      if (productsServices && productsServices.length > 0) registerData.productsServices = productsServices
       
       const result = await auth.signup(registerData)
       
