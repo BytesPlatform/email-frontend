@@ -390,8 +390,7 @@ export default function ContactsPage() {
         setEditBusinessName(contact.businessName || '')
         setEditWebsite(contact.website || '')
         setEditStateValue(contact.state || '')
-        setEditZipCode(contact.zipCode || '')
-        setEditStatus(contact.status || '')
+        setEditZipCode(contact.zipCode ? String(contact.zipCode) : '')
         setEditValidFlag(
           typeof contact.valid === 'boolean'
             ? contact.valid
@@ -426,11 +425,10 @@ export default function ContactsPage() {
     setEditError(null)
     setEditSuccess(null)
     setEditBusinessName('')
-    setEditWebsite('')
-    setEditStateValue('')
-    setEditZipCode('')
-    setEditStatus('')
-    setEditValidFlag(null)
+        setEditWebsite('')
+        setEditStateValue('')
+        setEditZipCode('')
+        setEditValidFlag(null)
   }
 
   const handleSaveContact = async () => {
@@ -498,8 +496,7 @@ export default function ContactsPage() {
       setEditBusinessName(updatedContact.businessName || '')
       setEditWebsite(updatedContact.website || '')
       setEditStateValue(updatedContact.state || '')
-      setEditZipCode(updatedContact.zipCode || '')
-      setEditStatus(updatedContact.status || '')
+      setEditZipCode(updatedContact.zipCode ? String(updatedContact.zipCode) : '')
       setEditValidFlag(
         typeof updatedContact.valid === 'boolean'
           ? updatedContact.valid
@@ -816,8 +813,7 @@ export default function ContactsPage() {
         phone: normalizeNullable(editPhone),
         website: normalizeNullable(editWebsite),
         state: normalizeNullable(editStateValue),
-        zipCode: normalizeNullable(editZipCode),
-        status: normalizeString(editStatus),
+        zipCode: editZipCode ? String(editZipCode).trim() || null : null,
         valid: typeof editValidFlag === 'boolean' ? editValidFlag : undefined
       }
 
@@ -845,8 +841,7 @@ export default function ContactsPage() {
       setEditBusinessName(updatedContact.businessName || '')
       setEditWebsite(updatedContact.website || '')
       setEditStateValue(updatedContact.state || '')
-      setEditZipCode(updatedContact.zipCode || '')
-      setEditStatus(updatedContact.status || '')
+      setEditZipCode(updatedContact.zipCode ? String(updatedContact.zipCode) : '')
       setEditValidFlag(
         typeof updatedContact.valid === 'boolean'
           ? updatedContact.valid
@@ -998,7 +993,7 @@ export default function ContactsPage() {
   return (
     <AuthGuard>
       <div className="bg-gray-50 min-h-screen">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 pb-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-4 lg:px-6 py-6 pb-24">
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-lg">
               <div className="flex items-center justify-between">
@@ -1424,7 +1419,6 @@ export default function ContactsPage() {
               editWebsite={editWebsite}
               editState={editStateValue}
               editZipCode={editZipCode}
-              editStatus={editStatus}
               editValidFlag={editValidFlag}
               onEditEmailChange={setEditEmail}
               onEditPhoneChange={setEditPhone}
@@ -1432,7 +1426,6 @@ export default function ContactsPage() {
               onEditWebsiteChange={setEditWebsite}
               onEditStateChange={setEditStateValue}
               onEditZipCodeChange={setEditZipCode}
-              onEditStatusChange={setEditStatus}
               onEditValidFlagChange={setEditValidFlag}
               onSave={handleSaveContact}
                onSaveDetails={handleSaveContactDetails}
@@ -1443,8 +1436,7 @@ export default function ContactsPage() {
                   setEditBusinessName(selectedContact.businessName || '')
                   setEditWebsite(selectedContact.website || '')
                   setEditStateValue(selectedContact.state || '')
-                  setEditZipCode(selectedContact.zipCode || '')
-                  setEditStatus(selectedContact.status || '')
+                  setEditZipCode(selectedContact.zipCode ? String(selectedContact.zipCode) : '')
                   setEditValidFlag(
                     typeof selectedContact.valid === 'boolean'
                       ? selectedContact.valid
