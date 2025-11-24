@@ -1,8 +1,10 @@
 export interface ProductService {
+  businessName?: string | null
   id?: number
   name: string
   description?: string | null
   type?: string | null
+
   createdAt?: string
   updatedAt?: string
 }
@@ -45,6 +47,7 @@ export interface LoginCredentials {
 }
 
 export interface ProductServiceInput {
+  id?: number
   name: string
   description?: string | null
   type?: string | null
@@ -58,8 +61,7 @@ export interface RegisterData {
   city?: string
   country?: string
   address?: string
-  companyName?: string
-  companyDescription?: string
+  businessName?: string
   productsServices?: ProductServiceInput[]
 }
 

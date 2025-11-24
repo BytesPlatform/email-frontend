@@ -15,6 +15,7 @@ export function useAuth(): AuthState & {
     address?: string,
     companyName?: string,
     companyDescription?: string,
+    businessName?: string,
     productsServices?: ProductServiceInput[]
   ) => Promise<boolean>
   logout: () => Promise<void>
@@ -78,6 +79,7 @@ export function useAuth(): AuthState & {
     address?: string,
     companyName?: string,
     companyDescription?: string,
+    businessName?: string,
     productsServices?: ProductServiceInput[]
   ): Promise<boolean> => {
     setIsLoading(true)
@@ -95,6 +97,7 @@ export function useAuth(): AuthState & {
         address?: string
         companyName?: string
         companyDescription?: string
+        businessName?: string
         productsServices?: ProductServiceInput[]
       } = { email, password, name }
       
@@ -104,6 +107,7 @@ export function useAuth(): AuthState & {
       if (address && address.trim()) registerData.address = address.trim()
       if (companyName && companyName.trim()) registerData.companyName = companyName.trim()
       if (companyDescription && companyDescription.trim()) registerData.companyDescription = companyDescription.trim()
+      if (businessName && businessName.trim()) registerData.businessName = businessName.trim()
       if (productsServices && productsServices.length > 0) registerData.productsServices = productsServices
       
       const result = await auth.signup(registerData)

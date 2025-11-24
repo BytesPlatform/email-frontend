@@ -53,6 +53,7 @@ export function ProfileForm() {
         // Load products/services
         if (profileData.productsServices && profileData.productsServices.length > 0) {
           setProductsServices(profileData.productsServices.map(ps => ({
+            id: ps.id,
             name: ps.name || '',
             description: ps.description || '',
             type: ps.type || '',
@@ -100,6 +101,7 @@ export function ProfileForm() {
       country: country || undefined,
       address: address || undefined,
       productsServices: productsServices.length > 0 ? productsServices.filter(ps => ps.name?.trim()).map(ps => ({
+        id: ps.id,
         name: ps.name.trim(),
         description: ps.description?.trim() || null,
         type: ps.type?.trim() || null,
@@ -140,6 +142,7 @@ export function ProfileForm() {
       // Reset products/services
       if (profile.productsServices && profile.productsServices.length > 0) {
         setProductsServices(profile.productsServices.map(ps => ({
+          businessName: ps.businessName || '',
           name: ps.name || '',
           description: ps.description || '',
           type: ps.type || '',
@@ -202,6 +205,7 @@ export function ProfileForm() {
     const validProductsServices = productsServices
       .filter(ps => ps.name?.trim() && ps.type?.trim())
       .map(ps => ({
+        id: ps.id,
         name: ps.name.trim(),
         description: ps.description?.trim() || null,
         type: ps.type?.trim() || '', // Type is required when name exists
@@ -648,6 +652,17 @@ export function ProfileForm() {
             )}
           </div>
           <div className="p-6">
+            {/* Display Business Name (read-only) */}
+            {profile?.productsServices && profile.productsServices.length > 0 && profile.productsServices[0]?.businessName && (
+              <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-medium text-slate-600">Business Name:</span>
+                  <span className="text-sm font-semibold text-slate-900">{profile.productsServices[0].businessName}</span>
+                  <span className="text-xs text-slate-500 ml-2"></span>
+                </div>
+              </div>
+            )}
+            
             <form onSubmit={handleProductsUpdate} className="space-y-6">
               {errors.general && (
                 <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded">
@@ -769,6 +784,7 @@ export function ProfileForm() {
                           // Reset to original values
                           if (profile?.productsServices && profile.productsServices.length > 0) {
                             setProductsServices(profile.productsServices.map(ps => ({
+                              id: ps.id,
                               name: ps.name || '',
                               description: ps.description || '',
                               type: ps.type || '',
