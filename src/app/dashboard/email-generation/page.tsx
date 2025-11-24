@@ -14,6 +14,7 @@ import { RecordsTable } from '@/components/email-generation/RecordsTable'
 import { PaginationControls } from '@/components/email-generation/PaginationControls'
 import { ErrorMessage } from '@/components/email-generation/ErrorMessage'
 import { EmailBodyOverlay } from '@/components/email-generation/EmailBodyOverlay'
+import { SummaryModal } from '@/components/email-generation/SummaryModal'
 import { useEmailGenerationState } from '@/hooks/useEmailGenerationState'
 import { useEmailGenerationAPI } from '@/hooks/useEmailGenerationAPI'
 import { copyToClipboard } from '@/lib/utils'
@@ -66,6 +67,17 @@ export default function EmailGenerationPage() {
     title: '',
     message: '',
     variant: 'info'
+  })
+
+  // Summary modal state
+  const [summaryModal, setSummaryModal] = useState<{
+    isOpen: boolean
+    summary: BusinessSummary | null
+    businessName?: string
+  }>({
+    isOpen: false,
+    summary: null,
+    businessName: undefined
   })
 
   const hydrateSummariesForRecords = useCallback(
@@ -1113,9 +1125,13 @@ export default function EmailGenerationPage() {
     const record = state.scrapedRecords.find(r => r.id === recordId)
     if (!record) return
 
-    // If summary is already loaded, just open drawer in summary-only mode
+    // If summary is already loaded, just open modal
     if (record.generatedSummary) {
-      openDrawer(record, 'summary-only')
+      setSummaryModal({
+        isOpen: true,
+        summary: record.generatedSummary,
+        businessName: record.businessName
+      })
       return
     }
 
@@ -1146,8 +1162,12 @@ export default function EmailGenerationPage() {
           )
         }))
         
-        // Open drawer with updated record in summary-only mode
-        openDrawer(updatedRecord, 'summary-only')
+        // Open modal with fetched summary
+        setSummaryModal({
+          isOpen: true,
+          summary: summary,
+          businessName: record.businessName
+        })
       } else {
         setState(prev => ({
           ...prev,
@@ -1621,6 +1641,14 @@ export default function EmailGenerationPage() {
           }}
         />
       )}
+
+      {/* Summary Modal */}
+      <SummaryModal
+        isOpen={summaryModal.isOpen}
+        summary={summaryModal.summary}
+        businessName={summaryModal.businessName}
+        onClose={() => setSummaryModal({ isOpen: false, summary: null, businessName: undefined })}
+      />
 
       {/* Confirmation Dialog */}
       <ConfirmDialog
