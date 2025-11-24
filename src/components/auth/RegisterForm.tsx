@@ -17,8 +17,7 @@ export function RegisterForm() {
   const [city, setCity] = useState('')
   const [country, setCountry] = useState('')
   const [address, setAddress] = useState('')
-  const [companyName, setCompanyName] = useState('')
-  const [companyDescription, setCompanyDescription] = useState('')
+  const [businessName, setBusinessName] = useState('')
   const [productsServices, setProductsServices] = useState<ProductServiceInput[]>([{ name: '', description: '', type: '' }])
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
   const { register, isLoading } = useAuth()
@@ -73,7 +72,7 @@ export function RegisterForm() {
       newErrors.confirmPassword = 'Passwords do not match'
     }
 
-    // Validate products/services - name and type are required together
+    // Validate products/services
     productsServices.forEach((ps, index) => {
       const hasName = ps.name?.trim()
       const hasDescription = ps.description?.trim()
@@ -85,7 +84,7 @@ export function RegisterForm() {
         newErrors[`productService_${index}_name`] = 'Product/Service name is required'
       }
       
-      // If name is filled, type is required (sequential requirement)
+      // If name is filled, type is required
       if (hasName && !hasType) {
         newErrors[`productService_${index}_type`] = 'Type is required (Product or Service)'
       }
@@ -101,13 +100,13 @@ export function RegisterForm() {
       return
     }
 
-    // Filter out empty products/services - must have both name and type (sequential requirement)
-    const validProductsServices = productsServices
+    // Filter out empty products/services
+    const validProductsServices: ProductServiceInput[] = productsServices
       .filter(ps => ps.name?.trim() && ps.type?.trim())
       .map(ps => ({
         name: ps.name.trim(),
         description: ps.description?.trim() || null,
-        type: ps.type?.trim() || '', // Type is required when name exists
+        type: ps.type?.trim() || '',
       }))
 
     const success = await register(
@@ -118,9 +117,10 @@ export function RegisterForm() {
       city,
       country,
       address,
-      companyName,
-      companyDescription,
-      validProductsServices.length > 0 ? validProductsServices : undefined
+      undefined, // companyName
+      undefined, // companyDescription
+      businessName || undefined, // businessName
+      validProductsServices.length > 0 ? validProductsServices : undefined 
     )
     if (success) {
       router.push('/dashboard')
@@ -147,7 +147,7 @@ export function RegisterForm() {
       </div>
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6" data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false">
         {errors.general && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm text-center p-4 rounded-lg">
             <div className="flex items-center justify-center space-x-2">
@@ -248,36 +248,16 @@ export function RegisterForm() {
             error={errors.address}
             placeholder="123 Main Street, Apt 4B"
           />
-        </div>
-
-        {/* Company Information Section */}
-        <div className="space-y-4">
-          <div className="border-b border-slate-200 pb-2">
-            <h3 className="text-lg font-semibold text-slate-900">Company Information</h3>
-            <p className="text-sm text-slate-500">Tell us about your company</p>
-          </div>
-
+          
           <Input
-            label="Company Name"
+            label="Business Name"
             type="text"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            error={errors.companyName}
-            placeholder="Acme Corporation"
+            value={businessName}
+            onChange={(e) => setBusinessName(e.target.value)}
+            error={errors.businessName}
+            placeholder="Your business/company name (optional)"
+            helperText=""
           />
-
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
-              Company Description
-            </label>
-            <textarea
-              value={companyDescription}
-              onChange={(e) => setCompanyDescription(e.target.value)}
-              rows={4}
-              className="w-full px-4 py-3 text-sm text-slate-900 placeholder-slate-400 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all hover:border-slate-400"
-              placeholder="Describe your company, what you do, and your mission..."
-            />
-          </div>
         </div>
 
         {/* Products/Services Section */}
@@ -317,22 +297,20 @@ export function RegisterForm() {
                   )}
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Input
-                      label="Name"
-                      type="text"
-                      value={ps.name || ''}
-                      onChange={(e) => updateProductService(index, 'name', e.target.value)}
-                      error={errors[`productService_${index}_name`]}
-                      placeholder="Product/Service name"
-                      required={!!(ps.type || ps.description)}
-                    />
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="Name"
+                    type="text"
+                    value={ps.name || ''}
+                    onChange={(e) => updateProductService(index, 'name', e.target.value)}
+                    error={errors[`productService_${index}_name`]}
+                    placeholder="Product/Service name"
+                    required={!!(ps.type || ps.description)}
+                  />
                   
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Type <span className="text-red-500">*</span>
+                      Type {ps.name?.trim() && <span className="text-red-500">*</span>}
                     </label>
                     <div className="relative">
                       <select
@@ -364,6 +342,9 @@ export function RegisterForm() {
                       value={ps.description || ''}
                       onChange={(e) => updateProductService(index, 'description', e.target.value)}
                       rows={2}
+                      data-gramm="false"
+                      data-gramm_editor="false"
+                      data-enable-grammarly="false"
                       className="w-full px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none hover:border-slate-400"
                       placeholder="Brief description..."
                     />
