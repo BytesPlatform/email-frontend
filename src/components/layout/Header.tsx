@@ -34,7 +34,7 @@ export function Header() {
   const handleLogout = async () => {
     // Clear authentication state first
     await logout()
-    
+
     // Redirect to home page after logout completes
     // Use window.location to force a full page reload and clear any cached state
     if (typeof window !== 'undefined') {
@@ -83,93 +83,86 @@ export function Header() {
           <div className="hidden md:flex items-center justify-center flex-1 mx-8">
             {isAuthenticated ? (
               <div className="flex items-center gap-1">
-                <Link 
-                  href="/dashboard/csv-ingestion" 
-                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
-                    isActive('/dashboard/csv-ingestion') 
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
+                <Link
+                  href="/dashboard/csv-ingestion"
+                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${isActive('/dashboard/csv-ingestion')
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                       : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   CSV Ingestion
                 </Link>
-                <Link 
-                  href="/dashboard/contacts" 
-                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
-                    isActive('/dashboard/contacts') 
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
+                <Link
+                  href="/dashboard/contacts"
+                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${isActive('/dashboard/contacts')
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                       : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   Contacts
                 </Link>
-                <Link 
-                  href="/dashboard/scraping" 
-                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
-                    isActive('/dashboard/scraping') 
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
+                <Link
+                  href="/dashboard/scraping"
+                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${isActive('/dashboard/scraping')
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                       : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   Scraping
                 </Link>
-                <Link 
-                  href="/dashboard/email-generation" 
-                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
-                    isActive('/dashboard/email-generation') 
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
+                <Link
+                  href="/dashboard/email-generation"
+                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${isActive('/dashboard/email-generation')
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                       : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   Generation
                 </Link>
-                <Link 
-                  href="/dashboard/draft" 
-                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
-                    isActive('/dashboard/draft') 
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
+                <Link
+                  href="/dashboard/draft"
+                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${isActive('/dashboard/draft')
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                       : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   Drafts
                 </Link>
-                <Link 
-                  href="/dashboard/history" 
-                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
-                    isActive('/dashboard/history') 
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
+                <Link
+                  href="/dashboard/history"
+                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${isActive('/dashboard/history')
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                       : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   History
                 </Link>
-                <Link 
-                  href="/dashboard/analytics" 
-                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${
-                    isActive('/dashboard/analytics') 
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' 
+                <Link
+                  href="/dashboard/analytics"
+                  className={`px-4 py-2 rounded-lg font-medium  transition-all duration-200 ${isActive('/dashboard/analytics')
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                       : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   Analytics
                 </Link>
               </div>
             ) : (
               <>
-                <Link 
-                  href="/#features" 
+                <Link
+                  href="/#features"
                   className="px-4 py-2 rounded-lg font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 >
                   Features
                 </Link>
-                <Link 
-                  href="/#pricing" 
+                <Link
+                  href="/#pricing"
                   className="px-4 py-2 rounded-lg font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 >
                   Pricing
                 </Link>
-                <Link 
-                  href="/#about" 
+                <Link
+                  href="/#about"
                   className="px-4 py-2 rounded-lg font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 >
                   About
@@ -179,7 +172,7 @@ export function Header() {
           </div>
 
           {/* Desktop Auth Buttons - Right Section */}
-          <div className="hidden md:flex items-center flex-shrink-0">
+          <div className="hidden md:flex items-center gap-3 flex-shrink-0">
             {isAuthenticated ? (
               <>
                 {/* Bytes Platform with User Dropdown */}
@@ -210,11 +203,10 @@ export function Header() {
                           onClick={() => {
                             setIsUserDropdownOpen(false)
                           }}
-                          className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                            isActive('/dashboard')
+                          className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isActive('/dashboard')
                               ? 'bg-indigo-50 text-indigo-700'
                               : 'text-slate-700 hover:bg-slate-50'
-                          }`}
+                            }`}
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -226,11 +218,10 @@ export function Header() {
                           onClick={() => {
                             setIsUserDropdownOpen(false)
                           }}
-                          className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                            isActive('/dashboard/profile')
+                          className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isActive('/dashboard/profile')
                               ? 'bg-indigo-50 text-indigo-700'
                               : 'text-slate-700 hover:bg-slate-50'
-                          }`}
+                            }`}
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -242,11 +233,10 @@ export function Header() {
                           onClick={() => {
                             setIsUserDropdownOpen(false)
                           }}
-                          className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                            isActive('/dashboard/draft')
+                          className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isActive('/dashboard/draft')
                               ? 'bg-indigo-50 text-indigo-700'
                               : 'text-slate-700 hover:bg-slate-50'
-                          }`}
+                            }`}
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -320,83 +310,76 @@ export function Header() {
             <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 border-t border-slate-200 bg-slate-50/50 backdrop-blur-sm">
               {isAuthenticated ? (
                 <>
-                  <Link 
-                    href="/dashboard/csv-ingestion" 
-                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${
-                      isActive('/dashboard/csv-ingestion')
+                  <Link
+                    href="/dashboard/csv-ingestion"
+                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${isActive('/dashboard/csv-ingestion')
                         ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-                    }`}
+                      }`}
                     onClick={() => setIsMenuOpen(false)}
                   >
                     CSV Ingestion
                   </Link>
-                  <Link 
-                    href="/dashboard/contacts" 
-                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${
-                      isActive('/dashboard/contacts')
+                  <Link
+                    href="/dashboard/contacts"
+                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${isActive('/dashboard/contacts')
                         ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-                    }`}
+                      }`}
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Contacts
                   </Link>
-                  <Link 
-                    href="/dashboard/scraping" 
-                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${
-                      isActive('/dashboard/scraping')
+                  <Link
+                    href="/dashboard/scraping"
+                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${isActive('/dashboard/scraping')
                         ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-                    }`}
+                      }`}
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Scraping
                   </Link>
-                  <Link 
-                    href="/dashboard/email-generation" 
-                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${
-                      isActive('/dashboard/email-generation')
+                  <Link
+                    href="/dashboard/email-generation"
+                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${isActive('/dashboard/email-generation')
                         ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-                    }`}
+                      }`}
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Email Generation
                   </Link>
-                  <Link 
-                    href="/dashboard/draft" 
-                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${
-                      isActive('/dashboard/draft')
+                  <Link
+                    href="/dashboard/draft"
+                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${isActive('/dashboard/draft')
                         ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-                    }`}
+                      }`}
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Drafts
                   </Link>
-                  <Link 
-                    href="/dashboard/history" 
-                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${
-                      isActive('/dashboard/history')
+                  <Link
+                    href="/dashboard/history"
+                    className={`block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ${isActive('/dashboard/history')
                         ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-                    }`}
+                      }`}
                     onClick={() => setIsMenuOpen(false)}
                   >
                     History
                   </Link>
-                <Link
-                  href="/dashboard/analytics"
-                  className={`block px-4 py-2.5 rounded-lg font-medium transition-all duration-200 ${
-                    isActive('/dashboard/analytics')
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
-                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Analytics
-                </Link>
+                  <Link
+                    href="/dashboard/analytics"
+                    className={`block px-4 py-2.5 rounded-lg font-medium transition-all duration-200 ${isActive('/dashboard/analytics')
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
+                        : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                      }`}
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    Analytics
+                  </Link>
                   <div className="pt-4 border-t border-slate-200 mt-2 space-y-2">
                     {/* Bytes Platform Link */}
                     <button
@@ -456,22 +439,22 @@ export function Header() {
                 </>
               ) : (
                 <>
-                  <Link 
-                    href="/#features" 
+                  <Link
+                    href="/#features"
                     className="block px-3 py-2.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white font-medium transition-all duration-200"
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Features
                   </Link>
-                  <Link 
-                    href="/#pricing" 
+                  <Link
+                    href="/#pricing"
                     className="block px-3 py-2.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white font-medium transition-all duration-200"
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Pricing
                   </Link>
-                  <Link 
-                    href="/#about" 
+                  <Link
+                    href="/#about"
                     className="block px-3 py-2.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white font-medium transition-all duration-200"
                     onClick={() => setIsMenuOpen(false)}
                   >
