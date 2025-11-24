@@ -9,6 +9,14 @@ export interface BusinessSummary {
   strengths: string[]
   opportunities: string[]
   keywords: string[]
+  aiModel?: string
+  createdAt?: string
+  updatedAt?: string
+  scrapedData?: {
+    url: string
+    scrapedAt: string
+    scrapeSuccess: boolean
+  }
   // Legacy fields for backward compatibility
   businessName?: string
   industry?: string
