@@ -5,7 +5,7 @@ import { Skeleton, SkeletonAvatar } from '@/components/common/Skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Card, CardContent, CardHeader } from '@/components/ui/Card'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { isValidEmail } from '@/lib/utils'
 import { auth } from '@/api/auth'
 import { Client, ProductService, ProductServiceInput } from '@/types/auth'
@@ -32,6 +32,7 @@ export function ProfileForm() {
   const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'products'>('profile')
   const [productsServices, setProductsServices] = useState<ProductServiceInput[]>([])
   const [isProductsEditMode, setIsProductsEditMode] = useState(false)
+  const [pendingProductAction, setPendingProductAction] = useState<{ type: 'add' } | { type: 'remove'; index: number } | null>(null)
 
   useEffect(() => {
     fetchProfile()
@@ -161,20 +162,34 @@ export function ProfileForm() {
     setProductsServices(productsServices.filter((_, i) => i !== index))
   }
 
+  const handleConfirmProductAction = async () => {
+    if (!pendingProductAction) return
+    if (pendingProductAction.type === 'add') {
+      addProductService()
+    } else if (pendingProductAction.type === 'remove' && typeof pendingProductAction.index === 'number') {
+      const updatedList = productsServices.filter((_, i) => i !== pendingProductAction.index)
+      setProductsServices(updatedList)
+      await submitProductsServices(updatedList, {
+        exitEditMode: false,
+        successMessage: 'Product/Service removed.',
+      })
+    }
+    setPendingProductAction(null)
+  }
+
+  const handleCancelProductAction = () => {
+    setPendingProductAction(null)
+  }
+
   const updateProductService = (index: number, field: keyof ProductServiceInput, value: string) => {
     const updated = [...productsServices]
     updated[index] = { ...updated[index], [field]: value || null }
     setProductsServices(updated)
   }
 
-  const handleProductsUpdate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrors({})
-    setSuccess('')
-
-    // Validate products/services - name and type are required together
+  const validateProductsServices = (list: ProductServiceInput[]) => {
     const newErrors: { [key: string]: string } = {}
-    productsServices.forEach((ps, index) => {
+    list.forEach((ps, index) => {
       const hasName = ps.name?.trim()
       const hasDescription = ps.description?.trim()
       const hasType = ps.type?.trim()
@@ -196,32 +211,54 @@ export function ProfileForm() {
       }
     })
 
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors)
-      return
+    return newErrors
+  }
+
+  const submitProductsServices = async (
+    list: ProductServiceInput[],
+    {
+      exitEditMode = true,
+      successMessage = 'Products/Services updated successfully!',
+    }: { exitEditMode?: boolean; successMessage?: string } = {}
+  ) => {
+    setErrors({})
+    setSuccess('')
+
+    const validationErrors = validateProductsServices(list)
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors)
+      return false
     }
 
-    // Filter out empty products/services - must have both name and type (sequential requirement)
-    const validProductsServices = productsServices
+    const validProductsServices = list
       .filter(ps => ps.name?.trim() && ps.type?.trim())
       .map(ps => ({
         id: ps.id,
-        name: ps.name.trim(),
+        name: ps.name!.trim(),
         description: ps.description?.trim() || null,
-        type: ps.type?.trim() || '', // Type is required when name exists
+        type: ps.type!.trim(),
       }))
 
-    const response = await auth.updateProfile({ 
-      productsServices: validProductsServices.length > 0 ? validProductsServices : []
+    const response = await auth.updateProfile({
+      productsServices: validProductsServices,
     })
 
     if (response.success && response.data) {
-      setSuccess('Products/Services updated successfully!')
-      setIsProductsEditMode(false)
+      setSuccess(successMessage)
+      if (exitEditMode) {
+        setIsProductsEditMode(false)
+      }
       await fetchProfile()
-    } else {
-      setErrors({ general: response.error || 'Failed to update products/services. Please try again.' })
+      return true
     }
+
+    setErrors({ general: response.error || 'Failed to update products/services. Please try again.' })
+    return false
+  }
+
+  const handleProductsUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await submitProductsServices(productsServices)
   }
 
   const handlePasswordUpdate = async (e: React.FormEvent) => {
@@ -321,6 +358,7 @@ export function ProfileForm() {
   }
 
   return (
+    <>
     <div className="space-y-8">
       {/* Success Message */}
       {success && (
@@ -700,7 +738,7 @@ export function ProfileForm() {
                           <span className="text-sm font-medium text-slate-700">Product/Service #{index + 1}</span>
                           <button
                             type="button"
-                            onClick={() => removeProductService(index)}
+                            onClick={() => setPendingProductAction({ type: 'remove', index })}
                             className="text-red-600 hover:text-red-700 text-sm font-medium"
                           >
                             Remove
@@ -767,7 +805,7 @@ export function ProfileForm() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={addProductService}
+                      onClick={() => setPendingProductAction({ type: 'add' })}
                       className="flex items-center space-x-2"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -980,5 +1018,24 @@ export function ProfileForm() {
         </div>
       )}
     </div>
+    <ConfirmDialog
+      isOpen={!!pendingProductAction}
+      title={
+        pendingProductAction?.type === 'add'
+          ? 'Add another product/service?'
+          : 'Remove this product/service?'
+      }
+      message={
+        pendingProductAction?.type === 'add'
+          ? 'You are about to add a new product/service entry.'
+          : `This will remove Product/Service #${(pendingProductAction?.index ?? 0) + 1}.`
+      }
+      confirmText={pendingProductAction?.type === 'add' ? 'Add Entry' : 'Remove'}
+      cancelText="Cancel"
+      variant={pendingProductAction?.type === 'add' ? 'info' : 'danger'}
+      onConfirm={handleConfirmProductAction}
+      onCancel={handleCancelProductAction}
+    />
+    </>
   )
 }

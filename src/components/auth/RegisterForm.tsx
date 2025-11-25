@@ -20,6 +20,8 @@ export function RegisterForm() {
   const [businessName, setBusinessName] = useState('')
   const [productsServices, setProductsServices] = useState<ProductServiceInput[]>([{ name: '', description: '', type: '' }])
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const { register, isLoading } = useAuth()
   const router = useRouter()
 
@@ -191,23 +193,55 @@ export function RegisterForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
               label="Password"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               error={errors.password}
               helperText="Must be at least 8 characters with uppercase, lowercase, and number"
               required
               placeholder="Create a strong password"
+              rightIcon={
+                showPassword ? (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3.5 3.5 20.5 20.5" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M6.2 6.62C3.86 8.3 2.5 12 2.5 12s3.5 6.5 9.5 6.5c1.7 0 3.2-.3 4.5-.83" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9.5 9.67A3 3 0 0 0 12 15a3 3 0 0 0 2.22-.98" />
+                  </svg>
+                )
+              }
+              onRightIconClick={() => setShowPassword((prev) => !prev)}
+              rightIconLabel={showPassword ? 'Hide password' : 'Show password'}
             />
             
             <Input
               label="Confirm password"
-              type="password"
+              type={showConfirmPassword ? 'text' : 'password'}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               error={errors.confirmPassword}
               required
               placeholder="Confirm your password"
+              rightIcon={
+                showConfirmPassword ? (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3.5 3.5 20.5 20.5" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M6.2 6.62C3.86 8.3 2.5 12 2.5 12s3.5 6.5 9.5 6.5c1.7 0 3.2-.3 4.5-.83" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9.5 9.67A3 3 0 0 0 12 15a3 3 0 0 0 2.22-.98" />
+                  </svg>
+                )
+              }
+              onRightIconClick={() => setShowConfirmPassword((prev) => !prev)}
+              rightIconLabel={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
             />
           </div>
 

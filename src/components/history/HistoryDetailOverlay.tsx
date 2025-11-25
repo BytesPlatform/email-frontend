@@ -8,6 +8,7 @@ interface HistoryDetailOverlayProps {
   item: HistoryItem | null
   isOpen: boolean
   onClose: () => void
+  isLoading?: boolean
   onResubscribe?: (contactId: number) => void
   isResubscribing?: boolean
   onNext?: () => void
@@ -22,6 +23,7 @@ export function HistoryDetailOverlay({
   item, 
   isOpen, 
   onClose, 
+  isLoading = false,
   onResubscribe, 
   isResubscribing = false,
   onNext,
@@ -187,10 +189,23 @@ export function HistoryDetailOverlay({
           {/* Message Body - Large Clean Area */}
           <div className="flex-1 overflow-hidden flex flex-col bg-white">
             <div className="flex-1 overflow-y-auto px-6 py-5">
-              <div 
-                className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: item.message || 'No message content' }}
-              />
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-2"></div>
+                    <div className="text-sm text-gray-500">Loading message...</div>
+                  </div>
+                </div>
+              ) : item.type === 'email-sent' ? (
+                <div 
+                  className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: item.message || 'No message content' }}
+                />
+              ) : (
+                <div className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed">
+                  {item.message || 'No message content'}
+                </div>
+              )}
             </div>
           </div>
 

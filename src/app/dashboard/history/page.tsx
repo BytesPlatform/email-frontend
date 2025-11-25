@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { HistorySidebar, type HistoryViewType } from '@/components/history/HistorySidebar'
 import { HistoryList, type HistoryItem } from '@/components/history/HistoryList'
 import { HistoryFilters } from '@/components/history/HistoryFilters'
@@ -9,6 +9,7 @@ import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { historyApi } from '@/api/history'
 import { emailGenerationApi } from '@/api/emailGeneration'
+import { smsGenerationApi } from '@/api/smsGeneration'
 import { unsubscribeApi } from '@/api/unsubscribe'
 import { clientAccountsApi } from '@/api/clientAccounts'
 import type { SmsLog, EmailLog } from '@/types/history'
@@ -28,6 +29,7 @@ export default function HistoryPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 6
   const [resubscribingContactId, setResubscribingContactId] = useState<number | null>(null)
+  const [isDetailLoading, setIsDetailLoading] = useState(false)
 
   // Transform SMS log to HistoryItem
   const transformSmsLogToHistoryItem = (log: SmsLog): HistoryItem => {
@@ -36,6 +38,7 @@ export default function HistoryPage() {
       type: 'sms-sent',
       contactName: log.contact?.businessName || 'Unknown Contact',
       contactId: log.contactId,
+      smsDraftId: log.smsDraftId || log.smsDraft?.id,
       message: log.smsDraft?.messageText || '',
       sentAt: typeof log.sentAt === 'string' ? log.sentAt : log.sentAt.toISOString(),
       status: log.status,
@@ -60,6 +63,7 @@ export default function HistoryPage() {
       type: 'email-sent',
       contactName: log.contact?.businessName || 'Unknown Contact',
       contactId: log.contactId,
+      emailDraftId: log.emailDraftId || log.emailDraft?.id,
       subject: log.emailDraft?.subjectLines?.[0] || log.emailDraft?.subjectLine || '',
       // OPTIMIZED: bodyText may be excluded from list view to reduce payload
       // It will be empty/null for list view, can be loaded on demand for detail view
@@ -191,17 +195,20 @@ export default function HistoryPage() {
     fetchHistoryData()
   }, [fetchHistoryData])
 
+  const nonDeliverableStatuses = ['deferred', 'bounced', 'dropped']
+
   // Filter history items based on active view
   const filteredItems = historyItems.filter(item => {
-    if (activeView === 'all') return true
+    const isNonDeliveredEmail =
+      item.type === 'email-sent' && item.status && nonDeliverableStatuses.includes(item.status)
+
+    if (activeView === 'all') return !isNonDeliveredEmail
     if (activeView === 'sms-sent') return item.type === 'sms-sent'
-    if (activeView === 'email-sent') return item.type === 'email-sent'
+    if (activeView === 'email-sent') return item.type === 'email-sent' && !isNonDeliveredEmail
     if (activeView === 'email-unsubscribed') return item.type === 'email-unsubscribed'
     if (activeView === 'not-delivered') {
       // Show emails with SendGrid statuses: deferred, bounced, dropped
-      return item.type === 'email-sent' && 
-             item.status && 
-             ['deferred', 'bounced', 'dropped'].includes(item.status)
+      return isNonDeliveredEmail
     }
     return true
   })
@@ -232,8 +239,16 @@ export default function HistoryPage() {
     return true
   })
 
+  const orderedItems = useMemo(
+    () =>
+      [...dateFilteredItems].sort(
+        (a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()
+      ),
+    [dateFilteredItems]
+  )
+
   // Pagination
-  const totalPages = Math.ceil(dateFilteredItems.length / itemsPerPage)
+  const totalPages = Math.ceil(orderedItems.length / itemsPerPage)
   
   // Ensure current page is valid after filtering
   useEffect(() => {
@@ -246,7 +261,7 @@ export default function HistoryPage() {
 
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
-  const paginatedItems = dateFilteredItems.slice(startIndex, endIndex)
+  const paginatedItems = orderedItems.slice(startIndex, endIndex)
 
   // Reset to page 1 when filters change
   useEffect(() => {
@@ -255,14 +270,22 @@ export default function HistoryPage() {
 
   // Counts for sidebar
   const counts = {
-    all: historyItems.length,
+    all: historyItems.filter(item => {
+      const isNonDeliveredEmail =
+        item.type === 'email-sent' && item.status && nonDeliverableStatuses.includes(item.status)
+      return !isNonDeliveredEmail
+    }).length,
     smsSent: historyItems.filter(item => item.type === 'sms-sent').length,
-    emailSent: historyItems.filter(item => item.type === 'email-sent').length,
+    emailSent: historyItems.filter(item => {
+      const isNonDeliveredEmail =
+        item.type === 'email-sent' && item.status && nonDeliverableStatuses.includes(item.status)
+      return item.type === 'email-sent' && !isNonDeliveredEmail
+    }).length,
     emailUnsubscribed: historyItems.filter(item => item.type === 'email-unsubscribed').length,
-    notDelivered: historyItems.filter(item => 
-      item.type === 'email-sent' && 
-      item.status && 
-      ['deferred', 'bounced', 'dropped'].includes(item.status)
+    notDelivered: historyItems.filter(item =>
+      item.type === 'email-sent' &&
+      item.status &&
+      nonDeliverableStatuses.includes(item.status)
     ).length,
   }
 
@@ -286,47 +309,122 @@ export default function HistoryPage() {
     }
   }
 
+  // Fetch email draft content when viewing email items
+  const enrichEmailItem = useCallback(async (item: HistoryItem): Promise<HistoryItem> => {
+    // Strict check: ONLY for email-sent items
+    if (item.type !== 'email-sent') {
+      return item
+    }
+    
+    // Only fetch if emailDraftId exists and message is missing
+    if (item.emailDraftId && (!item.message || item.message.trim() === '')) {
+      try {
+        console.log(`[History] Fetching EMAIL draft ${item.emailDraftId} for item ${item.id}`)
+        const response = await emailGenerationApi.getEmailDraft(item.emailDraftId)
+        if (response.success && response.data) {
+          return {
+            ...item,
+            message: response.data.bodyText || response.data.body || item.message,
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch email draft:', error)
+      }
+    }
+    return item
+  }, [])
+
+  // Fetch SMS draft content when viewing SMS items
+  const enrichSmsItem = useCallback(async (item: HistoryItem): Promise<HistoryItem> => {
+    // Strict check: ONLY for sms-sent items
+    if (item.type !== 'sms-sent') {
+      return item
+    }
+    
+    // Always fetch SMS draft if smsDraftId exists (to get latest content from DB)
+    if (item.smsDraftId) {
+      try {
+        console.log(`[History] Fetching SMS draft ${item.smsDraftId} for item ${item.id}`)
+        const response = await smsGenerationApi.getSmsDraft(item.smsDraftId)
+        if (response.success && response.data) {
+          return {
+            ...item,
+            message: response.data.messageText || response.data.message || item.message || '',
+            fromPhone: response.data.clientSms?.phoneNumber || item.fromPhone,
+            toPhone: response.data.contact?.phone || item.toPhone,
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch SMS draft:', error)
+      }
+    } else {
+      console.warn(`[History] SMS item ${item.id} has no smsDraftId`)
+    }
+    return item
+  }, [])
+
+  const openHistoryItem = useCallback(async (item: HistoryItem) => {
+    setIsDetailLoading(true)
+    setSelectedItem(item)
+    setIsDetailOpen(true)
+    try {
+      console.log(`[History] Opening item ${item.id}, type: ${item.type}, smsDraftId: ${item.smsDraftId}, emailDraftId: ${item.emailDraftId}`)
+      
+      // Strict type checking - call appropriate API based on type
+      let enriched = item
+      if (item.type === 'sms-sent') {
+        enriched = await enrichSmsItem(item)
+      } else if (item.type === 'email-sent') {
+        enriched = await enrichEmailItem(item)
+      }
+      // For other types (email-unsubscribed), use item as-is
+      
+      setSelectedItem(enriched)
+    } finally {
+      setIsDetailLoading(false)
+    }
+  }, [enrichEmailItem, enrichSmsItem])
+
   const handleView = (id: number) => {
     const item = historyItems.find(item => item.id === id)
     if (item) {
-      setSelectedItem(item)
-      setIsDetailOpen(true)
+      openHistoryItem(item)
     }
   }
 
   // Navigation handlers for history overlay
   const handleNextHistory = () => {
     if (!selectedItem) return
-    const currentIndex = dateFilteredItems.findIndex(item => item.id === selectedItem.id)
-    if (currentIndex >= 0 && currentIndex < dateFilteredItems.length - 1) {
-      const nextItem = dateFilteredItems[currentIndex + 1]
-      setSelectedItem(nextItem)
+    const currentIndex = orderedItems.findIndex(item => item.id === selectedItem.id)
+    if (currentIndex >= 0 && currentIndex < orderedItems.length - 1) {
+      const nextItem = orderedItems[currentIndex + 1]
+      openHistoryItem(nextItem)
     }
   }
 
   const handlePreviousHistory = () => {
     if (!selectedItem) return
-    const currentIndex = dateFilteredItems.findIndex(item => item.id === selectedItem.id)
+    const currentIndex = orderedItems.findIndex(item => item.id === selectedItem.id)
     if (currentIndex > 0) {
-      const prevItem = dateFilteredItems[currentIndex - 1]
-      setSelectedItem(prevItem)
+      const prevItem = orderedItems[currentIndex - 1]
+      openHistoryItem(prevItem)
     }
   }
 
   const getCurrentHistoryIndex = () => {
     if (!selectedItem) return undefined
-    return dateFilteredItems.findIndex(item => item.id === selectedItem.id)
+    return orderedItems.findIndex(item => item.id === selectedItem.id)
   }
 
   const hasNextHistory = () => {
     if (!selectedItem) return false
-    const currentIndex = dateFilteredItems.findIndex(item => item.id === selectedItem.id)
-    return currentIndex >= 0 && currentIndex < dateFilteredItems.length - 1
+    const currentIndex = orderedItems.findIndex(item => item.id === selectedItem.id)
+    return currentIndex >= 0 && currentIndex < orderedItems.length - 1
   }
 
   const hasPreviousHistory = () => {
     if (!selectedItem) return false
-    const currentIndex = dateFilteredItems.findIndex(item => item.id === selectedItem.id)
+    const currentIndex = orderedItems.findIndex(item => item.id === selectedItem.id)
     return currentIndex > 0
   }
 
@@ -501,6 +599,7 @@ export default function HistoryPage() {
           setIsDetailOpen(false)
           setSelectedItem(null)
         }}
+        isLoading={isDetailLoading}
         onResubscribe={selectedItem?.type === 'email-unsubscribed' ? handleResubscribe : undefined}
         isResubscribing={
           selectedItem?.type === 'email-unsubscribed' &&

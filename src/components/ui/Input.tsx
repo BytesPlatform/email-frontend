@@ -8,6 +8,8 @@ interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'>
   rightIcon?: ReactNode
   size?: 'sm' | 'md' | 'lg'
   variant?: 'default' | 'filled' | 'outlined'
+  onRightIconClick?: () => void
+  rightIconLabel?: string
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
@@ -20,6 +22,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     size = 'md',
     variant = 'default',
     className = '', 
+    onRightIconClick,
+    rightIconLabel = 'Input action',
     ...props 
   }, ref) => {
     const sizeClasses = {
@@ -78,11 +82,22 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           
           {/* Right Icon */}
           {rightIcon && (
-            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-              <div className="text-slate-400">
+            onRightIconClick ? (
+              <button
+                type="button"
+                onClick={onRightIconClick}
+                aria-label={rightIconLabel}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+              >
                 {rightIcon}
+              </button>
+            ) : (
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                <div className="text-slate-400">
+                  {rightIcon}
+                </div>
               </div>
-            </div>
+            )
           )}
         </div>
         
