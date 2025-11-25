@@ -52,8 +52,12 @@ export const VALIDATION_RULES = {
 
 export const FILE_CONFIG = {
   maxSize: 10 * 1024 * 1024, // 10MB
-  allowedTypes: ['text/csv', 'application/csv'],
-  allowedExtensions: ['.csv']
+  allowedTypes: [
+    'text/csv', 
+    'application/csv',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' // .xlsx
+  ],
+  allowedExtensions: ['.csv', '.xlsx']
 } as const
 
 export const SCRAPING_CONFIG = {

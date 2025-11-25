@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button'
 import { ingestionApi } from '@/api/ingestion'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { CSVRecord } from '@/types/ingestion'
+import { FILE_CONFIG } from '@/lib/constants'
+import * as XLSX from 'xlsx'
 
 interface UploadMetadata {
   uploadId: number
@@ -254,6 +256,42 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
     return csvLines.join('\n')
   }
 
+  // Helper function to check if file is valid (CSV or XLSX)
+  const isValidFile = (file: File): boolean => {
+    const fileName = file.name.toLowerCase()
+    const fileExtension = fileName.substring(fileName.lastIndexOf('.'))
+    const fileType = file.type
+    
+    // Check by extension
+    if (fileExtension === '.csv' || fileExtension === '.xlsx') {
+      return true
+    }
+    
+    // Check by MIME type
+    const allowedTypesArray = FILE_CONFIG.allowedTypes as readonly string[]
+    if (allowedTypesArray.includes(fileType)) {
+      return true
+    }
+    
+    // Fallback: check common MIME types that browsers might not report correctly
+    if (fileExtension === '.csv' && (fileType === '' || fileType === 'text/plain')) {
+      return true
+    }
+    
+    if (fileExtension === '.xlsx' && 
+        (fileType === '' || fileType === 'application/octet-stream')) {
+      return true
+    }
+    
+    return false
+  }
+
+  // Helper function to check if file is Excel format
+  const isExcelFile = (file: File): boolean => {
+    const fileName = file.name.toLowerCase()
+    return fileName.endsWith('.xlsx')
+  }
+
   const parseCSV = (csvText: string) => {
     const lines = csvText.split('\n').filter(line => line.trim())
     if (lines.length === 0) return { headers: [], data: [] }
@@ -294,18 +332,59 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
     return { headers, data }
   }
 
+  // Parse Excel file (XLSX or XLS)
+  const parseExcel = async (file: File) => {
+    const arrayBuffer = await file.arrayBuffer()
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+    
+    // Get the first sheet
+    const firstSheetName = workbook.SheetNames[0]
+    const worksheet = workbook.Sheets[firstSheetName]
+    
+    // Convert to JSON with header row
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+      header: 1,
+      defval: '' // Default value for empty cells
+    }) as string[][]
+    
+    if (jsonData.length === 0) return { headers: [], data: [] }
+    
+    // First row is headers
+    const headers = jsonData[0].map(header => String(header || '').trim())
+    
+    // Rest are data rows
+    const data = jsonData.slice(1).map(row => {
+      const rowObj: Record<string, string> = {}
+      headers.forEach((header, index) => {
+        rowObj[header] = String(row[index] || '').trim()
+      })
+      return rowObj
+    })
+    
+    return { headers, data }
+  }
+
+  // Universal parser that handles both CSV and Excel
+  const parseFile = async (file: File) => {
+    if (isExcelFile(file)) {
+      return await parseExcel(file)
+    } else {
+      const text = await file.text()
+      return parseCSV(text)
+    }
+  }
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
-    if (selectedFile && selectedFile.type === 'text/csv') {
+    if (selectedFile && isValidFile(selectedFile)) {
       setFile(selectedFile)
       setUploadError(null)
       setUploadSuccess(null)
       setManualMappings({}) // Reset manual mappings
       
-      // Parse the CSV file immediately
+      // Parse the file immediately (CSV or Excel)
       try {
-        const text = await selectedFile.text()
-        const { headers, data } = parseCSV(text)
+        const { headers, data } = await parseFile(selectedFile)
         
         // Store headers and data for manual mapping
         setCsvHeaders(headers)
@@ -318,7 +397,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
         
         // Validate column count
         if (headers.length < 6) {
-          setValidationErrors([`CSV must have at least 6 columns. Found ${headers.length} columns.`])
+          setValidationErrors([`File must have at least 6 columns. Found ${headers.length} columns.`])
           setParsedData([])
           setUncleanRows([])
           if (onFileProcessed) {
@@ -335,12 +414,12 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           onFileProcessed([], requiredColumns)
         }
       } catch (error) {
-        console.error('Error parsing CSV:', error)
-        setUploadError('Error reading CSV file. Please ensure the file is a valid CSV format.')
-        setValidationErrors(['Failed to parse CSV file. Please check the file format.'])
+        console.error('Error parsing file:', error)
+        setUploadError('Error reading file. Please ensure the file is a valid CSV or Excel format.')
+        setValidationErrors(['Failed to parse file. Please check the file format.'])
       }
     } else {
-      setUploadError('Please select a valid CSV file')
+      setUploadError('Please select a valid CSV or Excel file (.csv, .xlsx)')
     }
   }
 
@@ -361,16 +440,15 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
     
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const droppedFile = e.dataTransfer.files[0]
-      if (droppedFile.type === 'text/csv') {
+      if (isValidFile(droppedFile)) {
         setFile(droppedFile)
         setUploadError(null)
         setUploadSuccess(null)
         setManualMappings({}) // Reset manual mappings
         
-        // Parse the CSV file immediately
+        // Parse the file immediately (CSV or Excel)
         try {
-          const text = await droppedFile.text()
-          const { headers, data } = parseCSV(text)
+          const { headers, data } = await parseFile(droppedFile)
           
           // Store headers and data for manual mapping
           setCsvHeaders(headers)
@@ -383,7 +461,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           
           // Validate column count
           if (headers.length < 6) {
-            setValidationErrors([`CSV must have at least 6 columns. Found ${headers.length} columns.`])
+            setValidationErrors([`File must have at least 6 columns. Found ${headers.length} columns.`])
             setParsedData([])
             setUncleanRows([])
             if (onFileProcessed) {
@@ -400,12 +478,12 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
             onFileProcessed([], requiredColumns)
           }
         } catch (error) {
-          console.error('Error parsing CSV:', error)
-          setUploadError('Error reading CSV file. Please ensure the file is a valid CSV format.')
-          setValidationErrors(['Failed to parse CSV file. Please check the file format.'])
+          console.error('Error parsing file:', error)
+          setUploadError('Error reading file. Please ensure the file is a valid CSV or Excel format.')
+          setValidationErrors(['Failed to parse file. Please check the file format.'])
         }
       } else {
-        setUploadError('Please select a valid CSV file')
+        setUploadError('Please select a valid CSV or Excel file (.csv, .xlsx)')
       }
     }
   }
@@ -547,8 +625,8 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
   return (
     <Card variant="elevated">
       <CardHeader
-        title="Upload CSV File"
-        subtitle="Upload a CSV file containing contact information to import into your database."
+        title="Upload CSV or Excel File"
+        subtitle="Upload a CSV or Excel file (.csv, .xlsx) containing contact information to import into your database."
         icon={uploadIcon}
       >
         <div></div>
@@ -571,7 +649,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           >
             <input
               type="file"
-              accept=".csv"
+              accept=".csv,.xlsx"
               onChange={handleFileChange}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
             />
@@ -585,20 +663,30 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
                 </div>
                 <div>
                   <p className={`text-lg font-semibold ${dragActive ? 'text-indigo-700' : 'text-slate-900'}`}>
-                    {dragActive ? 'Drop your CSV file here' : 'Choose CSV file or drag and drop'}
+                    {dragActive ? 'Drop your file here' : 'Choose CSV or Excel file or drag and drop'}
                   </p>
                   <p className="text-sm text-slate-500 mt-2">
-                    CSV files up to 10MB
+                    CSV or Excel files (.csv, .xlsx) up to 10MB
                   </p>
                 </div>
               </div>
             ) : (
               <div className="space-y-4">
                 <div className="relative">
-                  <div className="mx-auto w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md">
-                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                  <div className={`mx-auto w-16 h-16 rounded-xl flex items-center justify-center shadow-md ${
+                    isExcelFile(file) 
+                      ? 'bg-gradient-to-br from-green-500 to-emerald-600' 
+                      : 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                  }`}>
+                    {isExcelFile(file) ? (
+                      <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    )}
                   </div>
                   <button
                     onClick={(e) => {
@@ -614,11 +702,20 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
                     </svg>
                   </button>
                 </div>
-                <div>
-                  <p className="text-lg font-semibold text-slate-900">{file.name}</p>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {(file.size / 1024).toFixed(2)} KB
-                  </p>
+                <div className="text-center">
+                  <p className="text-lg font-semibold text-slate-900 break-words">{file.name}</p>
+                  <div className="flex items-center justify-center gap-2 mt-2">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      isExcelFile(file)
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {isExcelFile(file) ? 'Excel' : 'CSV'}
+                    </span>
+                    <span className="text-sm text-slate-500">
+                      {(file.size / 1024).toFixed(2)} KB
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -646,9 +743,9 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           {/* Manual Column Mapping UI */}
           {file && csvHeaders.length > 0 && (
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-              <h4 className="text-sm font-semibold text-slate-900 mb-3">Map CSV Columns to Required Fields</h4>
+              <h4 className="text-sm font-semibold text-slate-900 mb-3">Map File Columns to Required Fields</h4>
               <p className="text-xs text-slate-600 mb-4">
-                Select which CSV column corresponds to each required field. All 6 fields must be mapped before upload.
+                Select which column from your file corresponds to each required field. All 6 fields must be mapped before upload.
               </p>
               <div className="space-y-3">
                 {requiredColumns.map((requiredField) => {
@@ -688,7 +785,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
                               : 'border-slate-300 bg-white'
                           }`}
                         >
-                          <option value="">Select CSV Column...</option>
+                          <option value="">Select Column...</option>
                           {csvHeaders.map((header, index) => {
                             // Check if this column is already mapped to another field
                             const alreadyMapped = Object.entries(manualMappings).find(
@@ -814,31 +911,92 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           >
             {isUploading ? 'Uploading...' : 
              validationErrors.length > 0 ? 'Fix Errors to Upload' :
-             !file ? 'Upload CSV' :
-             'Upload CSV'}
+             !file ? 'Upload File' :
+             `Upload ${file.name}`}
           </Button>
 
-          {/* File Requirements */}
-          <div className="bg-slate-50 rounded-lg p-4 space-y-2">
+          {/* File Requirements - Dynamic based on selected file */}
+          <div className="bg-slate-50 rounded-lg p-4 space-y-3">
             <h4 className="text-sm font-semibold text-slate-900">File Requirements</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-slate-600">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* File Format - Dynamic */}
               <div className="flex items-center space-x-2">
-                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>CSV format only</span>
+                <div className="flex-shrink-0 w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-slate-200">
+                  {file ? (
+                    isExcelFile(file) ? (
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    )
+                  ) : (
+                    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-slate-700">
+                    {file ? (
+                      <>
+                        <span className="text-slate-900 font-semibold">{file.name}</span>
+                        <span className="text-slate-500 ml-2">
+                          ({isExcelFile(file) ? 'Excel' : 'CSV'} format)
+                        </span>
+                      </>
+                    ) : (
+                      'CSV or Excel format (.csv, .xlsx)'
+                    )}
+                  </div>
+                </div>
               </div>
+              
+              {/* File Size */}
               <div className="flex items-center space-x-2">
-                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>Max 10MB size</span>
+                <div className="flex-shrink-0 w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-slate-200">
+                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-slate-700">
+                    {file ? (
+                      <>
+                        <span className="text-slate-900 font-semibold">
+                          {(file.size / 1024).toFixed(2)} KB
+                        </span>
+                        <span className="text-slate-500 ml-2">/ Max 10MB</span>
+                      </>
+                    ) : (
+                      'Max 10MB size'
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center space-x-2">
-                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                <span>6 fields required: business_name, zipcode, state, phone_number, website, email (any order, extra columns allowed)</span>
+            </div>
+            
+            {/* Required Fields */}
+            <div className="pt-2 border-t border-slate-200">
+              <div className="flex items-start space-x-2">
+                <div className="flex-shrink-0 w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-slate-200 mt-0.5">
+                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs font-medium text-slate-700">
+                    <span className="text-slate-900 font-semibold">6 fields required:</span>
+                    <span className="text-slate-600 ml-1">
+                      business_name, zipcode, state, phone_number, website, email
+                    </span>
+                    <span className="text-slate-500 text-xs block mt-1">
+                      (any order, extra columns allowed)
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
