@@ -8,6 +8,8 @@ export type HistoryItem = {
   type: 'sms-sent' | 'email-sent' | 'email-unsubscribed'
   contactName: string
   contactId: number
+  emailDraftId?: number
+  smsDraftId?: number
   subject?: string
   message?: string
   sentAt: string

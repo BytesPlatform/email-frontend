@@ -29,8 +29,6 @@ interface EmailDraftsListProps {
   onSelectAll: (selected: boolean) => void
   onToggleStar: (draftId: number) => void
   onView?: (draftId: number) => void
-  onEdit?: (draftId: number) => void
-  onSend?: (draftId: number) => void
   subscriptionDataLoaded?: boolean
   onResubscribe?: (draftId: number) => void
   resubscribingDraftId?: number | null
@@ -45,8 +43,6 @@ export function EmailDraftsList({
   onSelectAll,
   onToggleStar,
   onView, 
-  onEdit, 
-  onSend,
   subscriptionDataLoaded: _subscriptionDataLoaded = false,
   onResubscribe: _onResubscribe,
   resubscribingDraftId: _resubscribingDraftId = null,
@@ -210,28 +206,15 @@ export function EmailDraftsList({
 
               {/* Action Buttons */}
               <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                {draft.status === 'draft' && onSend && (
-                  <button
-                    onClick={() => onSend(draft.id)}
-                    className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
-                    title="Send"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                  </button>
-                )}
-                {draft.status === 'draft' && onEdit && (
-                  <button
-                    onClick={() => onEdit(draft.id)}
-                    className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
-                    title="Edit"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </button>
-                )}
+                <button
+                  onClick={() => onView?.(draft.id)}
+                  className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
+                  title="View"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                </button>
               </div>
             </div>
           )

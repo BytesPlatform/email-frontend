@@ -37,6 +37,7 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
   const [pageSize, setPageSize] = React.useState(15)
   const [isScraping, setIsScraping] = React.useState(false)
   const [isRescraping, setIsRescraping] = React.useState<Record<number, boolean>>({})
+  const [searchQuery, setSearchQuery] = React.useState('')
   const modalRef = React.useRef<HTMLDivElement>(null)
 
   // Block body scrolling when modal is open
@@ -55,6 +56,7 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
     setFilter(initialFilter)
     setSelectedIds([])
     setPage(1)
+    setSearchQuery('') // Reset search when modal opens/closes or filter changes
   }, [initialFilter, isOpen])
 
   // Handle click outside to close
@@ -89,9 +91,26 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
   }
 
   const filtered = useMemo(() => {
-    if (filter === 'all') return contacts
-    return contacts.filter(c => normalizeStatus(c.status) === filter)
-  }, [contacts, filter])
+    let result = contacts
+    
+    // Apply status filter
+    if (filter !== 'all') {
+      result = result.filter(c => normalizeStatus(c.status) === filter)
+    }
+    
+    // Apply search filter (website, businessName, email)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      result = result.filter(c => {
+        const website = (c.website || '').toLowerCase()
+        const businessName = (c.businessName || '').toLowerCase()
+        const email = (c.email || '').toLowerCase()
+        return website.includes(query) || businessName.includes(query) || email.includes(query)
+      })
+    }
+    
+    return result
+  }, [contacts, filter, searchQuery])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -165,9 +184,23 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
     >
       <div 
         ref={modalRef}
-        className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
+        className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Loader overlay when scraping - covers entire modal */}
+        {isScraping && (
+          <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-50 flex items-center justify-center rounded-xl">
+            <div className="flex flex-col items-center gap-4">
+              <svg className="w-12 h-12 animate-spin text-indigo-600" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span className="text-base font-semibold text-gray-800">Scraping contacts...</span>
+              <span className="text-sm text-gray-600">Please wait while we process your selected contacts</span>
+            </div>
+          </div>
+        )}
+        
         {/* Header with title and Start Scraping button */}
         <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
           <h3 className="text-lg font-semibold">Scrape Records</h3>
@@ -185,6 +218,43 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
 
         {/* Top section with filters, selection controls, and pagination */}
         <div className="px-6 pt-4 pb-3 flex-shrink-0 border-b">
+          {/* Search input */}
+          <div className="mb-3">
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  setPage(1) // Reset to first page when searching
+                }}
+                placeholder="Search by website, business name, or email..."
+                className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+              <svg
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('')
+                    setPage(1)
+                  }}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+          
           {/* Filter tabs and item count */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
             {([
@@ -235,9 +305,11 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
         </div>
 
         {/* Scrollable records list */}
-        <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0">
+        <div className={`px-6 py-4 flex-1 min-h-0 ${isScraping ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {filtered.length === 0 ? (
-            <div className="text-center text-gray-500 py-12">No records for this filter.</div>
+            <div className="text-center text-gray-500 py-12">
+              {searchQuery ? 'No records found matching your search.' : 'No records for this filter.'}
+            </div>
           ) : (
             <div className="space-y-2 pb-2">
               {paged.map(c => (
@@ -250,7 +322,15 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium text-gray-900 truncate">{c.businessName || c.website || c.email || `Contact #${c.id}`}</div>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {normalizeStatus(c.status) === 'scraping' && (
+                          <svg className="w-4 h-4 animate-spin text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        )}
+                        <div className="font-medium text-gray-900 truncate">{c.businessName || c.website || c.email || `Contact #${c.id}`}</div>
+                      </div>
                       <span className={`text-xs px-2 py-0.5 rounded-full border font-medium flex-shrink-0 ${getStatusBadgeClass(c.status)}`}>
                         {normalizeStatus(c.status) || 'unknown'}
                       </span>

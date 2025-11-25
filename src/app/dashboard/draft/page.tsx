@@ -158,7 +158,9 @@ function DraftsPageContent() {
       const res = await emailGenerationApi.getQueuedEmails()
       if (res.success && res.data) {
         const queued = Array.isArray(res.data) ? res.data : []
-        const mappedQueued = queued.map(q => ({
+        // Filter out sent emails - only show pending and failed emails in queue
+        const activeQueued = queued.filter(q => q.status !== 'sent')
+        const mappedQueued = activeQueued.map(q => ({
           id: q.id,
           emailDraftId: q.emailDraftId,
           scheduledAt: q.scheduledAt,
@@ -210,10 +212,8 @@ function DraftsPageContent() {
   }) => {
     setQueuedEmails(prev => {
       if (update.type === 'queue:sent' && update.queueId) {
-        // Update status of specific email
-        const updated = prev.map(q => 
-          q.id === update.queueId ? { ...q, status: 'sent' as const } : q
-        )
+        // Remove sent email from queue (don't show sent emails in queue)
+        const updated = prev.filter(q => q.id !== update.queueId)
         // Always update state to trigger re-render (counts need to update)
         prevQueuedEmailsRef.current = JSON.stringify(updated)
         return updated
@@ -1162,11 +1162,7 @@ function DraftsPageContent() {
         const smsLogId = res.data.smsLogId
         
         // Show success message with details if available
-        if (messageSid && smsLogId) {
-          setSuccessMessage(`${message}\nMessage SID: ${messageSid}\nSMS Log ID: ${smsLogId}`)
-        } else {
-          setSuccessMessage(message)
-        }
+        setSuccessMessage(message)
         setTimeout(() => setSuccessMessage(null), 5000)
         
         // Optimistically update draft state immediately (remove from drafts list)
@@ -1270,8 +1266,12 @@ function DraftsPageContent() {
     return drafts
   }
 
-  const filteredEmailDrafts = getFilteredEmailDrafts()
-  const filteredSmsDrafts = getFilteredSmsDrafts()
+  const filteredEmailDrafts = getFilteredEmailDrafts().sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )
+  const filteredSmsDrafts = getFilteredSmsDrafts().sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )
 
   // Calculate counts for sidebar - use ALL drafts (not filtered) for accurate sidebar counts
   // These counts should reflect the total available, not what's currently filtered or visible
@@ -1319,15 +1319,7 @@ function DraftsPageContent() {
     combinedDrafts = [
       ...filteredEmailDrafts.map(d => ({ type: 'email' as const, draft: d, contactId: d.contactId })),
       ...filteredSmsDrafts.map(d => ({ type: 'sms' as const, draft: d, contactId: d.contactId }))
-    ]
-    // Sort by contactId, then by type (email first), then by date
-    combinedDrafts.sort((a, b) => {
-      if (a.contactId !== b.contactId) return a.contactId - b.contactId
-      if (a.type !== b.type) return a.type === 'email' ? -1 : 1
-      const aDate = new Date(a.draft.createdAt).getTime()
-      const bDate = new Date(b.draft.createdAt).getTime()
-      return bDate - aDate
-    })
+    ].sort((a, b) => new Date(b.draft.createdAt).getTime() - new Date(a.draft.createdAt).getTime())
     displayDrafts = combinedDrafts.map(c => c.draft)
     isEmailView = true // Default to email view for rendering
   } else if (activeView === 'starred') {
@@ -1336,14 +1328,7 @@ function DraftsPageContent() {
     combinedDrafts = [
       ...filteredEmailDrafts.map(d => ({ type: 'email' as const, draft: d, contactId: d.contactId })),
       ...filteredSmsDrafts.map(d => ({ type: 'sms' as const, draft: d, contactId: d.contactId }))
-    ]
-    combinedDrafts.sort((a, b) => {
-      if (a.contactId !== b.contactId) return a.contactId - b.contactId
-      if (a.type !== b.type) return a.type === 'email' ? -1 : 1
-      const aDate = new Date(a.draft.createdAt).getTime()
-      const bDate = new Date(b.draft.createdAt).getTime()
-      return bDate - aDate
-    })
+    ].sort((a, b) => new Date(b.draft.createdAt).getTime() - new Date(a.draft.createdAt).getTime())
     displayDrafts = combinedDrafts.map(c => c.draft)
     isEmailView = true
     combinedDrafts.sort((a, b) => {
@@ -2326,12 +2311,6 @@ function DraftsPageContent() {
                   onView={(draftId, type) => {
                     handleViewDraft(draftId, type)
                   }}
-                  onEdit={(draftId, type) => {
-                    handleEditDraft(draftId)
-                  }}
-                  onSend={(draftId, type) => {
-                    handleSendDraft(draftId)
-                  }}
                 />
               ) : isEmailView ? (
               <EmailDraftsList
@@ -2349,8 +2328,6 @@ function DraftsPageContent() {
                   }}
                   onToggleStar={handleToggleEmailStar}
                 onView={handleViewDraft}
-                onEdit={handleEditDraft}
-                onSend={handleSendDraft}
               />
             ) : (
               <SmsDraftsList
@@ -2368,8 +2345,6 @@ function DraftsPageContent() {
                   }}
                   onToggleStar={handleToggleSmsStar}
                 onView={handleViewDraft}
-                onEdit={handleEditDraft}
-                onSend={handleSendDraft}
               />
             )}
 

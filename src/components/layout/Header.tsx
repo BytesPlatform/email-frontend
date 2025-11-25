@@ -54,9 +54,13 @@ export function Header() {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <div className="h-9 w-9 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-md">
-                <span className="text-white font-bold text-sm">EA</span>
+                <span className="text-white font-bold text-sm">
+                  {client?.name ? client.name.charAt(0).toUpperCase() : 'EA'}
+                </span>
               </div>
-              <span className="ml-3 text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Email Automation</span>
+              <span className="ml-3 text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                {client?.name || 'Email Automation'}
+              </span>
             </div>
             <div className="animate-pulse bg-gray-200 h-8 w-20 rounded"></div>
           </div>
@@ -73,9 +77,13 @@ export function Header() {
           <div className="flex items-center flex-shrink-0">
             <Link href="/" className="flex items-center gap-3 group">
               <div className="h-9 w-9 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-md transition-transform group-hover:scale-105">
-                <span className="text-white font-bold text-sm">EA</span>
+                <span className="text-white font-bold text-sm">
+                  {client?.name ? client.name.charAt(0).toUpperCase() : 'EA'}
+                </span>
               </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Email Automation</span>
+              <span className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                {'Email Automation'}
+              </span>
             </Link>
           </div>
 
@@ -175,16 +183,18 @@ export function Header() {
           <div className="hidden md:flex items-center gap-3 flex-shrink-0">
             {isAuthenticated ? (
               <>
-                {/* Bytes Platform with User Dropdown */}
+                {/* User Dropdown */}
                 <div className="relative" ref={userDropdownRef}>
                   <button
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                     className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded-lg"
                   >
                     <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-semibold shadow-md">
-                      B
+                      {client?.name ? client.name.charAt(0).toUpperCase() : 'U'}
                     </div>
-                    <span className="text-sm font-medium text-slate-600">Bytes Platform</span>
+                    <span className="text-sm font-medium text-slate-600">
+                      {client?.name || 'User'}
+                    </span>
                   </button>
 
                   {/* Dropdown Menu */}

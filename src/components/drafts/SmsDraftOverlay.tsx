@@ -200,7 +200,11 @@ export function SmsDraftOverlay({
     setIsEditMode(false)
   }
 
-  const characterCount = editedMessage.length
+  const CHARACTER_LIMIT = 320
+  const editedCharacterCount = editedMessage.length
+  const viewCharacterCount = smsDraft?.message?.length ?? smsDraft?.characterCount ?? 0
+  const displayCharacterCount = isEditMode ? editedCharacterCount : viewCharacterCount
+  const isOverCharacterLimit = displayCharacterCount > CHARACTER_LIMIT
 
   if (!isOpen || !smsDraft) return null
 
@@ -401,12 +405,12 @@ export function SmsDraftOverlay({
                       Draft
                     </span>
                   )}
-                  <span className={`text-xs ml-auto ${
-                    isEditMode && characterCount > 200
-                      ? 'text-red-500 font-semibold' 
-                      : 'text-gray-500'
-                  }`}>
-                    {isEditMode ? characterCount : (smsDraft.characterCount ?? 0)} / 200 characters
+                  <span
+                    className={`text-xs ml-auto ${
+                      isOverCharacterLimit ? 'text-red-500 font-semibold' : 'text-gray-500'
+                    }`}
+                  >
+                    {displayCharacterCount} / {CHARACTER_LIMIT} characters
                   </span>
                 </div>
               </div>
@@ -419,8 +423,8 @@ export function SmsDraftOverlay({
                       value={editedMessage}
                       onChange={(e) => setEditedMessage(e.target.value)}
                       className="w-full min-h-[200px] text-sm text-gray-900 outline-none resize-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-3 leading-relaxed"
-                      placeholder="Enter your SMS message (max 200 characters)..."
-                      maxLength={200}
+                      placeholder={`Enter your SMS message (max ${CHARACTER_LIMIT} characters)...`}
+                      maxLength={CHARACTER_LIMIT}
                       autoFocus
                       rows={8}
                     />
@@ -445,7 +449,7 @@ export function SmsDraftOverlay({
                           variant="primary"
                           size="sm"
                           onClick={handleSave}
-                          disabled={isSaving || !editedMessage.trim() || characterCount > 200}
+                          disabled={isSaving || !editedMessage.trim() || editedCharacterCount > CHARACTER_LIMIT}
                           isLoading={isSaving}
                           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
