@@ -721,9 +721,6 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                           {header}
                         </th>
                       ))}
-                      <th className="px-4 py-3 text-left font-medium text-slate-700">
-                        Actions
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -734,17 +731,6 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                             {row[header] || '-'}
                           </td>
                         ))}
-                        <td className="px-4 py-3">
-                          <Link href="/dashboard/scraping">
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              className="text-xs"
-                            >
-                              Scrape
-                            </Button>
-                          </Link>
-                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -968,9 +954,6 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                             {header}
                           </th>
                         ))}
-                        <th className="px-3 py-2 text-left font-medium text-slate-700">
-                          Actions
-                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
@@ -1059,17 +1042,6 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                               </td>
                             )
                           })}
-                          <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                            <Link href="/dashboard/scraping">
-                              <Button
-                                variant="outline"
-                                size="xs"
-                                className="text-xs"
-                              >
-                                Scrape
-                              </Button>
-                            </Link>
-                          </td>
                         </tr>
                       ))}
                     </tbody>

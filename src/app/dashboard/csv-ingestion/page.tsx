@@ -112,22 +112,11 @@ export default function CSVIngestionPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="text-lg font-semibold text-gray-900 mb-3">Upload Successful!</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <div className="text-gray-500 text-xs font-medium mb-1">Upload ID</div>
-                          <div className="text-gray-900 font-semibold">{uploadMetadata.uploadId}</div>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-sm">
+                        <div className="bg-gray-50 rounded-lg p-3 inline-block">
                           <div className="text-gray-500 text-xs font-medium mb-1">Records Processed</div>
                           <div className="text-gray-900 font-semibold">
                             {uploadMetadata.successfulRecords} of {uploadMetadata.totalRecords}
-                          </div>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-3 sm:col-span-2">
-                          <div className="text-gray-500 text-xs font-medium mb-1">Contact IDs (sample)</div>
-                          <div className="text-gray-900 font-mono text-xs">
-                            {uploadMetadata.contacts.slice(0, 5).map(c => c.id || 'N/A').join(', ')}
-                            {uploadMetadata.contacts.length > 5 && '...'}
                           </div>
                         </div>
                       </div>
