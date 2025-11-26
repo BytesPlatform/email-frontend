@@ -43,6 +43,7 @@ export interface ClientContact {
   status?: string
   valid?: boolean
   emailValid?: boolean
+  websiteValid?: boolean
   validationReason?: string
   computedValid?: boolean
   computedValidationReason?: string

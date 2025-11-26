@@ -330,6 +330,36 @@ export const ingestionApi = {
         error: error instanceof Error ? error.message : 'Failed to delete contact'
       };
     }
+  },
+
+  /**
+   * Validate email address in real-time
+   */
+  async validateEmail(email: string): Promise<ApiResponse<{ valid: boolean; message: string }>> {
+    try {
+      const response = await apiClient.post<{ valid: boolean; message: string }>('/validation/email', { email });
+      return response;
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to validate email'
+      };
+    }
+  },
+
+  /**
+   * Validate website URL in real-time
+   */
+  async validateWebsite(website: string): Promise<ApiResponse<{ valid: boolean; message: string }>> {
+    try {
+      const response = await apiClient.post<{ valid: boolean; message: string }>('/validation/website', { website });
+      return response;
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to validate website'
+      };
+    }
   }
 };
 
