@@ -101,5 +101,19 @@ export const clientAccountsApi = {
   async verifySmsOtp(id: number, code: string): Promise<ApiResponse<unknown>> {
     return apiClient.post(`/sms/client-sms/${id}/verify-otp`, { code });
   },
+
+  /**
+   * Delete a pending email verification
+   */
+  async deletePendingEmailVerification(verificationId: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/emails/pending-verifications/${verificationId}`);
+  },
+
+  /**
+   * Delete a pending SMS verification
+   */
+  async deletePendingSmsVerification(verificationId: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/sms/pending-verifications/${verificationId}`);
+  },
 };
 

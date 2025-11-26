@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { clientAccountsApi, ClientSms } from '@/api/clientAccounts'
 import { canResendOtp, resendCountdown } from '@/lib/phone'
 import 'react-phone-number-input/style.css'
+import React from 'react'
 
 const verificationChip: Record<ClientSms['verificationStatus'], string> = {
   verified: 'bg-green-100 text-green-800',
@@ -25,10 +26,11 @@ export function PhoneAccountsCard() {
   const [phoneNumber, setPhoneNumber] = useState<E164Number | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; phoneId: number | null; phoneNumber: string }>({
+  const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; phoneId: number | null; phoneNumber: string; verificationId: number | null }>({
     isOpen: false,
     phoneId: null,
     phoneNumber: '',
+    verificationId: null,
   })
   const [isDeleting, setIsDeleting] = useState(false)
   const [otpInputs, setOtpInputs] = useState<Record<string, string>>({}) // Use string key to support both id and verificationId
@@ -138,6 +140,109 @@ export function PhoneAccountsCard() {
     return phone.id !== null ? phone.id : (phone.verificationId || 0)
   }
 
+  const handlePhoneNumberChange = (value: E164Number | undefined) => {
+    // Validate and truncate if needed (safety check)
+    if (value) {
+      try {
+        const parsed = parsePhoneNumberFromString(value as string)
+        if (parsed && parsed.nationalNumber) {
+          const nationalNumber = parsed.nationalNumber.toString()
+          // If exceeds 10 digits, don't update (this shouldn't happen due to keydown handler)
+          if (nationalNumber.length > 10) {
+            return
+          }
+        }
+      } catch (err) {
+        // If parsing fails, allow the value
+      }
+    }
+    setPhoneNumber(value)
+  }
+
+  const handlePhonePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pastedText = e.clipboardData.getData('text')
+    const target = e.currentTarget
+    const currentValue = target.value || ''
+    
+    // Get selection
+    const selectionStart = target.selectionStart || 0
+    const selectionEnd = target.selectionEnd || 0
+    
+    // Calculate what the new value would be
+    const newValue = currentValue.slice(0, selectionStart) + pastedText + currentValue.slice(selectionEnd)
+    
+    // Parse to check digit count
+    try {
+      const parsed = parsePhoneNumberFromString(newValue)
+      if (parsed && parsed.nationalNumber) {
+        const nationalNumber = parsed.nationalNumber.toString()
+        // If paste would exceed 10 digits, prevent it
+        if (nationalNumber.length > 10) {
+          e.preventDefault()
+          e.stopPropagation()
+          return
+        }
+      }
+    } catch (err) {
+      // If parsing fails, allow the paste
+    }
+  }
+
+  const handlePhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Handle Enter key
+    if (e.key === 'Enter' && phoneNumber) {
+      handleAddPhone()
+      return
+    }
+
+    // Allow all non-digit keys (backspace, delete, arrows, etc.)
+    const isNonDigitKey = 
+      !/^\d$/.test(e.key) ||
+      e.ctrlKey ||
+      e.metaKey ||
+      e.altKey ||
+      ['Backspace', 'Delete', 'Tab', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)
+    
+    if (isNonDigitKey) {
+      return // Allow these keys
+    }
+
+    // For digit keys, check the actual input value to count digits
+    if (/^\d$/.test(e.key)) {
+      const target = e.currentTarget
+      const currentValue = target.value || ''
+      
+      // Get selection to understand if we're replacing or inserting
+      const selectionStart = target.selectionStart || 0
+      const selectionEnd = target.selectionEnd || 0
+      const isReplacing = selectionStart !== selectionEnd
+      
+      // Calculate what the value would be after this keypress
+      let newValue: string
+      if (isReplacing) {
+        newValue = currentValue.slice(0, selectionStart) + e.key + currentValue.slice(selectionEnd)
+      } else {
+        newValue = currentValue.slice(0, selectionStart) + e.key + currentValue.slice(selectionStart)
+      }
+      
+      // Parse the new value to count national number digits
+      try {
+        const parsed = parsePhoneNumberFromString(newValue)
+        if (parsed && parsed.nationalNumber) {
+          const nationalNumber = parsed.nationalNumber.toString()
+          // If this would exceed 10 digits, prevent the input
+          if (nationalNumber.length > 10) {
+            e.preventDefault()
+            e.stopPropagation()
+            return
+          }
+        }
+      } catch (err) {
+        // If parsing fails, allow the input
+      }
+    }
+  }
+
   const handleAddPhone = async () => {
     if (!phoneNumber) {
       setError('Please enter a phone number.')
@@ -151,16 +256,10 @@ export function PhoneAccountsCard() {
       return
     }
 
-    // Check minimum length (at least 7 digits for national number)
+    // Check that national number is exactly 10 digits
     const nationalNumber = parsed.nationalNumber
-    if (nationalNumber.length < 7) {
-      setError('Phone number is too short. Please enter a complete phone number.')
-      return
-    }
-
-    // Check maximum length (reasonable limit)
-    if (nationalNumber.length > 15) {
-      setError('Phone number is too long. Please check and try again.')
+    if (nationalNumber.length !== 10) {
+      setError('Phone number must be exactly 10 digits after the country code.')
       return
     }
 
@@ -202,26 +301,44 @@ export function PhoneAccountsCard() {
     }
   }
 
-  const handleDeleteClick = (id: number | null, phoneNumber: string) => {
-    if (id === null) {
-      setError('Cannot delete pending verification. Please verify or wait for it to expire.')
+  const handleDeleteClick = (phone: ClientSms) => {
+    const phoneId = phone.id
+    const phoneNumber = phone.phoneNumber
+    const verificationId = phone.verificationId
+
+    if (phoneId === null && verificationId === null) {
+      setError('Cannot delete this entry. Missing identifiers.')
       return
     }
-    setDeleteDialog({ isOpen: true, phoneId: id, phoneNumber })
+    setDeleteDialog({ isOpen: true, phoneId, phoneNumber, verificationId: verificationId || null })
   }
 
   const handleDeleteConfirm = async () => {
-    if (!deleteDialog.phoneId) return
+    if (!deleteDialog.phoneId && !deleteDialog.verificationId) return
     setIsDeleting(true)
     setError(null)
     setNotice(null)
     try {
-      const response = await clientAccountsApi.deleteClientSms(deleteDialog.phoneId)
-      if (response.success) {
-        setPhoneNumbers(phoneNumbers.filter(phone => phone.id !== deleteDialog.phoneId))
-        setDeleteDialog({ isOpen: false, phoneId: null, phoneNumber: '' })
+      let response
+      if (deleteDialog.phoneId !== null) {
+        // Delete verified phone number
+        response = await clientAccountsApi.deleteClientSms(deleteDialog.phoneId)
+        if (response.success) {
+          setPhoneNumbers(phoneNumbers.filter(phone => phone.id !== deleteDialog.phoneId))
+        }
+      } else if (deleteDialog.verificationId !== null) {
+        // Delete pending verification
+        response = await clientAccountsApi.deletePendingSmsVerification(deleteDialog.verificationId)
+        if (response.success) {
+          setPhoneNumbers(phoneNumbers.filter(phone => phone.verificationId !== deleteDialog.verificationId))
+        }
+      }
+      
+      if (response && response.success) {
+        setDeleteDialog({ isOpen: false, phoneId: null, phoneNumber: '', verificationId: null })
+        setNotice('Phone number deleted successfully.')
       } else {
-        setError(response.error || 'Failed to delete phone number')
+        setError(response?.error || 'Failed to delete phone number')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete phone number')
@@ -231,7 +348,7 @@ export function PhoneAccountsCard() {
   }
 
   const handleDeleteCancel = () => {
-    setDeleteDialog({ isOpen: false, phoneId: null, phoneNumber: '' })
+    setDeleteDialog({ isOpen: false, phoneId: null, phoneNumber: '', verificationId: null })
   }
 
   const updatePhone = (identifier: string, updater: (phone: ClientSms) => ClientSms) => {
@@ -574,10 +691,11 @@ export function PhoneAccountsCard() {
                 international
                 defaultCountry="US"
                 value={phoneNumber}
-                onChange={setPhoneNumber}
-              placeholder="Enter phone number"
-              disabled={isAdding}
-                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && phoneNumber && handleAddPhone()}
+                onChange={handlePhoneNumberChange}
+                placeholder="Enter phone number"
+                disabled={isAdding}
+                onKeyDown={handlePhoneKeyDown}
+                onPaste={handlePhonePaste}
             />
             </div>
             <Button
@@ -624,18 +742,17 @@ export function PhoneAccountsCard() {
                           {phone.limit !== null ? `/ ${phone.limit}` : '(unlimited)'} SMS
                     </div>
                   </div>
-                      {phone.id !== null && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDeleteClick(phone.id, phone.phoneNumber)}
-                          className="text-red-600 hover:text-red-700 hover:border-red-300"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </Button>
-                      )}
+                      {/* Show delete button for all phones (verified or pending) */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteClick(phone)}
+                        className="text-red-600 hover:text-red-700 hover:border-red-300"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </Button>
                     </div>
 
                     {phone.verificationStatus !== 'verified' && (
