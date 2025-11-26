@@ -199,116 +199,85 @@ export function HistoryList({
     return null
   }
 
-  // Group history by contactId for better organization
-  const groupedByContact = historyItems.reduce((acc, item) => {
-    if (!acc[item.contactId]) {
-      acc[item.contactId] = []
-    }
-    acc[item.contactId].push(item)
-    return acc
-  }, {} as Record<number, HistoryItem[]>)
+  // Sort all items by date/time (newest first)
+  const sortedItems = [...historyItems].sort(
+    (a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()
+  )
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-      {/* History List - Grouped by Contact */}
+      {/* History List - Flat list sorted by date/time */}
       <div className="divide-y divide-gray-100">
-        {Object.entries(groupedByContact).map(([contactId, items]) => {
-          const contactName = items[0].contactName
-          
-            return (
-            <div key={contactId} className="bg-blue-50/20">
-              {/* Contact Header (if multiple items for same contact) */}
-              {items.length > 1 && (
-                <div className="px-4 py-2 bg-blue-50/50 border-b border-blue-100">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                      <span className="text-white font-semibold text-xs">
-                        {contactName?.[0]?.toUpperCase() || 'C'}
-                      </span>
-                    </div>
-                    <span className="text-sm font-medium text-gray-700">
-                      {contactName || `Contact ${contactId}`}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      ({items.length} items)
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* History Items for this Contact */}
-              {items.map((item) => {
-                return (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors"
-                    onClick={(e) => {
-                      if ((e.target as HTMLElement).closest('button')) {
-                        return
-                      }
-                      onView?.(item.id)
-                    }}
-                  >
-                    {/* Type Icon */}
-                    <div className={`h-10 w-10 flex items-center justify-center rounded-full ${getTypeColor(item.type)}`}>
-                      {getTypeIcon(item.type)}
+        {sortedItems.map((item) => {
+          const contactName = item.contactName
+          return (
+            <div
+              key={item.id}
+              className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors"
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest('button')) {
+                  return
+                }
+                onView?.(item.id)
+              }}
+            >
+              {/* Type Icon */}
+              <div className={`h-10 w-10 flex items-center justify-center rounded-full ${getTypeColor(item.type)}`}>
+                {getTypeIcon(item.type)}
               </div>
 
-                    {/* History Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 flex-wrap mb-1">
-                        <span className="text-sm font-medium text-gray-700">
-                          {contactName || 'Unknown Contact'}
-                        </span>
-                        {getStatusBadge(item.type, item.status)}
-                      </div>
-                      <div className="flex items-center gap-2 mb-1">
-                        {item.subject && (
-                          <span className="text-sm font-semibold text-gray-900 truncate">
-                            {item.subject}
-                          </span>
-                        )}
-                        {item.message && (
-                          <span className="text-sm text-gray-600 truncate">
-                            {item.subject ? '- ' : ''}{getPreviewText(item.message, item.subject)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+              {/* History Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 flex-wrap mb-1">
+                  <span className="text-sm font-medium text-gray-700">
+                    {contactName || 'Unknown Contact'}
+                  </span>
+                  {getStatusBadge(item.type, item.status)}
+                </div>
+                <div className="flex items-center gap-2 mb-1">
+                  {item.subject && (
+                    <span className="text-sm font-semibold text-gray-900 truncate">
+                      {item.subject}
+                    </span>
+                  )}
+                  {item.message && (
+                    <span className="text-sm text-gray-600 truncate">
+                      {item.subject ? '- ' : ''}{getPreviewText(item.message, item.subject)}
+                    </span>
+                  )}
+                </div>
+              </div>
 
-                    {/* Date */}
-                    <div className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0">
-                      {formatDate(item.sentAt)}
-                            </div>
-                            
-                    {/* View Button */}
-                    {onView && (
-                      <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => onView(item.id)}
-                          className={`p-2 rounded-full transition-colors ${
-                            item.type === 'sms-sent'
-                              ? 'text-gray-500 hover:text-green-600 hover:bg-green-50'
-                              : item.type === 'email-sent'
-                              ? 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-50'
-                              : 'text-gray-500 hover:text-red-600 hover:bg-red-50'
-                          }`}
-                          title="View"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        </button>
-                        </div>
-                      )}
-                  </div>
-                )
-              })}
+              {/* Date */}
+              <div className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0">
+                {formatDate(item.sentAt)}
+              </div>
+              
+              {/* View Button */}
+              {onView && (
+                <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => onView(item.id)}
+                    className={`p-2 rounded-full transition-colors ${
+                      item.type === 'sms-sent'
+                        ? 'text-gray-500 hover:text-green-600 hover:bg-green-50'
+                        : item.type === 'email-sent'
+                        ? 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-50'
+                        : 'text-gray-500 hover:text-red-600 hover:bg-red-50'
+                    }`}
+                    title="View"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
           )
         })}
-            </div>
-          </div>
+      </div>
+    </div>
   )
 }

@@ -16,6 +16,7 @@ import {
   EmailAnalyticsOverview,
   EmailAnalyticsTimelinePoint,
 } from '@/types/analytics'
+import { clearCacheForEmail, clearExpiredCache, getCacheStats } from '@/utils/analyticsCache'
 
 const RANGE_OPTIONS = [
   { label: '1 day', value: 1 },
@@ -56,16 +57,32 @@ export default function AnalyticsPage() {
     return params
   }, [selectedRange, selectedFromEmail])
 
-  const loadAnalytics = useCallback(async () => {
+  const loadAnalytics = useCallback(async (forceRefresh = false) => {
+    const startTime = performance.now()
+    console.log('[AnalyticsPage] Loading analytics - forceRefresh:', forceRefresh, 'params:', rangeParams)
+    
     setIsLoading(true)
     setError(null)
 
+    // Clear cache if forcing refresh
+    if (forceRefresh && rangeParams.from && rangeParams.to) {
+      console.log('[AnalyticsPage] Clearing cache for refresh')
+      clearCacheForEmail(
+        rangeParams.fromEmail || '',
+        rangeParams.from,
+        rangeParams.to
+      )
+    }
+
     try {
       const [overviewRes, timelineRes, eventsRes] = await Promise.all([
-        sendgridAnalyticsApi.getOverview(rangeParams),
-        sendgridAnalyticsApi.getTimeline(rangeParams),
-        sendgridAnalyticsApi.getRecentEvents(rangeParams),
+        sendgridAnalyticsApi.getOverview(rangeParams, forceRefresh),
+        sendgridAnalyticsApi.getTimeline(rangeParams, forceRefresh),
+        sendgridAnalyticsApi.getRecentEvents(rangeParams, forceRefresh),
       ])
+      
+      const totalTime = Math.round(performance.now() - startTime)
+      console.log(`[AnalyticsPage] ✅ Analytics loaded in ${totalTime}ms`)
 
       if (!overviewRes.success) {
         throw new Error(overviewRes.error || 'Failed to load overview metrics.')
@@ -89,6 +106,17 @@ export default function AnalyticsPage() {
       setIsLoading(false)
     }
   }, [rangeParams])
+
+  // Clean up expired cache on mount and log cache stats
+  useEffect(() => {
+    clearExpiredCache()
+    const stats = getCacheStats()
+    console.log('[AnalyticsPage] Cache stats on mount:', stats)
+    // Expose cache stats to window for debugging
+    if (typeof window !== 'undefined') {
+      (window as Window & { __analyticsCacheStats?: typeof getCacheStats }).__analyticsCacheStats = getCacheStats
+    }
+  }, [])
 
   // Load available sender emails (emails that have actually sent emails)
   useEffect(() => {
@@ -238,7 +266,7 @@ export default function AnalyticsPage() {
 
               <button
                 type="button"
-                onClick={() => loadAnalytics()}
+                onClick={() => loadAnalytics(true)}
                 className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 transition"
               >
                 Refresh

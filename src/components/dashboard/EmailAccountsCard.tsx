@@ -21,10 +21,11 @@ export function EmailAccountsCard() {
   const [newEmail, setNewEmail] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; emailId: number | null; emailAddress: string }>({
+  const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; emailId: number | null; emailAddress: string; verificationId: number | null }>({
     isOpen: false,
     emailId: null,
     emailAddress: '',
+    verificationId: null,
   })
   const [isDeleting, setIsDeleting] = useState(false)
   const [otpInputs, setOtpInputs] = useState<Record<string, string>>({}) // Use string key to support both id and verificationId
@@ -97,26 +98,46 @@ export function EmailAccountsCard() {
     }
   }
 
-  const handleDeleteClick = (id: number | null, emailAddress: string) => {
-    if (id === null) {
-      setError('Cannot delete pending verification. Please verify or wait for it to expire.')
-      return
+  const handleDeleteClick = (email: ClientEmail) => {
+    const emailAddress = email.emailAddress
+    // If it's a pending verification (id is null), use verificationId
+    if (email.id === null && email.verificationId) {
+      setDeleteDialog({ isOpen: true, emailId: null, emailAddress, verificationId: email.verificationId })
+    } else if (email.id !== null) {
+      // Verified email - use the ClientEmail id
+      setDeleteDialog({ isOpen: true, emailId: email.id, emailAddress, verificationId: null })
+    } else {
+      setError('Cannot delete: No valid identifier found.')
     }
-    setDeleteDialog({ isOpen: true, emailId: id, emailAddress })
   }
 
   const handleDeleteConfirm = async () => {
-    if (!deleteDialog.emailId) return
     setIsDeleting(true)
     setError(null)
     setNotice(null)
     try {
-      const response = await clientAccountsApi.deleteClientEmail(deleteDialog.emailId)
-      if (response.success) {
-        setEmails(emails.filter(email => email.id !== deleteDialog.emailId))
-        setDeleteDialog({ isOpen: false, emailId: null, emailAddress: '' })
+      let response
+      // If it's a pending verification (verificationId exists), delete the verification
+      if (deleteDialog.verificationId !== null) {
+        response = await clientAccountsApi.deletePendingEmailVerification(deleteDialog.verificationId)
+        if (response.success) {
+          setEmails(emails.filter(email => email.verificationId !== deleteDialog.verificationId))
+        }
+      } else if (deleteDialog.emailId !== null) {
+        // Verified email - delete the ClientEmail
+        response = await clientAccountsApi.deleteClientEmail(deleteDialog.emailId)
+        if (response.success) {
+          setEmails(emails.filter(email => email.id !== deleteDialog.emailId))
+        }
       } else {
-        setError(response.error || 'Failed to delete email')
+        setError('No valid identifier for deletion')
+        return
+      }
+
+      if (response && response.success) {
+        setDeleteDialog({ isOpen: false, emailId: null, emailAddress: '', verificationId: null })
+      } else {
+        setError(response?.error || 'Failed to delete email')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete email')
@@ -126,7 +147,7 @@ export function EmailAccountsCard() {
   }
 
   const handleDeleteCancel = () => {
-    setDeleteDialog({ isOpen: false, emailId: null, emailAddress: '' })
+    setDeleteDialog({ isOpen: false, emailId: null, emailAddress: '', verificationId: null })
   }
 
   // Get unique identifier for an email (id or verificationId)
@@ -274,18 +295,17 @@ export function EmailAccountsCard() {
                           Sent: {email.currentCounter} / {email.limit === 0 ? '∞' : email.limit} emails
                         </div>
                       </div>
-                      {email.id !== null && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeleteClick(email.id, email.emailAddress)}
-                          className="text-red-600 hover:text-red-700 hover:border-red-300"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </Button>
-                      )}
+                      {/* Show delete button for all emails (verified or pending/expired) */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteClick(email)}
+                        className="text-red-600 hover:text-red-700 hover:border-red-300"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </Button>
                     </div>
 
                     {email.verificationStatus !== 'verified' && (
