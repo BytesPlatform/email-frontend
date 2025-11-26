@@ -12,11 +12,13 @@
     "@headlessui/react": "^2.0.4",
     "@heroicons/react": "^2.0.18",
     "clsx": "^2.0.0",
+    "libphonenumber-js": "^1.12.29",
     "next": "15.5.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-hook-form": "^7.48.2",
     "react-hot-toast": "^2.4.1",
+    "react-phone-number-input": "^3.4.14",
     "recharts": "^2.12.7",
     "xlsx": "^0.18.5",
     "zod": "^3.22.4"
