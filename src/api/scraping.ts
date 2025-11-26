@@ -7,8 +7,19 @@ import {
 } from '@/types/scraping'
 
 export const scrapingApi = {
-  async scrapeSingle(contactId: number): Promise<ApiResponse<ScrapeSingleResponse>> {
-    return apiClient.post<ScrapeSingleResponse>(`/scraping/scrape/${contactId}`)
+  async discoverWebsite(contactId: number): Promise<ApiResponse<{
+    discoveredWebsite: string
+    confidence: 'high' | 'medium' | 'low'
+    method: 'business_search'
+    businessName: string
+    searchQuery: string
+  }>> {
+    return apiClient.post(`/scraping/discover-website/${contactId}`)
+  },
+
+  async scrapeSingle(contactId: number, confirmedWebsite?: string): Promise<ApiResponse<ScrapeSingleResponse>> {
+    const body = confirmedWebsite ? { confirmedWebsite } : undefined
+    return apiClient.post<ScrapeSingleResponse>(`/scraping/scrape/${contactId}`, body)
   },
 
   async scrapeBatch(uploadId: number, limit: number = 20): Promise<ApiResponse<BatchScrapeResponse>> {
