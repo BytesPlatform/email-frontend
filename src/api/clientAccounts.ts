@@ -1,25 +1,35 @@
 import { apiClient, ApiResponse } from './ApiClient';
 
 export interface ClientEmail {
-  id: number;
+  id: number | null; // null for pending verifications (before ClientEmail is created)
   emailAddress: string;
   status: 'active' | 'inactive';
+  verificationStatus: 'pending' | 'verified' | 'expired' | 'rejected';
+  verificationMethod: 'otp';
+  verifiedAt?: string | null;
+  lastOtpSentAt?: string | null;
   currentCounter: number;
   totalCounter: number;
   limit: number;
   createdAt: string;
   updatedAt: string;
+  verificationId?: number; // Present for pending verifications (before ClientEmail is created)
 }
 
 export interface ClientSms {
-  id: number;
-  phoneNumber: string;
+  id: number | null; // null for pending verifications (before ClientSms is created)
+  phoneNumber: string; // E.164 format (e.g., "+923117243792")
   status: 'active' | 'inactive';
+  verificationStatus: 'pending' | 'verified' | 'expired' | 'rejected';
+  verificationMethod: 'otp';
+  verifiedAt?: string | null;
+  lastOtpSentAt?: string | null;
   currentCounter: number;
   totalCounter: number;
   limit: number | null;
   createdAt: string;
   updatedAt: string;
+  verificationId?: number; // Present for pending verifications (before ClientSms is created)
 }
 
 export interface CreateClientEmailRequest {
@@ -30,6 +40,7 @@ export interface CreateClientEmailRequest {
 export interface CreateClientSmsRequest {
   phoneNumber: string;
   providerSettings?: string;
+  countryCode?: string;
 }
 
 export const clientAccountsApi = {
@@ -73,6 +84,22 @@ export const clientAccountsApi = {
    */
   async deleteClientSms(id: number): Promise<ApiResponse<void>> {
     return apiClient.delete<void>(`/sms/client-sms/${id}`);
+  },
+
+  async requestEmailOtp(id: number): Promise<ApiResponse<unknown>> {
+    return apiClient.post(`/emails/client-emails/${id}/request-otp`);
+  },
+
+  async verifyEmailOtp(id: number, code: string): Promise<ApiResponse<unknown>> {
+    return apiClient.post(`/emails/client-emails/${id}/verify-otp`, { code });
+  },
+
+  async requestSmsOtp(id: number): Promise<ApiResponse<unknown>> {
+    return apiClient.post(`/sms/client-sms/${id}/request-otp`);
+  },
+
+  async verifySmsOtp(id: number, code: string): Promise<ApiResponse<unknown>> {
+    return apiClient.post(`/sms/client-sms/${id}/verify-otp`, { code });
   },
 };
 

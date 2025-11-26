@@ -815,11 +815,13 @@ export function EmailDraftOverlay({
                           </button>
                           {isEmailDropdownOpen && (
                             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
-                              {availableEmails.map((email) => (
+                              {availableEmails
+                                .filter((email) => email.id !== null)
+                                .map((email) => (
                                 <button
                                   key={email.id}
                                   type="button"
-                                  onClick={() => handleFromEmailChange(email.id)}
+                                  onClick={() => email.id !== null && handleFromEmailChange(email.id)}
                                   className={`w-full text-left px-4 py-3 text-sm text-gray-900 hover:bg-indigo-50 transition-colors ${
                                     selectedFromEmail === email.id ? 'bg-indigo-50 text-indigo-700 font-medium' : ''
                                   } first:rounded-t-lg last:rounded-b-lg`}
@@ -1209,8 +1211,10 @@ export function EmailDraftOverlay({
                           <p className="text-sm text-gray-500">No active mailboxes available</p>
                         ) : (
                           <div className="space-y-2">
-                            {availableMailboxes.map((mailbox) => {
-                              const isSelected = selectedMailboxIds.includes(mailbox.id)
+                            {availableMailboxes
+                              .filter((mailbox) => mailbox.id !== null)
+                              .map((mailbox) => {
+                              const isSelected = mailbox.id !== null && selectedMailboxIds.includes(mailbox.id)
                               const isDisabled = !isSelected && isAtLimit
                               
                               return (
@@ -1225,7 +1229,7 @@ export function EmailDraftOverlay({
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
-                                    onChange={() => handleMailboxToggle(mailbox.id)}
+                                    onChange={() => mailbox.id !== null && handleMailboxToggle(mailbox.id)}
                                     disabled={isDisabled}
                                     className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:cursor-not-allowed"
                                   />

@@ -342,11 +342,13 @@ export function SmsDraftOverlay({
                           </button>
                           {isPhoneDropdownOpen && (
                             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
-                              {availablePhones.map((phone) => (
+                              {availablePhones
+                                .filter((phone) => phone.id !== null)
+                                .map((phone) => (
                                 <button
                                   key={phone.id}
                                   type="button"
-                                  onClick={() => handleFromPhoneChange(phone.id)}
+                                  onClick={() => phone.id !== null && handleFromPhoneChange(phone.id)}
                                   className={`w-full text-left px-4 py-3 text-sm text-gray-900 hover:bg-indigo-50 transition-colors ${
                                     selectedFromPhone === phone.id ? 'bg-indigo-50 text-indigo-700 font-medium' : ''
                                   } first:rounded-t-lg last:rounded-b-lg`}

@@ -2539,11 +2539,13 @@ function DraftsPageContent() {
                       <p className="text-sm text-gray-500">No active mailboxes available</p>
                     ) : (
                       <div className="space-y-2">
-                      {availableMailboxes.map((mailbox) => {
+                      {availableMailboxes
+                        .filter((mailbox) => mailbox.id !== null)
+                        .map((mailbox) => {
                         const emailCount = selectedEmailDraftIds.size
                         const maxMailboxes = emailCount
                         const isAtLimit = selectedMailboxIds.length >= maxMailboxes
-                        const isSelected = selectedMailboxIds.includes(mailbox.id)
+                        const isSelected = mailbox.id !== null && selectedMailboxIds.includes(mailbox.id)
                         const isDisabled = !isSelected && isAtLimit
                         
                         return (
@@ -2556,7 +2558,7 @@ function DraftsPageContent() {
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              onChange={() => handleMailboxToggle(mailbox.id)}
+                              onChange={() => mailbox.id !== null && handleMailboxToggle(mailbox.id)}
                               disabled={isDisabled}
                               className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:cursor-not-allowed"
                             />
