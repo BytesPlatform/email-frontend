@@ -38,6 +38,15 @@ const formatDateTime = (value?: string) => {
 }
 
 const deriveContactValidity = (contact: ClientContact) => {
+  // Priority 0: Check if website is invalid (force user to fix it)
+  // If website exists but is invalid, contact must be marked invalid
+  if (contact.website && contact.websiteValid === false) {
+    return {
+      isValid: false,
+      reason: 'Website is unreachable - please update or remove the website URL'
+    }
+  }
+
   // Priority 1: Check email/phone presence first (most important for display)
   // This ensures contacts with email/phone show as valid even if valid field is false
   const hasEmail = Boolean(contact.email?.trim())
@@ -282,8 +291,8 @@ export default function ContactsPage() {
   const [detailsError, setDetailsError] = useState<string | null>(null)
   const [detailsSuccess, setDetailsSuccess] = useState<string | null>(null)
   const [selectedContactIds, setSelectedContactIds] = useState<Set<number>>(new Set())
-  const [bulkContactData, setBulkContactData] = useState<Map<number, { email: string; phone: string }>>(new Map())
-  const [bulkValidationErrors, setBulkValidationErrors] = useState<Map<number, { email?: string | null; phone?: string | null }>>(new Map())
+  const [bulkContactData, setBulkContactData] = useState<Map<number, { email: string; phone: string; website: string }>>(new Map())
+  const [bulkValidationErrors, setBulkValidationErrors] = useState<Map<number, { email?: string | null; phone?: string | null; website?: string | null }>>(new Map())
   const [isBulkSaving, setIsBulkSaving] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
   const [bulkResult, setBulkResult] = useState<{ updated: number; failed: number } | null>(null)
@@ -599,17 +608,18 @@ export default function ContactsPage() {
 
     const trimmedEmail = editEmail.trim()
     const trimmedPhone = editPhone.trim()
+    const trimmedWebsite = editWebsite.trim()
 
-    if (!trimmedEmail && !trimmedPhone) {
-      setEditError('Please provide at least an email address or phone number.')
+    if (!trimmedEmail && !trimmedPhone && !trimmedWebsite) {
+      setEditError('Please provide at least an email address, phone number, or website URL.')
       return
     }
 
-    // Validate email if provided
+    // Validate email format first
     if (trimmedEmail) {
-      const emailError = validateEmail(trimmedEmail)
-      if (emailError) {
-        setEditError(emailError)
+      const emailFormatError = validateEmail(trimmedEmail)
+      if (emailFormatError) {
+        setEditError(emailFormatError)
         return
       }
     }
@@ -623,14 +633,49 @@ export default function ContactsPage() {
       }
     }
 
+    // Validate website format first
+    if (trimmedWebsite) {
+      const websiteFormatError = validateWebsite(trimmedWebsite)
+      if (websiteFormatError) {
+        setEditError(websiteFormatError)
+        return
+      }
+    }
+
     setIsSavingContact(true)
     setEditError(null)
     setEditSuccess(null)
 
+    // Real-time validation: Check email and website reachability
+    try {
+      if (trimmedEmail) {
+        const emailValidation = await ingestionApi.validateEmail(trimmedEmail)
+        if (!emailValidation.success || !emailValidation.data?.valid) {
+          setEditError(emailValidation.data?.message || 'Email is invalid or unreachable. Please check the email address.')
+          setIsSavingContact(false)
+          return
+        }
+      }
+
+      if (trimmedWebsite) {
+        const websiteValidation = await ingestionApi.validateWebsite(trimmedWebsite)
+        if (!websiteValidation.success || !websiteValidation.data?.valid) {
+          setEditError(websiteValidation.data?.message || 'Website is unreachable. Please check the website URL.')
+          setIsSavingContact(false)
+          return
+        }
+      }
+    } catch (validationError) {
+      setEditError('Validation check failed. Please try again.')
+      setIsSavingContact(false)
+      return
+    }
+
     try {
       const payload = {
         email: trimmedEmail || null,
-        phone: trimmedPhone || null
+        phone: trimmedPhone || null,
+        website: trimmedWebsite || null
       }
 
       const response = await ingestionApi.updateContact(selectedContactId, payload)
@@ -730,12 +775,13 @@ export default function ContactsPage() {
         })
       } else {
         next.add(contactId)
-        // Initialize contact data with existing email/phone
+        // Initialize contact data with existing email/phone/website
         setBulkContactData(prevData => {
           const nextData = new Map(prevData)
           nextData.set(contactId, {
             email: contact.email || '',
-            phone: contact.phone || ''
+            phone: contact.phone || '',
+            website: contact.website || ''
           })
           return nextData
         })
@@ -760,7 +806,7 @@ export default function ContactsPage() {
       
       const fetchedInvalidContacts = response.data.contacts || []
       const invalidIds = new Set<number>()
-      const contactDataMap = new Map<number, { email: string; phone: string }>()
+      const contactDataMap = new Map<number, { email: string; phone: string; website: string }>()
       
       // Store the fetched invalid contacts so we can render them
       setInvalidContacts(fetchedInvalidContacts)
@@ -769,7 +815,8 @@ export default function ContactsPage() {
         invalidIds.add(contact.id)
         contactDataMap.set(contact.id, {
           email: contact.email || '',
-          phone: contact.phone || ''
+          phone: contact.phone || '',
+          website: contact.website || ''
         })
       })
       
@@ -934,13 +981,14 @@ export default function ContactsPage() {
             setSelectedContactIds(allInvalidIds)
             
             // Update bulk contact data to include all remaining invalid contacts
-            const updatedBulkData = new Map<number, { email: string; phone: string }>()
+            const updatedBulkData = new Map<number, { email: string; phone: string; website: string }>()
             fetchedInvalidContacts.forEach(contact => {
               // Preserve any existing edits, or initialize with empty values
               const existingData = bulkContactData.get(contact.id)
               updatedBulkData.set(contact.id, {
                 email: existingData?.email || contact.email || '',
-                phone: existingData?.phone || contact.phone || ''
+                phone: existingData?.phone || contact.phone || '',
+                website: existingData?.website || contact.website || ''
               })
             })
             setBulkContactData(updatedBulkData)
@@ -1070,9 +1118,9 @@ export default function ContactsPage() {
       return
     }
 
-    // Validate all emails and phones before building payload
+    // Validate all emails, phones, and websites before building payload
     let hasValidationErrors = false
-    const validationErrorsMap = new Map<number, { email?: string | null; phone?: string | null }>()
+    const validationErrorsMap = new Map<number, { email?: string | null; phone?: string | null; website?: string | null }>()
     
     selectedContactIds.forEach(id => {
       const data = bulkContactData.get(id)
@@ -1080,6 +1128,7 @@ export default function ContactsPage() {
       
       const trimmedEmail = data.email.trim()
       const trimmedPhone = data.phone.trim()
+      const trimmedWebsite = data.website.trim()
       
       if (trimmedEmail) {
         const emailError = validateEmail(trimmedEmail)
@@ -1097,11 +1146,64 @@ export default function ContactsPage() {
           validationErrorsMap.set(id, { ...current, phone: phoneError })
         }
       }
+
+      if (trimmedWebsite) {
+        const websiteError = validateWebsite(trimmedWebsite)
+        if (websiteError) {
+          hasValidationErrors = true
+          const current = validationErrorsMap.get(id) || {}
+          validationErrorsMap.set(id, { ...current, website: websiteError })
+        }
+      }
     })
 
     if (hasValidationErrors) {
       setBulkValidationErrors(validationErrorsMap)
-      setBulkError('Please fix email and phone validation errors before saving.')
+      setBulkError('Please fix email, phone, and website format errors before saving.')
+      return
+    }
+
+    // Real-time validation: Check email and website reachability
+    setIsBulkSaving(true)
+    setBulkError(null)
+    
+    try {
+      // Validate all emails and websites for reachability
+      for (const id of selectedContactIds) {
+        const data = bulkContactData.get(id)
+        if (!data) continue
+
+        const trimmedEmail = data.email.trim()
+        const trimmedWebsite = data.website.trim()
+
+        if (trimmedEmail) {
+          const emailValidation = await ingestionApi.validateEmail(trimmedEmail)
+          if (!emailValidation.success || !emailValidation.data?.valid) {
+            const current = validationErrorsMap.get(id) || {}
+            validationErrorsMap.set(id, { ...current, email: emailValidation.data?.message || 'Email is invalid or unreachable' })
+            hasValidationErrors = true
+          }
+        }
+
+        if (trimmedWebsite) {
+          const websiteValidation = await ingestionApi.validateWebsite(trimmedWebsite)
+          if (!websiteValidation.success || !websiteValidation.data?.valid) {
+            const current = validationErrorsMap.get(id) || {}
+            validationErrorsMap.set(id, { ...current, website: websiteValidation.data?.message || 'Website is unreachable' })
+            hasValidationErrors = true
+          }
+        }
+      }
+
+      if (hasValidationErrors) {
+        setBulkValidationErrors(validationErrorsMap)
+        setBulkError('Some emails or websites are invalid or unreachable. Please fix them before saving.')
+        setIsBulkSaving(false)
+        return
+      }
+    } catch (validationError) {
+      setBulkError('Validation check failed. Please try again.')
+      setIsBulkSaving(false)
       return
     }
 
@@ -1113,24 +1215,26 @@ export default function ContactsPage() {
         
         const trimmedEmail = data.email.trim()
         const trimmedPhone = data.phone.trim()
+        const trimmedWebsite = data.website.trim()
         
         // Only include if at least one field has a value
-        if (!trimmedEmail && !trimmedPhone) return null
+        if (!trimmedEmail && !trimmedPhone && !trimmedWebsite) return null
         
         return {
           id,
           email: trimmedEmail || null,
-          phone: trimmedPhone || null
+          phone: trimmedPhone || null,
+          website: trimmedWebsite || null
         }
       })
-      .filter((item): item is { id: number; email: string | null; phone: string | null } => item !== null)
+      .filter((item): item is { id: number; email: string | null; phone: string | null; website: string | null } => item !== null)
 
     if (contactsPayload.length === 0) {
-      setBulkError('Please provide at least an email address or phone number for at least one contact.')
+      setBulkError('Please provide at least an email address, phone number, or website for at least one contact.')
+      setIsBulkSaving(false)
       return
     }
 
-    setIsBulkSaving(true)
     setBulkError(null)
     setBulkResult(null)
 
@@ -1239,10 +1343,12 @@ export default function ContactsPage() {
         }
         .phone-input-wrapper-bulk .PhoneInput {
           display: flex;
-          align-items: center;
+          align-items: stretch;
           border: 1px solid #cbd5e1;
           border-radius: 0.375rem;
           overflow: hidden;
+          height: 2.75rem;
+          min-height: 2.75rem;
           transition: all 0.2s;
         }
         .phone-input-wrapper-bulk .PhoneInput:focus-within {
@@ -1255,16 +1361,31 @@ export default function ContactsPage() {
           border-color: #ef4444;
           outline-color: rgba(239, 68, 68, 0.2);
         }
+        .phone-input-wrapper-bulk.phone-input-warning .PhoneInput {
+          border-color: #f59e0b;
+          background-color: rgba(254, 243, 199, 0.5);
+        }
+        .phone-input-wrapper-bulk.phone-input-warning .PhoneInput:focus-within {
+          border-color: #f59e0b;
+          outline-color: rgba(245, 158, 11, 0.2);
+        }
         .phone-input-wrapper-bulk .PhoneInputCountry {
           border-right: 1px solid #e2e8f0;
           padding: 0 8px;
+          display: flex;
+          align-items: center;
+          height: 100%;
         }
         .phone-input-wrapper-bulk .PhoneInputInput {
           flex: 1;
           border: none;
-          padding: 8px 12px;
+          padding: 0.75rem 0.75rem;
           font-size: 0.875rem;
           outline: none;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          line-height: 1.25;
         }
         .phone-input-wrapper-bulk .PhoneInputCountryOptions {
           z-index: 1000;
@@ -1374,7 +1495,7 @@ export default function ContactsPage() {
               <Card variant="filled" className="border-2 border-slate-200">
                 <CardHeader
                   title="Edit Invalid Contacts"
-                  subtitle="Select contacts from the table above, then add email or phone for each contact."
+                  subtitle="Select contacts from the table above, then add email, phone, or fix website for each contact."
                   icon={
                     <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1446,12 +1567,33 @@ export default function ContactsPage() {
                         // First try to find contact in invalidContacts (fetched invalid contacts)
                         // Then try to find in regular contacts (paginated)
                         const contact = invalidContacts.find(c => c.id === contactId) || contacts.find(c => c.id === contactId)
-                        const contactData = bulkContactData.get(contactId) || { email: '', phone: '' }
+                        const contactData = bulkContactData.get(contactId) || { email: '', phone: '', website: '' }
                         if (!contact) return null
 
+                        // Determine why contact is invalid
+                        const originalEmail = contact.email?.trim() || ''
+                        const originalPhone = contact.phone?.trim() || ''
+                        const originalWebsite = contact.website?.trim() || ''
+                        const isWebsiteInvalid = originalWebsite && contact.websiteValid === false
+                        const isMissingEmailAndPhone = !originalEmail && !originalPhone
+                        
                         const hasEmail = contactData.email.trim() !== ''
                         const hasPhone = contactData.phone.trim() !== ''
-                        const isReady = hasEmail || hasPhone
+                        const hasWebsite = contactData.website.trim() !== ''
+                        
+                        // Determine which fields need to be fixed
+                        const needsEmail = isMissingEmailAndPhone && !hasEmail
+                        const needsPhone = isMissingEmailAndPhone && !hasPhone
+                        const needsWebsiteFix = isWebsiteInvalid && (!hasWebsite || contactData.website.trim() === originalWebsite)
+                        
+                        // Check for validation errors (from user input) OR invalid website that hasn't been fixed
+                        const hasValidationErrors = Boolean(
+                          bulkValidationErrors.get(contactId)?.email ||
+                          bulkValidationErrors.get(contactId)?.phone ||
+                          bulkValidationErrors.get(contactId)?.website ||
+                          (isWebsiteInvalid && needsWebsiteFix) // Website is invalid and hasn't been changed
+                        )
+                        const isReady = (hasEmail || hasPhone || hasWebsite) && !hasValidationErrors
 
                         return (
                           <div
@@ -1517,14 +1659,22 @@ export default function ContactsPage() {
                                 </Button>
                               </div>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="space-y-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                              <div className="space-y-2 flex flex-col">
                                 <label className="flex items-center space-x-2 text-xs font-semibold text-slate-700">
                                   <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                   </svg>
                                   <span>Email Address</span>
-                                  {hasEmail && (
+                                  {needsEmail && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                      </svg>
+                                      Required
+                                    </span>
+                                  )}
+                                  {hasEmail && !needsEmail && (
                                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800">
                                       <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -1541,7 +1691,7 @@ export default function ContactsPage() {
                                     // Update email value
                                     setBulkContactData(prev => {
                                       const next = new Map(prev)
-                                      const current = next.get(contactId) || { email: '', phone: '' }
+                                      const current = next.get(contactId) || { email: '', phone: '', website: '' }
                                       next.set(contactId, {
                                         ...current,
                                         email: emailValue
@@ -1561,7 +1711,9 @@ export default function ContactsPage() {
                                     })
                                   }}
                                   className={`transition-all ${
-                                    hasEmail && !bulkValidationErrors.get(contactId)?.email
+                                    needsEmail
+                                      ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-500 bg-amber-50/50'
+                                      : hasEmail && !bulkValidationErrors.get(contactId)?.email
                                       ? 'border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
                                       : bulkValidationErrors.get(contactId)?.email
                                       ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500'
@@ -1574,13 +1726,21 @@ export default function ContactsPage() {
                                   </p>
                                 )}
                               </div>
-                              <div className="space-y-2">
+                              <div className="space-y-2 flex flex-col">
                                 <label className="flex items-center space-x-2 text-xs font-semibold text-slate-700">
                                   <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                                   </svg>
                                   <span>Phone Number</span>
-                                  {hasPhone && (
+                                  {needsPhone && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                      </svg>
+                                      Required
+                                    </span>
+                                  )}
+                                  {hasPhone && !needsPhone && (
                                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800">
                                       <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -1589,7 +1749,7 @@ export default function ContactsPage() {
                                     </span>
                                   )}
                                 </label>
-                                <div className={`phone-input-wrapper-bulk ${bulkValidationErrors.get(contactId)?.phone ? 'phone-input-error' : ''}`}>
+                                <div className={`phone-input-wrapper-bulk ${needsPhone ? 'phone-input-warning' : ''} ${bulkValidationErrors.get(contactId)?.phone ? 'phone-input-error' : ''}`}>
                                   <PhoneInput
                                     international
                                     defaultCountry="US"
@@ -1600,7 +1760,7 @@ export default function ContactsPage() {
                                       // Update phone value
                                       setBulkContactData(prev => {
                                         const next = new Map(prev)
-                                        const current = next.get(contactId) || { email: '', phone: '' }
+                                        const current = next.get(contactId) || { email: '', phone: '', website: '' }
                                         next.set(contactId, {
                                           ...current,
                                           phone: phoneValue
@@ -1629,6 +1789,80 @@ export default function ContactsPage() {
                                 )}
                               </div>
                             </div>
+                            <div className="space-y-2 mt-0">
+                              <label className="flex items-center space-x-2 text-xs font-semibold text-slate-700">
+                                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                </svg>
+                                <span>Website URL</span>
+                                {needsWebsiteFix && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                    </svg>
+                                    Invalid - Fix Required
+                                  </span>
+                                )}
+                                {hasWebsite && !needsWebsiteFix && !bulkValidationErrors.get(contactId)?.website && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800">
+                                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                    </svg>
+                                    Ready
+                                  </span>
+                                )}
+                                {hasWebsite && bulkValidationErrors.get(contactId)?.website && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">
+                                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                    </svg>
+                                    Invalid
+                                  </span>
+                                )}
+                              </label>
+                              <Input
+                                placeholder="example.com or https://example.com"
+                                value={contactData.website}
+                                onChange={event => {
+                                  const websiteValue = event.target.value
+                                  // Update website value
+                                  setBulkContactData(prev => {
+                                    const next = new Map(prev)
+                                    const current = next.get(contactId) || { email: '', phone: '', website: '' }
+                                    next.set(contactId, {
+                                      ...current,
+                                      website: websiteValue
+                                    })
+                                    return next
+                                  })
+                                  // Validate website
+                                  const websiteError = websiteValue.trim() ? validateWebsite(websiteValue) : null
+                                  setBulkValidationErrors(prev => {
+                                    const next = new Map(prev)
+                                    const current = next.get(contactId) || {}
+                                    next.set(contactId, {
+                                      ...current,
+                                      website: websiteError
+                                    })
+                                    return next
+                                  })
+                                }}
+                                className={`transition-all ${
+                                  needsWebsiteFix
+                                    ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-500 bg-amber-50/50'
+                                    : hasWebsite && !bulkValidationErrors.get(contactId)?.website
+                                    ? 'border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
+                                    : bulkValidationErrors.get(contactId)?.website
+                                    ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500'
+                                    : ''
+                                }`}
+                              />
+                              {bulkValidationErrors.get(contactId)?.website && (
+                                <p className="text-xs text-rose-600 mt-1">
+                                  {bulkValidationErrors.get(contactId)?.website}
+                                </p>
+                              )}
+                            </div>
                             {isReady && (
                               <div className="mt-3 flex items-center space-x-2 text-xs text-emerald-600">
                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -1656,16 +1890,22 @@ export default function ContactsPage() {
                             No contacts selected
                           </p>
                           <p className="text-xs text-slate-500">
-                            Select contacts from the table above to add email or phone numbers.
+                            Select contacts from the table above to add email, phone, or fix website URLs.
                           </p>
                         </div>
                       </div>
                     </div>
                   )}
 
+                  {bulkError && selectedContactIds.size > 0 && (
+                    <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-600 mb-4">
+                      {bulkError}
+                    </div>
+                  )}
+
                   {selectedContactIds.size > 0 && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t-2 border-slate-200 bg-gradient-to-r from-indigo-50/50 to-purple-50/50 -mx-6 -mb-6 px-6 py-4 rounded-b-xl">
-                      <div className="flex items-center space-x-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t-2 border-slate-200 bg-gradient-to-r from-indigo-50/50 to-purple-50/50 -mx-6 -mb-6 px-6 py-4 rounded-b-xl mt-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-3">
                         <Button
                           variant="secondary"
                           size="md"
@@ -1688,7 +1928,7 @@ export default function ContactsPage() {
                             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                             </svg>
-                            <span>Add email or phone for at least one contact</span>
+                            <span>Add email, phone, or fix website for at least one contact</span>
                           </span>
                         )}
                       </div>
@@ -1696,14 +1936,8 @@ export default function ContactsPage() {
                         <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        <span>Add email or phone for each contact, then click to update all.</span>
+                        <span>Add email, phone, or fix website for each contact, then click to update all.</span>
                       </p>
-                    </div>
-                  )}
-
-                  {bulkError && (
-                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-600">
-                      {bulkError}
                     </div>
                   )}
 
