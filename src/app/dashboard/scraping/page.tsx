@@ -9,6 +9,7 @@ import { ScrapingStats } from '@/components/scraping/ScrapingStats'
 import { scrapingApi } from '@/api/scraping'
 import { ingestionApi } from '@/api/ingestion'
 import { useAuthContext } from '@/contexts/AuthContext'
+import { WebsitePreviewDialog } from '@/components/scraping/WebsitePreviewDialog'
 import type { ReadyContact, StatsResponse, ScrapeSingleResponseData } from '@/types/scraping'
 import type { ClientContact } from '@/types/ingestion'
 
@@ -40,6 +41,17 @@ export default function ScrapingPage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [isFetchingAllContacts, setIsFetchingAllContacts] = useState(false)
   const [showAllContacts, setShowAllContacts] = useState(false)
+  
+  // Website preview dialog state
+  const [previewDialog, setPreviewDialog] = useState<{
+    isOpen: boolean
+    contactId: number
+    businessName: string
+    discoveredWebsite: string
+    confidence: 'high' | 'medium' | 'low'
+    searchQuery?: string
+  } | null>(null)
+  const [isDiscovering, setIsDiscovering] = useState<Record<number, boolean>>({})
 
   // Tentatively read last uploadId (will be validated against the logged-in client's uploads)
   useEffect(() => {
@@ -254,6 +266,97 @@ export default function ScrapingPage() {
     }
   }
 
+  // Check if contact needs website preview (business search)
+  const needsPreview = (contact: ReadyContact): boolean => {
+    // Need preview if: no website AND (has businessName OR scrapeMethod is business_search)
+    return !contact.website && (!!contact.businessName || contact.scrapeMethod === 'business_search')
+  }
+
+  // Scrape a single contact with preview if needed
+  const scrapeContactWithPreview = async (contactId: number, contact: ReadyContact) => {
+    // Check if preview is needed
+    if (needsPreview(contact)) {
+      // Discover website first
+      setIsDiscovering(prev => ({ ...prev, [contactId]: true }))
+      try {
+        const discovery = await scrapingApi.discoverWebsite(contactId)
+        if (discovery.success && discovery.data) {
+          // Show preview dialog
+          setPreviewDialog({
+            isOpen: true,
+            contactId,
+            businessName: contact.businessName || 'Unknown Business',
+            discoveredWebsite: discovery.data.discoveredWebsite,
+            confidence: discovery.data.confidence,
+            searchQuery: discovery.data.searchQuery
+          })
+          return null // Don't scrape yet, wait for user confirmation
+        } else {
+          // Discovery failed, proceed with normal scrape
+          return await scrapingApi.scrapeSingle(contactId)
+        }
+      } catch (error) {
+        console.error('Website discovery failed:', error)
+        // On error, proceed with normal scrape
+        return await scrapingApi.scrapeSingle(contactId)
+      } finally {
+        setIsDiscovering(prev => ({ ...prev, [contactId]: false }))
+      }
+    } else {
+      // No preview needed, scrape directly
+      return await scrapingApi.scrapeSingle(contactId)
+    }
+  }
+
+  // Handle preview confirmation
+  const handlePreviewConfirm = async () => {
+    if (!previewDialog) return
+    
+    const contactId = previewDialog.contactId
+    setScrapingStatus(prev => ({ ...prev, [contactId]: 'scraping' }))
+    
+    try {
+      // Scrape with confirmed website
+      const res = await scrapingApi.scrapeSingle(contactId, previewDialog.discoveredWebsite)
+      
+      // Update status
+      if (res.success && res.data) {
+        const status = res.data.success ? 'scraped' : 'failed'
+        setScrapingStatus(prev => ({ ...prev, [contactId]: status }))
+        if (res.data.success && res.data.data) {
+          setScrapedContactDetails(prev => ({ ...prev, [contactId]: res.data!.data! }))
+        }
+      } else {
+        setScrapingStatus(prev => ({ ...prev, [contactId]: 'failed' }))
+      }
+      
+      // Close preview dialog
+      setPreviewDialog(null)
+      
+      // Refresh data
+      await fetchStatsAndShowRecords()
+    } catch (error) {
+      console.error('Scraping failed:', error)
+      setScrapingStatus(prev => ({ ...prev, [contactId]: 'failed' }))
+      setPreviewDialog(null)
+    }
+  }
+
+  // Handle preview cancel
+  const handlePreviewCancel = () => {
+    if (previewDialog) {
+      setScrapingStatus(prev => ({ ...prev, [previewDialog.contactId]: null }))
+    }
+    setPreviewDialog(null)
+  }
+
+  // Handle visit website
+  const handleVisitWebsite = () => {
+    if (previewDialog) {
+      window.open(previewDialog.discoveredWebsite, '_blank', 'noopener,noreferrer')
+    }
+  }
+
   const startBatchScraping = async (limit: number = 20) => {
     setIsBatching(true)
     setApiError(null)
@@ -271,15 +374,29 @@ export default function ScrapingPage() {
     try {
       // If specific contacts are selected, scrape them individually (works with or without currentUploadId)
       if (selectedContactIds.length > 0) {
-        const results = await Promise.allSettled(
-          selectedContactIds.map(async (contactId) => {
+        // Separate contacts that need preview from those that don't
+        const contactsNeedingPreview: Array<{ contactId: number; contact: ReadyContact }> = []
+        const contactsDirectScrape: number[] = []
+        
+        selectedContactIds.forEach(contactId => {
+          const contact = readyContacts.find(c => c.id === contactId)
+          if (contact && needsPreview(contact)) {
+            contactsNeedingPreview.push({ contactId, contact })
+          } else {
+            contactsDirectScrape.push(contactId)
+          }
+        })
+        
+        // Scrape contacts that don't need preview directly
+        const directResults = await Promise.allSettled(
+          contactsDirectScrape.map(async (contactId) => {
             const res = await scrapingApi.scrapeSingle(contactId)
             return { contactId, ...res }
           })
         )
         
-        results.forEach((result, index) => {
-          const contactId = selectedContactIds[index]
+        directResults.forEach((result, index) => {
+          const contactId = contactsDirectScrape[index]
           if (result.status === 'fulfilled' && result.value.success && result.value.data) {
             const status = result.value.data.success ? 'scraped' : 'failed'
             setScrapingStatus(prev => ({ ...prev, [contactId]: status }))
@@ -291,8 +408,21 @@ export default function ScrapingPage() {
           }
         })
         
-        // Clear selection after scraping
-        setSelectedContactIds([])
+        // Handle contacts that need preview (one at a time)
+        // Note: The preview dialog will handle the actual scraping after user confirms
+        for (const { contactId, contact } of contactsNeedingPreview) {
+          await scrapeContactWithPreview(contactId, contact)
+          // If preview dialog is shown, wait for user confirmation
+          // The handlePreviewConfirm will continue the scraping
+          if (previewDialog) {
+            break // Stop here, let user confirm before proceeding
+          }
+        }
+        
+        // Clear selection after scraping (only if no preview dialog is open)
+        if (!previewDialog) {
+          setSelectedContactIds([])
+        }
       } else {
         // Use batch API for unselected scraping (requires currentUploadId)
         if (!currentUploadId) {
@@ -337,6 +467,15 @@ export default function ScrapingPage() {
 
   const scrapeSingleContact = async (contactId: number) => {
     setApiError(null)
+    const contact = readyContacts.find(c => c.id === contactId)
+    
+    // Check if preview is needed
+    if (contact && needsPreview(contact)) {
+      await scrapeContactWithPreview(contactId, contact)
+      return // Preview dialog will handle the scraping
+    }
+    
+    // No preview needed, scrape directly
     setScrapingStatus(prev => ({ ...prev, [contactId]: 'scraping' }))
     try {
       const res = await scrapingApi.scrapeSingle(contactId)
@@ -810,6 +949,21 @@ export default function ScrapingPage() {
           }
         }}
       />
+      
+      {/* Website Preview Dialog */}
+      {previewDialog && (
+        <WebsitePreviewDialog
+          isOpen={previewDialog.isOpen}
+          businessName={previewDialog.businessName}
+          discoveredWebsite={previewDialog.discoveredWebsite}
+          confidence={previewDialog.confidence}
+          searchQuery={previewDialog.searchQuery}
+          onConfirm={handlePreviewConfirm}
+          onCancel={handlePreviewCancel}
+          onVisitWebsite={handleVisitWebsite}
+          isLoading={isBatching}
+        />
+      )}
     </AuthGuard>
   )
 }

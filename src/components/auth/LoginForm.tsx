@@ -39,7 +39,21 @@ export function LoginForm() {
 
     const success = await login(email, password)
     if (success) {
-      router.push('/dashboard')
+      // Wait a moment for localStorage to be written and state to update, then redirect
+      // Use window.location to ensure full page reload and proper auth state
+      // The full page reload will re-initialize the auth context from localStorage
+      setTimeout(() => {
+        // Verify localStorage was written before redirecting
+        const storedClient = typeof window !== 'undefined' ? localStorage.getItem('currentUser') : null
+        if (storedClient) {
+          window.location.href = '/dashboard'
+        } else {
+          // If localStorage write failed, try again after a short delay
+          setTimeout(() => {
+            window.location.href = '/dashboard'
+          }, 200)
+        }
+      }, 150)
     } else {
       setErrors({ general: 'Invalid email or password' })
     }

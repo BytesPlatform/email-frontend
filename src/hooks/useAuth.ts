@@ -29,11 +29,12 @@ export function useAuth(): AuthState & {
   const isAuthenticated = !!client
 
   useEffect(() => {
-    const checkAuth = async () => {
+    const checkAuth = () => {
       try {
         // Only check auth on client side
         if (typeof window !== 'undefined') {
-          const currentClient = await auth.getCurrentUser()
+          // getCurrentUser is synchronous - reads from localStorage
+          const currentClient = auth.getCurrentUser()
           setClient(currentClient)
         }
       } catch {

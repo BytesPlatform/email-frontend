@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Skeleton, SkeletonAvatar } from '@/components/common/Skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -9,6 +9,83 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { isValidEmail } from '@/lib/utils'
 import { auth } from '@/api/auth'
 import { Client, ProductService, ProductServiceInput } from '@/types/auth'
+import PhoneInput from 'react-phone-number-input'
+import type { E164Number } from 'libphonenumber-js/core'
+import { parsePhoneNumberFromString } from 'libphonenumber-js'
+import 'react-phone-number-input/style.css'
+
+// Validation functions (same as RegisterForm)
+const validateFullName = (name: string): string | null => {
+  if (!name.trim()) return 'Full name is required'
+  
+  // Must contain at least one letter
+  if (!/[a-zA-Z]/.test(name)) {
+    return 'Full name must contain at least one letter and cannot be only numbers'
+  }
+  
+  // Cannot be only numbers
+  if (/^\d+$/.test(name.trim())) {
+    return 'Full name must contain at least one letter and cannot be only numbers'
+  }
+  
+  return null
+}
+
+const validatePhone = (phone: string): string | null => {
+  if (!phone.trim()) return null // Empty is allowed
+  
+  // Use libphonenumber-js to validate
+  const parsed = parsePhoneNumberFromString(phone.trim())
+  
+  if (!parsed || !parsed.isValid()) {
+    return 'Please enter a valid phone number'
+  }
+  
+  // Check minimum length (at least 7 digits for national number)
+  const nationalNumber = parsed.nationalNumber
+  if (nationalNumber.length < 7) {
+    return 'Phone number is too short. Please enter a complete phone number.'
+  }
+  
+  // Check maximum length (ITU-T E.164 standard allows up to 15 digits)
+  if (nationalNumber.length > 15) {
+    return 'Phone number is too long. Please check and try again.'
+  }
+  
+  return null
+}
+
+const validateCity = (city: string): string | null => {
+  if (!city.trim()) return null // Empty is allowed
+  
+  // Must contain at least one letter
+  if (!/[a-zA-Z]/.test(city)) {
+    return 'City must contain at least one letter and cannot be only numbers'
+  }
+  
+  // Cannot be only numbers
+  if (/^\d+$/.test(city.trim())) {
+    return 'City must contain at least one letter and cannot be only numbers'
+  }
+  
+  return null
+}
+
+const validateCountry = (country: string): string | null => {
+  if (!country.trim()) return null // Empty is allowed
+  
+  // Must contain at least one letter
+  if (!/[a-zA-Z]/.test(country)) {
+    return 'Country must contain at least one letter and cannot be only numbers'
+  }
+  
+  // Cannot be only numbers
+  if (/^\d+$/.test(country.trim())) {
+    return 'Country must contain at least one letter and cannot be only numbers'
+  }
+  
+  return null
+}
 
 export function ProfileForm() {
   const { user, updateProfile, isLoading } = useAuth()
@@ -19,7 +96,7 @@ export function ProfileForm() {
   
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
+  const [phone, setPhone] = useState<E164Number | undefined>(undefined)
   const [city, setCity] = useState('')
   const [country, setCountry] = useState('')
   const [address, setAddress] = useState('')
@@ -33,6 +110,71 @@ export function ProfileForm() {
   const [productsServices, setProductsServices] = useState<ProductServiceInput[]>([])
   const [isProductsEditMode, setIsProductsEditMode] = useState(false)
   const [pendingProductAction, setPendingProductAction] = useState<{ type: 'add' } | { type: 'remove'; index: number } | null>(null)
+  const phoneInputRef = useRef<HTMLDivElement>(null)
+
+  // Real-time validation handlers
+  const handleNameChange = (value: string) => {
+    // Filter out numbers - only allow letters, spaces, hyphens, apostrophes
+    const filtered = value.split('').filter(char => /[a-zA-Z\s\-']/.test(char)).join('')
+    setName(filtered)
+    const error = validateFullName(filtered)
+    setErrors(prev => ({ ...prev, name: error || '' }))
+  }
+
+  const handlePhoneChange = (value: E164Number | undefined) => {
+    setPhone(value)
+    const error = value ? validatePhone(value) : null
+    setErrors(prev => ({ ...prev, phone: error || '' }))
+  }
+
+  const handleCityChange = (value: string) => {
+    // Filter out numbers - only allow letters, spaces, hyphens, apostrophes
+    const filtered = value.split('').filter(char => /[a-zA-Z\s\-']/.test(char)).join('')
+    setCity(filtered)
+    const error = filtered.trim() ? validateCity(filtered) : null
+    setErrors(prev => ({ ...prev, city: error || '' }))
+  }
+
+  const handleCountryChange = (value: string) => {
+    // Filter out numbers - only allow letters, spaces, hyphens, apostrophes
+    const filtered = value.split('').filter(char => /[a-zA-Z\s\-']/.test(char)).join('')
+    setCountry(filtered)
+    const error = filtered.trim() ? validateCountry(filtered) : null
+    setErrors(prev => ({ ...prev, country: error || '' }))
+  }
+
+  // Force phone dropdown to open downward
+  useEffect(() => {
+    const forceDropdownDown = () => {
+      const options = document.querySelectorAll('.PhoneInputCountryOptions')
+      options.forEach((option) => {
+        const element = option as HTMLElement
+        if (element.style.bottom) {
+          element.style.bottom = ''
+        }
+        const select = element.closest('.PhoneInputCountry')?.querySelector('.PhoneInputCountrySelect') as HTMLElement
+        if (select) {
+          const rect = select.getBoundingClientRect()
+          element.style.top = `${rect.height + 4}px`
+          element.style.bottom = 'auto'
+          element.style.transform = 'none'
+          element.style.position = 'absolute'
+        }
+      })
+    }
+
+    forceDropdownDown()
+    const observer = new MutationObserver(forceDropdownDown)
+    if (phoneInputRef.current) {
+      observer.observe(phoneInputRef.current, { childList: true, subtree: true, attributes: true })
+    }
+    document.addEventListener('click', forceDropdownDown)
+
+    return () => {
+      observer.disconnect()
+      document.removeEventListener('click', forceDropdownDown)
+    }
+  }, [])
 
   useEffect(() => {
     fetchProfile()
@@ -47,7 +189,7 @@ export function ProfileForm() {
         setProfile(profileData)
         setName(profileData.name || '')
         setEmail(profileData.email || '')
-        setPhone(profileData.phone || '')
+        setPhone(profileData.phone as E164Number | undefined)
         setCity(profileData.city || '')
         setCountry(profileData.country || '')
         setAddress(profileData.address || '')
@@ -85,8 +227,26 @@ export function ProfileForm() {
     // Validation
     const newErrors: { [key: string]: string } = {}
     
-    if (!name.trim()) {
-      newErrors.name = 'Name is required'
+    // Full Name validation
+    const nameError = validateFullName(name)
+    if (nameError) newErrors.name = nameError
+
+    // Phone validation
+    if (phone) {
+      const phoneError = validatePhone(phone)
+      if (phoneError) newErrors.phone = phoneError
+    }
+
+    // City validation
+    if (city.trim()) {
+      const cityError = validateCity(city)
+      if (cityError) newErrors.city = cityError
+    }
+
+    // Country validation
+    if (country.trim()) {
+      const countryError = validateCountry(country)
+      if (countryError) newErrors.country = countryError
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -136,7 +296,7 @@ export function ProfileForm() {
     if (profile) {
       setName(profile.name || '')
       setEmail(profile.email || '')
-      setPhone(profile.phone || '')
+      setPhone(profile.phone as E164Number | undefined)
       setCity(profile.city || '')
       setCountry(profile.country || '')
       setAddress(profile.address || '')
@@ -560,10 +720,11 @@ export function ProfileForm() {
                       label="Full Name"
                       type="text"
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => handleNameChange(e.target.value)}
                       error={errors.name}
                       required
                       placeholder="Enter your full name"
+                      className={errors.name ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}
                     />
                     
                     <div className="space-y-1">
@@ -571,31 +732,71 @@ export function ProfileForm() {
                       <p className="text-gray-900 bg-gray-100 px-3 py-2 rounded-lg border border-gray-300">{email}</p>
                     </div>
                     
-                    <Input
-                      label="Phone"
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      error={errors.phone}
-                      placeholder="Enter your phone"
-                    />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Phone
+                      </label>
+                      <div ref={phoneInputRef} className="phone-input-wrapper-profile">
+                        <PhoneInput
+                          international
+                          defaultCountry="US"
+                          value={phone}
+                          onChange={handlePhoneChange}
+                          placeholder="Enter phone number with country code"
+                        />
+                      </div>
+                      {errors.phone && (
+                        <p className="mt-1.5 text-xs text-red-600 font-medium">{errors.phone}</p>
+                      )}
+                      <style dangerouslySetInnerHTML={{__html: `
+                        .phone-input-wrapper-profile .PhoneInput {
+                          display: flex;
+                          align-items: center;
+                          border: 1px solid ${errors.phone ? '#ef4444' : '#cbd5e1'};
+                          border-radius: 0.375rem;
+                          overflow: hidden;
+                          transition: all 0.2s;
+                        }
+                        .phone-input-wrapper-profile .PhoneInput:focus-within {
+                          border-color: ${errors.phone ? '#ef4444' : '#6366f1'};
+                          outline: 2px solid ${errors.phone ? 'rgba(239, 68, 68, 0.2)' : 'rgba(99, 102, 241, 0.2)'};
+                          outline-offset: 0;
+                        }
+                        .phone-input-wrapper-profile .PhoneInputCountry {
+                          border-right: 1px solid #e2e8f0;
+                          padding: 0 8px;
+                        }
+                        .phone-input-wrapper-profile .PhoneInputInput {
+                          flex: 1;
+                          border: none;
+                          padding: 8px 12px;
+                          font-size: 0.875rem;
+                          outline: none;
+                        }
+                        .phone-input-wrapper-profile .PhoneInputCountryOptions {
+                          z-index: 1000;
+                        }
+                      `}} />
+                    </div>
                     
                     <Input
                       label="City"
                       type="text"
                       value={city}
-                      onChange={(e) => setCity(e.target.value)}
+                      onChange={(e) => handleCityChange(e.target.value)}
                       error={errors.city}
                       placeholder="Enter your city"
+                      className={errors.city ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}
                     />
                     
                     <Input
                       label="Country"
                       type="text"
                       value={country}
-                      onChange={(e) => setCountry(e.target.value)}
+                      onChange={(e) => handleCountryChange(e.target.value)}
                       error={errors.country}
                       placeholder="Enter your country"
+                      className={errors.country ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}
                     />
                     
                     <Input
