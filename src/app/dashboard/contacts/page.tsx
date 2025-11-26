@@ -15,6 +15,10 @@ import type {
   ClientContactsQuery
 } from '@/types/ingestion'
 import { useAuthContext } from '@/contexts/AuthContext'
+import { parsePhoneNumberFromString } from 'libphonenumber-js'
+import PhoneInput from 'react-phone-number-input'
+import type { E164Number } from 'libphonenumber-js/core'
+import 'react-phone-number-input/style.css'
 import { ContactsFilterBar } from '@/components/contacts/ContactsFilterBar'
 import { ContactsTable } from '@/components/contacts/ContactsTable'
 import { ContactModal } from '@/components/contacts/ContactModal'
@@ -124,6 +128,130 @@ const getValidityDisplay = (contact: ClientContact) => {
   }
 }
 
+// Add these validation functions after getValidityDisplay (around line 125)
+const validateWebsite = (website: string): string | null => {
+  if (!website.trim()) return null // Empty is allowed
+  
+  // Remove http:// or https:// for validation (user can enter plain domain)
+  const normalized = website.trim().replace(/^https?:\/\//i, '')
+  
+  // Must have a valid domain extension (.com, .org, .net, country codes, etc.)
+  const domainPattern = /^[^\s\/]+\.[a-z]{2,}(\/.*)?$/i
+  if (!domainPattern.test(normalized)) {
+    return 'Website must have a valid domain extension (e.g., .com, .org, .net, .by, etc.)'
+  }
+  
+  return null
+}
+
+// Helper function to normalize website URL (add https:// if not present)
+const normalizeWebsite = (website: string): string => {
+  const trimmed = website.trim()
+  if (!trimmed) return trimmed
+  
+  // If it already starts with http:// or https://, return as is
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed
+  }
+  
+  // Otherwise, prepend https://
+  return `https://${trimmed}`
+}
+
+const validateEmail = (email: string): string | null => {
+  if (!email.trim()) return null // Empty is allowed
+  
+  // Should not be just numbers
+  if (/^\d+$/.test(email)) {
+    return 'Email cannot be only numbers'
+  }
+  
+  // Must have @ symbol
+  if (!email.includes('@')) {
+    return 'Email must contain @ symbol'
+  }
+  
+  // Must have valid domain after @
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
+  if (!emailPattern.test(email)) {
+    return 'Email must have a valid format (e.g., name@domain.com)'
+  }
+  
+  return null
+}
+
+const validateBusinessName = (name: string): string | null => {
+  if (!name.trim()) return null // Empty is allowed
+  
+  // Should not be only numbers/integers
+  if (/^\d+$/.test(name.trim())) {
+    return 'Business name cannot be only numbers'
+  }
+  
+  // Must contain at least one letter
+  if (!/[a-zA-Z]/.test(name)) {
+    return 'Business name must contain at least one letter'
+  }
+  
+  return null
+}
+
+const validateZipCode = (zipCode: string): string | null => {
+  if (!zipCode.trim()) return null // Empty is allowed
+  
+  // Must be exactly 5 digits
+  if (!/^\d{5}$/.test(zipCode.trim())) {
+    return 'Zip code must be exactly 5 digits'
+  }
+  
+  return null
+}
+
+const validateState = (state: string): string | null => {
+  if (!state.trim()) return null // Empty is allowed
+  
+  // Must not be only numbers
+  if (/^\d+$/.test(state.trim())) {
+    return 'State cannot be only numbers'
+  }
+  
+  // Must be a string (contains at least one letter)
+  if (!/[a-zA-Z]/.test(state)) {
+    return 'State must contain at least one letter'
+  }
+  
+  // Maximum 20 characters
+  if (state.trim().length > 20) {
+    return 'State must be maximum 20 characters'
+  }
+  
+  return null
+}
+
+const validatePhone = (phone: string): string | null => {
+  if (!phone.trim()) return null // Empty is allowed
+  
+  // Use libphonenumber-js to validate (same approach as PhoneAccountsCard)
+  const parsed = parsePhoneNumberFromString(phone.trim())
+  
+  if (!parsed || !parsed.isValid()) {
+    return 'Please enter a valid phone number'
+  }
+  
+  // Check minimum length (at least 7 digits for national number)
+  const nationalNumber = parsed.nationalNumber
+  if (nationalNumber.length < 7) {
+    return 'Phone number is too short. Please enter a complete phone number.'
+  }
+  
+  // Check maximum length (ITU-T E.164 standard allows up to 15 digits)
+  if (nationalNumber.length > 15) {
+    return 'Phone number is too long. Please check and try again.'
+  }
+  
+  return null
+}
+
 export default function ContactsPage() {
   const { client } = useAuthContext()
 
@@ -155,6 +283,7 @@ export default function ContactsPage() {
   const [detailsSuccess, setDetailsSuccess] = useState<string | null>(null)
   const [selectedContactIds, setSelectedContactIds] = useState<Set<number>>(new Set())
   const [bulkContactData, setBulkContactData] = useState<Map<number, { email: string; phone: string }>>(new Map())
+  const [bulkValidationErrors, setBulkValidationErrors] = useState<Map<number, { email?: string | null; phone?: string | null }>>(new Map())
   const [isBulkSaving, setIsBulkSaving] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
   const [bulkResult, setBulkResult] = useState<{ updated: number; failed: number } | null>(null)
@@ -286,7 +415,38 @@ export default function ContactsPage() {
   useEffect(() => {
     const handler = setTimeout(() => {
       const trimmed = searchInput.trim()
-      const nextSearch = trimmed.length > 0 ? trimmed : undefined
+      
+      if (!trimmed) {
+        setQuery(prev => {
+          if (prev.search === undefined && prev.page === 1) {
+            return prev
+          }
+          return {
+            ...prev,
+            page: 1,
+            search: undefined
+          }
+        })
+        return
+      }
+      
+      // Normalize URL search terms: remove protocol and trailing slashes
+      // This allows "https://www.sunrisebakery.com" to match "www.sunrisebakery.com" or "sunrisebakery.com"
+      let normalizedSearch = trimmed
+      
+      // Remove http:// or https:// prefix if present
+      if (/^https?:\/\//i.test(normalizedSearch)) {
+        normalizedSearch = normalizedSearch.replace(/^https?:\/\//i, '')
+      }
+      
+      // Remove trailing slashes
+      normalizedSearch = normalizedSearch.replace(/\/+$/, '')
+      
+      // Trim again after normalization
+      normalizedSearch = normalizedSearch.trim()
+      
+      const nextSearch = normalizedSearch.length > 0 ? normalizedSearch : undefined
+      
       setQuery(prev => {
         if (prev.search === nextSearch && prev.page === 1) {
           return prev
@@ -445,6 +605,24 @@ export default function ContactsPage() {
       return
     }
 
+    // Validate email if provided
+    if (trimmedEmail) {
+      const emailError = validateEmail(trimmedEmail)
+      if (emailError) {
+        setEditError(emailError)
+        return
+      }
+    }
+
+    // Validate phone if provided
+    if (trimmedPhone) {
+      const phoneError = validatePhone(trimmedPhone)
+      if (phoneError) {
+        setEditError(phoneError)
+        return
+      }
+    }
+
     setIsSavingContact(true)
     setEditError(null)
     setEditSuccess(null)
@@ -544,6 +722,12 @@ export default function ContactsPage() {
           nextData.delete(contactId)
           return nextData
         })
+        // Clear validation errors when deselected
+        setBulkValidationErrors(prev => {
+          const next = new Map(prev)
+          next.delete(contactId)
+          return next
+        })
       } else {
         next.add(contactId)
         // Initialize contact data with existing email/phone
@@ -605,6 +789,7 @@ export default function ContactsPage() {
   const handleClearBulkSelection = () => {
     setSelectedContactIds(new Set())
     setBulkContactData(new Map())
+    setBulkValidationErrors(new Map()) // Clear validation errors
     setInvalidContacts([]) // Clear invalid contacts when clearing selection
     setBulkError(null)
     setBulkResult(null)
@@ -792,6 +977,19 @@ export default function ContactsPage() {
       return
     }
 
+    // Validation before saving
+    const websiteError = editWebsite.trim() ? validateWebsite(editWebsite) : null
+    const emailError = editEmail.trim() ? validateEmail(editEmail) : null
+    const businessNameError = editBusinessName.trim() ? validateBusinessName(editBusinessName) : null
+    const zipCodeError = editZipCode.trim() ? validateZipCode(editZipCode) : null
+    const stateError = editStateValue.trim() ? validateState(editStateValue) : null
+
+    // Check if there are any validation errors
+    if (websiteError || emailError || businessNameError || zipCodeError || stateError) {
+      setDetailsError('Please fix validation errors before saving.')
+      return
+    }
+
     setIsSavingDetails(true)
     setDetailsError(null)
     setDetailsSuccess(null)
@@ -807,11 +1005,14 @@ export default function ContactsPage() {
     }
 
     try {
+      // Normalize website: add https:// if not present
+      const normalizedWebsite = editWebsite.trim() ? normalizeWebsite(editWebsite) : null
+      
       const payload = {
         businessName: normalizeString(editBusinessName),
         email: normalizeNullable(editEmail),
         phone: normalizeNullable(editPhone),
-        website: normalizeNullable(editWebsite),
+        website: normalizedWebsite,
         state: normalizeNullable(editStateValue),
         zipCode: editZipCode ? String(editZipCode).trim() || null : null,
         valid: typeof editValidFlag === 'boolean' ? editValidFlag : undefined
@@ -866,6 +1067,41 @@ export default function ContactsPage() {
   const handleSubmitBulkUpdates = async () => {
     if (selectedContactIds.size === 0) {
       setBulkError('Please select at least one contact.')
+      return
+    }
+
+    // Validate all emails and phones before building payload
+    let hasValidationErrors = false
+    const validationErrorsMap = new Map<number, { email?: string | null; phone?: string | null }>()
+    
+    selectedContactIds.forEach(id => {
+      const data = bulkContactData.get(id)
+      if (!data) return
+      
+      const trimmedEmail = data.email.trim()
+      const trimmedPhone = data.phone.trim()
+      
+      if (trimmedEmail) {
+        const emailError = validateEmail(trimmedEmail)
+        if (emailError) {
+          hasValidationErrors = true
+          validationErrorsMap.set(id, { email: emailError })
+        }
+      }
+      
+      if (trimmedPhone) {
+        const phoneError = validatePhone(trimmedPhone)
+        if (phoneError) {
+          hasValidationErrors = true
+          const current = validationErrorsMap.get(id) || {}
+          validationErrorsMap.set(id, { ...current, phone: phoneError })
+        }
+      }
+    })
+
+    if (hasValidationErrors) {
+      setBulkValidationErrors(validationErrorsMap)
+      setBulkError('Please fix email and phone validation errors before saving.')
       return
     }
 
@@ -966,6 +1202,11 @@ export default function ContactsPage() {
       }
 
       setBulkResult({ updated: safeUpdated.length, failed: safeFailed.length })
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setBulkResult(null)
+      }, 3000)
     } catch (error) {
       setBulkError(
         error instanceof Error ? error.message : 'Failed to update contacts. Please try again.'
@@ -991,8 +1232,46 @@ export default function ContactsPage() {
   }
 
   return (
-    <AuthGuard>
-      <div className="bg-gray-50 min-h-screen">
+    <>
+      <style dangerouslySetInnerHTML={{__html: `
+        .phone-input-wrapper-bulk {
+          position: relative;
+        }
+        .phone-input-wrapper-bulk .PhoneInput {
+          display: flex;
+          align-items: center;
+          border: 1px solid #cbd5e1;
+          border-radius: 0.375rem;
+          overflow: hidden;
+          transition: all 0.2s;
+        }
+        .phone-input-wrapper-bulk .PhoneInput:focus-within {
+          border-color: #6366f1;
+          outline: 2px solid rgba(99, 102, 241, 0.2);
+          outline-offset: 0;
+        }
+        .phone-input-wrapper-bulk.phone-input-error .PhoneInput,
+        .phone-input-wrapper-bulk.phone-input-error .PhoneInput:focus-within {
+          border-color: #ef4444;
+          outline-color: rgba(239, 68, 68, 0.2);
+        }
+        .phone-input-wrapper-bulk .PhoneInputCountry {
+          border-right: 1px solid #e2e8f0;
+          padding: 0 8px;
+        }
+        .phone-input-wrapper-bulk .PhoneInputInput {
+          flex: 1;
+          border: none;
+          padding: 8px 12px;
+          font-size: 0.875rem;
+          outline: none;
+        }
+        .phone-input-wrapper-bulk .PhoneInputCountryOptions {
+          z-index: 1000;
+        }
+      `}} />
+      <AuthGuard>
+        <div className="bg-gray-50 min-h-screen">
         <div className="mx-auto max-w-7xl px-4 sm:px-4 lg:px-6 py-6 pb-24">
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-lg">
@@ -1258,18 +1537,42 @@ export default function ContactsPage() {
                                   placeholder="name@example.com"
                                   value={contactData.email}
                                   onChange={event => {
+                                    const emailValue = event.target.value
+                                    // Update email value
                                     setBulkContactData(prev => {
                                       const next = new Map(prev)
                                       const current = next.get(contactId) || { email: '', phone: '' }
                                       next.set(contactId, {
                                         ...current,
-                                        email: event.target.value
+                                        email: emailValue
+                                      })
+                                      return next
+                                    })
+                                    // Validate email
+                                    const emailError = emailValue.trim() ? validateEmail(emailValue) : null
+                                    setBulkValidationErrors(prev => {
+                                      const next = new Map(prev)
+                                      const current = next.get(contactId) || {}
+                                      next.set(contactId, {
+                                        ...current,
+                                        email: emailError
                                       })
                                       return next
                                     })
                                   }}
-                                  className={`transition-all ${hasEmail ? 'border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500' : ''}`}
+                                  className={`transition-all ${
+                                    hasEmail && !bulkValidationErrors.get(contactId)?.email
+                                      ? 'border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
+                                      : bulkValidationErrors.get(contactId)?.email
+                                      ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500'
+                                      : ''
+                                  }`}
                                 />
+                                {bulkValidationErrors.get(contactId)?.email && (
+                                  <p className="text-xs text-rose-600 mt-1">
+                                    {bulkValidationErrors.get(contactId)?.email}
+                                  </p>
+                                )}
                               </div>
                               <div className="space-y-2">
                                 <label className="flex items-center space-x-2 text-xs font-semibold text-slate-700">
@@ -1286,22 +1589,44 @@ export default function ContactsPage() {
                                     </span>
                                   )}
                                 </label>
-                                <Input
-                                  placeholder="(555) 123-4567"
-                                  value={contactData.phone}
-                                  onChange={event => {
-                                    setBulkContactData(prev => {
-                                      const next = new Map(prev)
-                                      const current = next.get(contactId) || { email: '', phone: '' }
-                                      next.set(contactId, {
-                                        ...current,
-                                        phone: event.target.value
+                                <div className={`phone-input-wrapper-bulk ${bulkValidationErrors.get(contactId)?.phone ? 'phone-input-error' : ''}`}>
+                                  <PhoneInput
+                                    international
+                                    defaultCountry="US"
+                                    value={contactData.phone as E164Number | undefined}
+                                    onChange={(value) => {
+                                      const phoneValue = value || ''
+                                      
+                                      // Update phone value
+                                      setBulkContactData(prev => {
+                                        const next = new Map(prev)
+                                        const current = next.get(contactId) || { email: '', phone: '' }
+                                        next.set(contactId, {
+                                          ...current,
+                                          phone: phoneValue
+                                        })
+                                        return next
                                       })
-                                      return next
-                                    })
-                                  }}
-                                  className={`transition-all ${hasPhone ? 'border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500' : ''}`}
-                                />
+                                      // Validate phone
+                                      const phoneError = phoneValue.trim() ? validatePhone(phoneValue) : null
+                                      setBulkValidationErrors(prev => {
+                                        const next = new Map(prev)
+                                        const current = next.get(contactId) || {}
+                                        next.set(contactId, {
+                                          ...current,
+                                          phone: phoneError
+                                        })
+                                        return next
+                                      })
+                                    }}
+                                    placeholder="Enter phone number with country code"
+                                  />
+                                </div>
+                                {bulkValidationErrors.get(contactId)?.phone && (
+                                  <p className="text-xs text-rose-600 mt-1">
+                                    {bulkValidationErrors.get(contactId)?.phone}
+                                  </p>
+                                )}
                               </div>
                             </div>
                             {isReady && (
@@ -1490,6 +1815,7 @@ export default function ContactsPage() {
         </div>
       </div>
     </AuthGuard>
+    </>
   )
 }
 

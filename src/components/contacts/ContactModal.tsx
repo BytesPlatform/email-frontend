@@ -1,10 +1,148 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import type { ClientContact } from '@/types/ingestion'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import { parsePhoneNumberFromString } from 'libphonenumber-js'
+import PhoneInput from 'react-phone-number-input'
+import type { E164Number } from 'libphonenumber-js/core'
+import 'react-phone-number-input/style.css'
+
+// Add validation functions at the top of the file
+const validateWebsite = (website: string): string | null => {
+  if (!website.trim()) return null // Empty is allowed
+  
+  // Remove http:// or https:// for validation (user can enter plain domain)
+  const normalized = website.trim().replace(/^https?:\/\//i, '')
+  
+  // Must have a valid domain extension (.com, .org, .net, country codes, etc.)
+  const domainPattern = /^[^\s\/]+\.[a-z]{2,}(\/.*)?$/i
+  if (!domainPattern.test(normalized)) {
+    return 'Website must have a valid domain extension (e.g., .com, .org, .net, .by, etc.)'
+  }
+  
+  return null
+}
+
+// Helper function to normalize website URL (add https:// if not present)
+const normalizeWebsite = (website: string): string => {
+  const trimmed = website.trim()
+  if (!trimmed) return trimmed
+  
+  // If it already starts with http:// or https://, return as is
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed
+  }
+  
+  // Otherwise, prepend https://
+  return `https://${trimmed}`
+}
+
+const validateEmail = (email: string): string | null => {
+  if (!email.trim()) return null // Empty is allowed
+  
+  // Should not be just numbers
+  if (/^\d+$/.test(email)) {
+    return 'Email cannot be only numbers'
+  }
+  
+  // Must have @ symbol
+  if (!email.includes('@')) {
+    return 'Email must contain @ symbol'
+  }
+  
+  // Must have valid domain after @
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
+  if (!emailPattern.test(email)) {
+    return 'Email must have a valid format (e.g., name@domain.com)'
+  }
+  
+  // Check for common email providers
+  const validDomains = ['gmail', 'yahoo', 'hotmail', 'outlook', 'aol', 'icloud', 'protonmail', 'mail', 'live', 'msn']
+  const domain = email.split('@')[1]?.split('.')[0]?.toLowerCase()
+  
+  // Allow any domain, but ensure it has proper TLD
+  const hasValidTLD = /@[^\s@]+\.[a-z]{2,}$/i.test(email)
+  if (!hasValidTLD) {
+    return 'Email must have a valid domain extension (e.g., .com, .org, .net)'
+  }
+  
+  return null
+}
+
+const validateBusinessName = (name: string): string | null => {
+  if (!name.trim()) return null // Empty is allowed
+  
+  // Should not be only numbers/integers
+  if (/^\d+$/.test(name.trim())) {
+    return 'Business name cannot be only numbers'
+  }
+  
+  // Must contain at least one letter
+  if (!/[a-zA-Z]/.test(name)) {
+    return 'Business name must contain at least one letter'
+  }
+  
+  return null
+}
+
+const validateZipCode = (zipCode: string): string | null => {
+  if (!zipCode.trim()) return null // Empty is allowed
+  
+  // Must be exactly 5 digits
+  if (!/^\d{5}$/.test(zipCode.trim())) {
+    return 'Zip code must be exactly 5 digits'
+  }
+  
+  return null
+}
+
+const validateState = (state: string): string | null => {
+  if (!state.trim()) return null // Empty is allowed
+  
+  // Must not be only numbers
+  if (/^\d+$/.test(state.trim())) {
+    return 'State cannot be only numbers'
+  }
+  
+  // Must be a string (contains at least one letter)
+  if (!/[a-zA-Z]/.test(state)) {
+    return 'State must contain at least one letter'
+  }
+  
+  // Maximum 20 characters
+  if (state.trim().length > 20) {
+    return 'State must be maximum 20 characters'
+  }
+  
+  return null
+}
+
+const validatePhone = (phone: string): string | null => {
+  if (!phone.trim()) return null // Empty is allowed
+  
+  // Use libphonenumber-js to validate (same approach as PhoneAccountsCard)
+  const parsed = parsePhoneNumberFromString(phone.trim())
+  
+  if (!parsed || !parsed.isValid()) {
+    return 'Please enter a valid phone number'
+  }
+  
+  // Check minimum length (at least 7 digits for national number)
+  const nationalNumber = parsed.nationalNumber
+  if (nationalNumber.length < 7) {
+    return 'Phone number is too short. Please enter a complete phone number.'
+  }
+  
+  // Check maximum length (ITU-T E.164 standard allows up to 15 digits)
+  if (nationalNumber.length > 15) {
+    return 'Phone number is too long. Please check and try again.'
+  }
+  
+  return null
+}
 
 interface ValidityDisplay {
   label: string
@@ -73,6 +211,16 @@ export function ContactModal({
   detailsSuccess,
   formatDateTime
 }: ContactModalProps) {
+  // Add validation state
+  const [validationErrors, setValidationErrors] = useState<{
+    website?: string | null
+    email?: string | null
+    phone?: string | null
+    businessName?: string | null
+    zipCode?: string | null
+    state?: string | null
+  }>({})
+
   // Block body scrolling when modal is open
   useEffect(() => {
     if (contact) {
@@ -96,11 +244,133 @@ export function ContactModal({
     return () => document.removeEventListener('keydown', handleEscape)
   }, [contact, onClose])
 
+  // Phone input refs - must be declared before any conditional returns
+  const phoneInputRef = useRef<HTMLDivElement>(null)
+  const phoneInputRef2 = useRef<HTMLDivElement>(null)
+
+  // Force dropdown to open downward (similar to PhoneAccountsCard)
+  useEffect(() => {
+    const forceDropdownDown = () => {
+      const options = document.querySelectorAll('.PhoneInputCountryOptions')
+      options.forEach((option) => {
+        const element = option as HTMLElement
+        if (element.style.bottom) {
+          element.style.bottom = ''
+        }
+        const select = element.closest('.PhoneInputCountry')?.querySelector('.PhoneInputCountrySelect') as HTMLElement
+        if (select) {
+          const rect = select.getBoundingClientRect()
+          element.style.top = `${rect.height + 4}px`
+          element.style.bottom = 'auto'
+          element.style.transform = 'none'
+          element.style.position = 'absolute'
+        }
+      })
+    }
+
+    forceDropdownDown()
+    const observer = new MutationObserver(forceDropdownDown)
+    if (phoneInputRef.current) {
+      observer.observe(phoneInputRef.current, { childList: true, subtree: true, attributes: true })
+    }
+    if (phoneInputRef2.current) {
+      observer.observe(phoneInputRef2.current, { childList: true, subtree: true, attributes: true })
+    }
+    document.addEventListener('click', forceDropdownDown)
+
+    return () => {
+      observer.disconnect()
+      document.removeEventListener('click', forceDropdownDown)
+    }
+  }, [])
+
   if (!contact) return null
 
+  // Add validation handlers
+  const handleWebsiteChange = (value: string) => {
+    onEditWebsiteChange(value)
+    const error = validateWebsite(value)
+    setValidationErrors(prev => ({ ...prev, website: error }))
+  }
+
+  const handleEmailChange = (value: string) => {
+    onEditEmailChange(value)
+    const error = validateEmail(value)
+    setValidationErrors(prev => ({ ...prev, email: error }))
+  }
+
+  const handleBusinessNameChange = (value: string) => {
+    onEditBusinessNameChange(value)
+    const error = validateBusinessName(value)
+    setValidationErrors(prev => ({ ...prev, businessName: error }))
+  }
+
+  const handleZipCodeChange = (value: string) => {
+    // Only allow digits
+    const digitsOnly = value.replace(/\D/g, '')
+    // Limit to 5 digits
+    const limited = digitsOnly.slice(0, 5)
+    onEditZipCodeChange(limited)
+    const error = validateZipCode(limited)
+    setValidationErrors(prev => ({ ...prev, zipCode: error }))
+  }
+
+  const handleStateChange = (value: string) => {
+    // Limit to 20 characters
+    const limited = value.slice(0, 20)
+    onEditStateChange(limited)
+    const error = validateState(limited)
+    setValidationErrors(prev => ({ ...prev, state: error }))
+  }
+
+  const handlePhoneChange = (value: E164Number | undefined) => {
+    const phoneValue = value || ''
+    onEditPhoneChange(phoneValue)
+    const error = phoneValue ? validatePhone(phoneValue) : null
+    setValidationErrors(prev => ({ ...prev, phone: error }))
+  }
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <>
+      <style dangerouslySetInnerHTML={{__html: `
+        .phone-input-wrapper {
+          position: relative;
+        }
+        .phone-input-wrapper .PhoneInput {
+          display: flex;
+          align-items: center;
+          border: 1px solid #cbd5e1;
+          border-radius: 0.375rem;
+          overflow: hidden;
+          transition: all 0.2s;
+        }
+        .phone-input-wrapper .PhoneInput:focus-within {
+          border-color: #6366f1;
+          outline: 2px solid rgba(99, 102, 241, 0.2);
+          outline-offset: 0;
+        }
+        .phone-input-wrapper.phone-input-error .PhoneInput,
+        .phone-input-wrapper.phone-input-error .PhoneInput:focus-within {
+          border-color: #ef4444;
+          outline-color: rgba(239, 68, 68, 0.2);
+        }
+        .phone-input-wrapper .PhoneInputCountry {
+          border-right: 1px solid #e2e8f0;
+          padding: 0 8px;
+        }
+        .phone-input-wrapper .PhoneInputInput {
+          flex: 1;
+          border: none;
+          padding: 8px 12px;
+          font-size: 0.875rem;
+          outline: none;
+        }
+        .phone-input-wrapper .PhoneInputCountryOptions {
+          z-index: 1000;
+        }
+      `}} />
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={e => {
         if (e.target === e.currentTarget) {
           onClose()
@@ -258,19 +528,30 @@ export function ContactModal({
                       </label>
                       <Input
                         value={editEmail}
-                        onChange={event => onEditEmailChange(event.target.value)}
+                        onChange={event => handleEmailChange(event.target.value)}
                         placeholder="name@example.com"
+                        className={validationErrors.email ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}
                       />
+                      {validationErrors.email && (
+                        <p className="text-xs text-rose-600 mt-1">{validationErrors.email}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
                         Phone Number
                       </label>
-                      <Input
-                        value={editPhone}
-                        onChange={event => onEditPhoneChange(event.target.value)}
-                        placeholder="(555) 123-4567"
-                      />
+                      <div ref={phoneInputRef} className={`phone-input-wrapper ${validationErrors.phone ? 'phone-input-error' : ''}`}>
+                        <PhoneInput
+                          international
+                          defaultCountry="US"
+                          value={editPhone as E164Number | undefined}
+                          onChange={handlePhoneChange}
+                          placeholder="Enter phone number with country code"
+                        />
+                      </div>
+                      {validationErrors.phone && (
+                        <p className="text-xs text-rose-600 mt-1">{validationErrors.phone}</p>
+                      )}
                     </div>
                   </div>
 
@@ -314,9 +595,13 @@ export function ContactModal({
                       </label>
                       <Input
                         value={editBusinessName}
-                        onChange={event => onEditBusinessNameChange(event.target.value)}
+                        onChange={event => handleBusinessNameChange(event.target.value)}
                         placeholder="Business name"
+                        className={validationErrors.businessName ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}
                       />
+                      {validationErrors.businessName && (
+                        <p className="text-xs text-rose-600 mt-1">{validationErrors.businessName}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
@@ -324,9 +609,13 @@ export function ContactModal({
                       </label>
                       <Input
                         value={editWebsite}
-                        onChange={event => onEditWebsiteChange(event.target.value)}
-                        placeholder="https://example.com"
+                        onChange={event => handleWebsiteChange(event.target.value)}
+                        placeholder="example.com (https:// will be added automatically)"
+                        className={validationErrors.website ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}
                       />
+                      {validationErrors.website && (
+                        <p className="text-xs text-rose-600 mt-1">{validationErrors.website}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
@@ -334,19 +623,30 @@ export function ContactModal({
                       </label>
                       <Input
                         value={editEmail}
-                        onChange={event => onEditEmailChange(event.target.value)}
+                        onChange={event => handleEmailChange(event.target.value)}
                         placeholder="name@example.com"
+                        className={validationErrors.email ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}
                       />
+                      {validationErrors.email && (
+                        <p className="text-xs text-rose-600 mt-1">{validationErrors.email}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
                         Phone Number
                       </label>
-                      <Input
-                        value={editPhone}
-                        onChange={event => onEditPhoneChange(event.target.value)}
-                        placeholder="(555) 123-4567"
-                      />
+                      <div ref={phoneInputRef2} className="phone-input-wrapper">
+                        <PhoneInput
+                          international
+                          defaultCountry="US"
+                          value={editPhone as E164Number | undefined}
+                          onChange={handlePhoneChange}
+                          placeholder="Enter phone number with country code"
+                        />
+                      </div>
+                      {validationErrors.phone && (
+                        <p className="text-xs text-rose-600 mt-1">{validationErrors.phone}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
@@ -354,9 +654,13 @@ export function ContactModal({
                       </label>
                       <Input
                         value={editState}
-                        onChange={event => onEditStateChange(event.target.value)}
+                        onChange={event => handleStateChange(event.target.value)}
                         placeholder="CA"
+                        className={validationErrors.state ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}
                       />
+                      {validationErrors.state && (
+                        <p className="text-xs text-rose-600 mt-1">{validationErrors.state}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
@@ -364,10 +668,16 @@ export function ContactModal({
                       </label>
                       <Input
                         type="text"
+                        inputMode="numeric"
                         value={String(editZipCode || '')}
-                        onChange={event => onEditZipCodeChange(event.target.value)}
+                        onChange={event => handleZipCodeChange(event.target.value)}
                         placeholder="90210"
+                        maxLength={5}
+                        className={validationErrors.zipCode ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}
                       />
+                      {validationErrors.zipCode && (
+                        <p className="text-xs text-rose-600 mt-1">{validationErrors.zipCode}</p>
+                      )}
                     </div>
                     <div className="flex items-center space-x-3 pt-6">
                       <label className="flex items-center space-x-2 text-xs font-semibold text-slate-600">
@@ -415,6 +725,7 @@ export function ContactModal({
         </div>
       </div>
     </div>
+    </>
   )
 }
 
