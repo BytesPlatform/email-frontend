@@ -70,22 +70,22 @@ export function Footer() {
             <h4 className="text-lg font-semibold mb-4">Support</h4>
             <ul className="space-y-3">
               <li>
-                <Link href="/help" className="text-slate-400 hover:text-white transition-colors">
+                <Link href="/#help" className="text-slate-400 hover:text-white transition-colors">
                   Help Center
                 </Link>
               </li>
               <li>
-                <Link href="/docs" className="text-slate-400 hover:text-white transition-colors">
+                <Link href="/#docs" className="text-slate-400 hover:text-white transition-colors">
                   Documentation
                 </Link>
               </li>
               <li>
-                <Link href="/contact" className="text-slate-400 hover:text-white transition-colors">
+                <Link href="/#contact" className="text-slate-400 hover:text-white transition-colors">
                   Contact Us
                 </Link>
               </li>
               <li>
-                <Link href="/status" className="text-slate-400 hover:text-white transition-colors">
+                <Link href="/#status" className="text-slate-400 hover:text-white transition-colors">
                   Status
                 </Link>
               </li>

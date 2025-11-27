@@ -211,7 +211,7 @@ export function ContactModal({
   detailsSuccess,
   formatDateTime
 }: ContactModalProps) {
-  // Add validation state
+  // Validation state
   const [validationErrors, setValidationErrors] = useState<{
     website?: string | null
     email?: string | null
@@ -247,6 +247,61 @@ export function ContactModal({
   // Phone input refs - must be declared before any conditional returns
   const phoneInputRef = useRef<HTMLDivElement>(null)
   const phoneInputRef2 = useRef<HTMLDivElement>(null)
+
+  // Save handlers
+  const handleSave = async () => {
+    // Validate all fields before saving
+    const errors = {
+      website: validateWebsite(editWebsite),
+      email: validateEmail(editEmail),
+      phone: editPhone ? validatePhone(editPhone) : null,
+      businessName: validateBusinessName(editBusinessName),
+      zipCode: validateZipCode(editZipCode),
+      state: validateState(editState),
+    }
+
+    setValidationErrors(errors)
+
+    // Check if there are any errors
+    const hasErrors = Object.values(errors).some(error => error !== null)
+    if (hasErrors) {
+      return
+    }
+
+    try {
+      await onSave()
+      onClose() // Close the modal after successful save
+    } catch (error) {
+      console.error('Failed to save contact:', error)
+    }
+  }
+
+  const handleSaveDetails = async () => {
+    // Validate all fields before saving
+    const errors = {
+      website: validateWebsite(editWebsite),
+      email: validateEmail(editEmail),
+      phone: editPhone ? validatePhone(editPhone) : null,
+      businessName: validateBusinessName(editBusinessName),
+      zipCode: validateZipCode(editZipCode),
+      state: validateState(editState),
+    }
+
+    setValidationErrors(errors)
+
+    // Check if there are any errors
+    const hasErrors = Object.values(errors).some(error => error !== null)
+    if (hasErrors) {
+      return
+    }
+
+    try {
+      await onSaveDetails()
+      onClose() // Close the modal after successful save
+    } catch (error) {
+      console.error('Failed to save contact details:', error)
+    }
+  }
 
   // Force dropdown to open downward (similar to PhoneAccountsCard)
   useEffect(() => {
@@ -598,7 +653,7 @@ export function ContactModal({
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={onSave}
+                      onClick={handleSave}
                       isLoading={isSaving}
                       disabled={isSaving}
                     >
@@ -740,7 +795,7 @@ export function ContactModal({
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={onSaveDetails}
+                      onClick={handleSaveDetails}
                       isLoading={isSavingDetails}
                       disabled={isSavingDetails}
                     >
