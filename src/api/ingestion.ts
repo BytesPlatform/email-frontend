@@ -23,12 +23,29 @@ export const ingestionApi = {
       formData.append('file', file);
       formData.append('clientId', clientId.toString());
       
+      // Try to include Authorization header (same idea as ApiClient) so this
+      // works even if cross-site cookies are not sent in production (Vercel).
+      let authHeader: HeadersInit = {};
+      if (typeof window !== 'undefined') {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (token) {
+            authHeader = {
+              Authorization: `Bearer ${token}`,
+            };
+          }
+        } catch (err) {
+          console.warn('[ingestionApi.uploadCsv] Failed to read access_token from localStorage', err);
+        }
+      }
+      
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/ingestion/upload`,
         {
           method: 'POST',
           body: formData,
-          credentials: 'include', // Include cookies for authentication
+          credentials: 'include', // Include cookies for authentication (if available)
+          headers: authHeader,
         }
       );
 
