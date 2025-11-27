@@ -434,12 +434,16 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
             <div className="space-y-2 pb-2">
               {paged.map(c => (
                 <div key={c.id} className="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(c.id)}
-                    onChange={() => toggleSelect(c.id)}
-                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded cursor-pointer mt-1"
-                  />
+                  {(c.status === 'ready_to_scrape' || c.status === 'scrape_failed') ? (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(c.id)}
+                      onChange={() => toggleSelect(c.id)}
+                      className="h-4 w-4 text-indigo-600 border-gray-300 rounded cursor-pointer mt-1"
+                    />
+                  ) : (
+                    <div className="w-4 h-4 mt-1" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
