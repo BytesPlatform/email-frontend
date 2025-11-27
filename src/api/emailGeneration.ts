@@ -161,7 +161,8 @@ export const emailGenerationApi = {
     params: {
       contactId: number
       summaryId: number
-      clientEmailId: number
+      clientId: number
+      clientEmailId?: number
       tone?: string // backend expects values like 'pro_friendly'
     }
   ): Promise<ApiResponse<EmailDraft>> {
@@ -169,6 +170,7 @@ export const emailGenerationApi = {
       const payload = {
         contactId: params.contactId,
         summaryId: params.summaryId,
+        clientId: params.clientId,
         clientEmailId: params.clientEmailId,
         tone: params.tone || 'pro_friendly',
       }
@@ -187,7 +189,8 @@ export const emailGenerationApi = {
   async bulkGenerateEmailDrafts(requests: Array<{
     contactId: number
     summaryId: number
-    clientEmailId: number
+    clientId: number
+    clientEmailId?: number
     tone?: string
   }>): Promise<ApiResponse<{
     totalProcessed: number

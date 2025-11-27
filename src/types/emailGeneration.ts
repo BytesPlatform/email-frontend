@@ -62,6 +62,7 @@ export interface EmailDraft {
   status?: string
   contactId?: number
   summaryId?: number
+  clientId?: number
   clientEmailId?: number
   createdAt?: string
   updatedAt?: string
@@ -116,7 +117,8 @@ export interface BulkSummarizationResponse {
 export interface GenerateEmailDto {
   contactId: number
   summaryId: number
-  clientEmailId: number
+  clientId: number
+  clientEmailId?: number
   tone?: string
 }
 
