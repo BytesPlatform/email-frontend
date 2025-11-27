@@ -7,13 +7,15 @@ export const smsGenerationApi = {
    * POST /sms/generation/generate
    * @param contactId - The contact ID
    * @param summaryId - The summary ID
-   * @param clientSmsId - The client SMS template ID (required)
+   * @param clientId - The client ID (required)
+   * @param clientSmsId - The client SMS template ID (optional)
    */
-  async generateSmsDraft(contactId: number, summaryId: number, clientSmsId: number): Promise<ApiResponse<SMSDraft>> {
+  async generateSmsDraft(contactId: number, summaryId: number, clientId: number, clientSmsId?: number): Promise<ApiResponse<SMSDraft>> {
     try {
       const requestBody = {
         contactId,
         summaryId,
+        clientId,
         clientSmsId,
       }
       
@@ -76,7 +78,8 @@ export const smsGenerationApi = {
   async bulkGenerateSmsDrafts(requests: Array<{
     contactId: number
     summaryId: number
-    clientSmsId: number
+    clientId: number
+    clientSmsId?: number
   }>): Promise<ApiResponse<{
     totalProcessed: number
     successful: number
@@ -234,14 +237,14 @@ export const smsGenerationApi = {
   },
 
   /**
-   * Get all SMS drafts for a specific client SMS
-   * GET /sms/client-sms/:clientSmsId/drafts
+   * Get all SMS drafts for a specific client
+   * GET /sms/generation/client/:clientId/drafts
    */
-  async getClientSmsDrafts(clientSmsId: number): Promise<ApiResponse<SMSDraft[]>> {
+  async getClientSmsDrafts(clientId: number): Promise<ApiResponse<SMSDraft[]>> {
     try {
-      const res = await apiClient.get<SMSDraft[]>(`/sms/generation/client-sms/${clientSmsId}/drafts`)
+      const res = await apiClient.get<SMSDraft[]>(`/sms/generation/client/${clientId}/drafts`)
       
-      console.log(`[SMS API] Response for getClientSmsDrafts (clientSmsId: ${clientSmsId}):`, res)
+      console.log(`[SMS API] Response for getClientSmsDrafts (clientId: ${clientId}):`, res)
       
       if (res.success && res.data) {
         // Check if res.data is already an array (unwrapped by ApiClient)

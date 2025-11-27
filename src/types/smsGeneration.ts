@@ -4,6 +4,7 @@ export interface SMSDraft {
   message?: string // Legacy field for backward compatibility
   contactId?: number
   summaryId?: number
+  clientId?: number
   status?: string
   createdAt?: string
   updatedAt?: string
@@ -43,7 +44,8 @@ export interface SMSGenerationResponse {
 export interface SMSGenerationRequest {
   contactId: number
   summaryId: number
-  clientSmsId: number
+  clientId: number
+  clientSmsId?: number
 }
 
 export interface SMSGenerationResult {

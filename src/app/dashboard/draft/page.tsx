@@ -526,7 +526,7 @@ function DraftsPageContent() {
   const fetchSmsDrafts = async () => {
     setIsLoading(true)
     try {
-      // Use client.id as clientSmsId (same as email uses client.id for clientEmailId)
+      // Use client.id as clientId
       if (!client?.id) {
         console.warn('No client ID available')
         setSmsDrafts([])
@@ -534,7 +534,7 @@ function DraftsPageContent() {
         return
       }
       
-      // Using getClientSmsDrafts API method with client.id (same pattern as email)
+      // Using getClientSmsDrafts API method with client.id
       const res = await smsGenerationApi.getClientSmsDrafts(client.id)
       
       if (res.success && res.data) {

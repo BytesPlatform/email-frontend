@@ -434,7 +434,7 @@ export default function EmailGenerationPage() {
       const res = await emailGenerationApi.generateEmailDraft({
         contactId: record.contactId,
         summaryId: summaryToUse.id,
-        clientEmailId: client.id,
+        clientId: client.id,
         tone: 'pro_friendly'
       })
       
@@ -583,7 +583,7 @@ export default function EmailGenerationPage() {
       const res = await smsGenerationApi.generateSmsDraft(
         record.contactId, 
         summaryToUse.id,
-        client.id  // Use client.id like email does with clientEmailId
+        client.id  // Use client.id as clientId
       )
       
       console.log('SMS generation response:', res)
@@ -1335,11 +1335,11 @@ export default function EmailGenerationPage() {
         return {
           contactId: r.contactId,
           summaryId: summary.id,
-          clientEmailId: client.id,
+          clientId: client.id,
           tone: 'pro_friendly' as const
         }
       })
-      .filter((request): request is { contactId: number; summaryId: number; clientEmailId: number; tone: 'pro_friendly' } => request !== null)
+      .filter((request): request is { contactId: number; summaryId: number; clientId: number; tone: 'pro_friendly' } => request !== null)
 
     if (requests.length === 0) {
       showDialog('No Action Needed', 'All selected contacts already have email drafts or are missing summaries', 'info')
@@ -1427,10 +1427,10 @@ export default function EmailGenerationPage() {
         return {
           contactId: r.contactId,
           summaryId: summary.id,
-          clientSmsId: client.id
+          clientId: client.id
         }
       })
-      .filter((request): request is { contactId: number; summaryId: number; clientSmsId: number } => request !== null)
+      .filter((request): request is { contactId: number; summaryId: number; clientId: number } => request !== null)
 
     if (requests.length === 0) {
       showDialog('No Action Needed', 'All selected contacts already have SMS drafts or are missing summaries', 'info')
