@@ -371,8 +371,10 @@ export function ContactModal({
   }
 
   const handleStateChange = (value: string) => {
+    // Remove any numbers - only allow text/string characters
+    const textOnly = value.replace(/[0-9]/g, '')
     // Limit to 20 characters
-    const limited = value.slice(0, 20)
+    const limited = textOnly.slice(0, 20)
     onEditStateChange(limited)
     const error = validateState(limited)
     setValidationErrors(prev => ({ ...prev, state: error }))
@@ -764,22 +766,6 @@ export function ContactModal({
                       />
                       {validationErrors.zipCode && (
                         <p className="text-xs text-rose-600 mt-1">{validationErrors.zipCode}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-3 pt-6">
-                      <label className="flex items-center space-x-2 text-xs font-semibold text-slate-600">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                          checked={Boolean(editValidFlag)}
-                          onChange={event => onEditValidFlagChange(event.target.checked)}
-                        />
-                        <span>Mark contact as valid</span>
-                      </label>
-                      {typeof contact.valid === 'boolean' && (
-                        <span className="text-[11px] text-slate-500">
-                          Current: {contact.valid ? 'Valid' : 'Invalid'}
-                        </span>
                       )}
                     </div>
                   </div>
