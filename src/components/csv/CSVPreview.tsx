@@ -8,6 +8,7 @@ import { CSVRecord, CsvUpload } from '@/types/ingestion'
 import { ColumnMapping } from '@/components/csv/CSVUploadForm'
 import { ingestionApi } from '@/api/ingestion'
 import { useAuthContext } from '@/contexts/AuthContext'
+import { normalizePhoneNumber } from '@/lib/phoneUtils'
 import Link from 'next/link'
 
 interface CSVPreviewProps {
@@ -60,7 +61,6 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   }, [uncleanRows])
   const { csvData } = useData()
   const { client } = useAuthContext()
-  const [showFullOverlay, setShowFullOverlay] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<CsvUpload[]>([])
   const [isLoadingUploads, setIsLoadingUploads] = useState(false)
   const [selectedUpload, setSelectedUpload] = useState<CsvUpload | null>(null)
@@ -204,12 +204,6 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
     document.body.removeChild(link)
   }
 
-  const closeIcon = (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-    </svg>
-  )
-
   // Get contact headers from the first contact if available
   const getContactHeaders = (contacts: Array<Record<string, unknown>>) => {
     if (contacts.length === 0) return []
@@ -336,6 +330,15 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
     return isEmailField(fieldName, mapping) || isPhoneField(fieldName, mapping)
   }
 
+  // Check if a phone number is invalid (doesn't start with +, indicating failed normalization)
+  const isPhoneInvalid = (header: string, value: string | undefined | null, mapping?: ColumnMapping): boolean => {
+    if (!isPhoneField(header, mapping)) return false // Not a phone field
+    if (isFieldEmpty(value)) return false // Empty is handled separately
+    const phoneValue = String(value || '').trim()
+    // Phone is invalid if it doesn't start with + (normalization failed)
+    return phoneValue.length > 0 && !phoneValue.startsWith('+')
+  }
+
   // Handle starting edit
   const handleStartEdit = (e: React.MouseEvent, rowIndex: number, header: string, currentValue: string, isMapped: boolean = true) => {
     e.stopPropagation()
@@ -349,7 +352,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
     if (!editingCell) return
 
     const { rowIndex, header, isMapped } = editingCell
-    const trimmedValue = editValue.trim()
+    let trimmedValue = editValue.trim()
     
     // Validate email format if it's an email field
     if (isEmailField(header)) {
@@ -360,19 +363,31 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
       }
     }
 
-    // Validate phone number format if it's a phone field
+    // Validate and normalize phone number format if it's a phone field
     if (isPhoneField(header)) {
-      // Basic phone validation - allows digits, spaces, dashes, parentheses, and +
-      const phoneRegex = /^[\d\s\-\(\)\+]+$/
-      if (trimmedValue && !phoneRegex.test(trimmedValue)) {
-        alert('Please enter a valid phone number')
-        return
-      }
-      // Check minimum length (at least 7 digits)
-      const digitCount = trimmedValue.replace(/\D/g, '').length
-      if (trimmedValue && digitCount < 7) {
-        alert('Phone number must contain at least 7 digits')
-        return
+      if (trimmedValue) {
+        // Basic phone validation - allows digits, spaces, dashes, parentheses, and +
+        const phoneRegex = /^[\d\s\-\(\)\+]+$/
+        if (!phoneRegex.test(trimmedValue)) {
+          alert('Please enter a valid phone number')
+          return
+        }
+        // Check minimum length (at least 7 digits)
+        const digitCount = trimmedValue.replace(/\D/g, '').length
+        if (digitCount < 7) {
+          alert('Phone number must contain at least 7 digits')
+          return
+        }
+        // Try to normalize the phone number
+        const normalized = normalizePhoneNumber(trimmedValue)
+        if (normalized && normalized.startsWith('+')) {
+          // Use normalized E.164 format
+          trimmedValue = normalized
+        } else if (normalized) {
+          // Normalization failed but returned raw input - keep it for UI to flag
+          trimmedValue = normalized
+        }
+        // If normalized is null, trimmedValue stays as user input (will be flagged by UI)
       }
     }
 
@@ -564,18 +579,30 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                             const isEmptyEmail = isEmailField(header) && isFieldEmpty(displayValue)
                             const isEmptyPhone = isPhoneField(header) && isFieldEmpty(displayValue)
                             const isEmptyRequired = isEmptyEmail || isEmptyPhone
+                            const mapping = columnMappings.find(m => m.csvColumnName === header)
+                            const isPhoneMissingCountryCode = isPhoneInvalid(header, displayValue, mapping)
                             const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.header === header
 
                             return (
                               <td 
                                 key={colIndex} 
                                 className={`px-4 py-3 border-r border-gray-200 last:border-r-0 ${
-                                  isEmptyRequired ? 'text-red-600 font-medium' : 'text-gray-900'
+                                  isEmptyRequired ? 'text-red-600 font-medium' : 
+                                  isPhoneMissingCountryCode ? 'border-2 border-red-500 bg-red-50' : 
+                                  'text-gray-900'
                                 }`}
+                                title={isPhoneMissingCountryCode ? 'Country Code Required' : ''}
                               >
-                                <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
-                                  {displayValue}
-                                </span>
+                                <div className="flex flex-col">
+                                  <span className={isEmptyRequired || isPhoneMissingCountryCode ? 'text-red-600 font-medium' : ''}>
+                                    {displayValue}
+                                  </span>
+                                  {isPhoneMissingCountryCode && (
+                                    <span className="text-xs text-red-600 mt-1 font-medium">
+                                      ⚠️ Country Code Required
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                             )
                           })}
@@ -690,57 +717,6 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
         </div>
       )}
 
-      {/* Full Screen Overlay */}
-      {showFullOverlay && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full h-full max-w-7xl max-h-[90vh] flex flex-col">
-            {/* Overlay Header */}
-            <div className="flex items-center justify-between p-4 border-b border-slate-200">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">Full CSV Data</h3>
-                <p className="text-sm text-slate-500">{csvData.length} rows, {headers.length} columns</p>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowFullOverlay(false)}
-                leftIcon={closeIcon}
-              >
-                Close
-              </Button>
-            </div>
-            
-            {/* Scrollable Table */}
-            <div className="flex-1 overflow-auto p-4">
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 sticky top-0">
-                    <tr>
-                      {headers.map((header, index) => (
-                        <th key={index} className="px-4 py-3 text-left font-medium text-slate-700 border-r border-slate-200">
-                          {header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {csvData.map((row, rowIndex) => (
-                      <tr key={rowIndex} className="hover:bg-slate-50">
-                        {headers.map((header, colIndex) => (
-                          <td key={colIndex} className="px-4 py-3 text-slate-900 border-r border-slate-200">
-                            {row[header] || '-'}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Preview Component */}
       <Card variant="elevated">
       <CardHeader
@@ -755,7 +731,6 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
               <Button 
                 variant="outline" 
                 size="sm"
-                className="px-2"
                 onClick={() => {
                   if (hasMappedData && localMappedCsvData.length > 0) {
                     setOverlayCsvData(localMappedCsvData)
@@ -773,12 +748,8 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                   }
                   setShowCsvDataOverlay(true)
                 }}
-                title="View CSV"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
+                View
               </Button>
             )}
             <Button 
@@ -860,13 +831,16 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                             const isEmptyEmail = isEmailField(header, mapping) && isFieldEmpty(value)
                             const isEmptyPhone = isPhoneField(header, mapping) && isFieldEmpty(value)
                             const isEmptyRequired = isEmptyEmail || isEmptyPhone
+                            const isPhoneMissingCountryCode = isPhoneInvalid(header, value, mapping)
                             const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.header === header
 
                             return (
                               <td 
                                 key={mapping.csvColumnIndex} 
-                                className={`px-4 py-3 border-r border-slate-200 last:border-r-0 ${
-                                  isEmptyRequired ? 'text-red-600 font-medium' : 'text-slate-900'
+                                className={`px-4 py-3 border-r border-slate-200 last:border-r-0 relative ${
+                                  isEmptyRequired ? 'text-red-600 font-medium' : 
+                                  isPhoneMissingCountryCode ? 'border-2 border-red-500 bg-red-50' : 
+                                  'text-slate-900'
                                 }`}
                                 onClick={(e) => {
                                   if (!isEditing && !isEmptyRequired) {
@@ -875,6 +849,12 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                     setShowCsvDataOverlay(true)
                                   }
                                 }}
+                                onDoubleClick={(e) => {
+                                  if (!isEditing) {
+                                    handleStartEdit(e, rowIndex, header, value === '-' ? '' : String(value), true)
+                                  }
+                                }}
+                                title={isPhoneMissingCountryCode ? 'Country Code Required - Double click to edit' : ''}
                               >
                                 {isEditing ? (
                                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -891,7 +871,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                       }}
                                       className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                       autoFocus
-                                      placeholder={isEmailField(header, mapping) ? 'Enter email' : 'Enter phone number'}
+                                      placeholder={isEmailField(header, mapping) ? 'Enter email' : 'Enter phone number with country code (e.g., +1234567890)'}
                                     />
                                     <button
                                       onClick={handleSaveEdit}
@@ -907,9 +887,16 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                     </button>
                                   </div>
                                 ) : (
-                                  <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
-                                    {value}
-                                  </span>
+                                  <div className="flex flex-col">
+                                    <span className={isEmptyRequired || isPhoneMissingCountryCode ? 'text-red-600 font-medium' : ''}>
+                                      {value}
+                                    </span>
+                                    {isPhoneMissingCountryCode && (
+                                      <span className="text-xs text-red-600 mt-1 font-medium">
+                                        ⚠️ Country Code Required
+                                      </span>
+                                    )}
+                                  </div>
                                 )}
                               </td>
                             )
@@ -927,19 +914,8 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                 <h4 className="text-sm font-semibold text-slate-900">
                   Preview ({csvData.length} rows)
                 </h4>
-                <div className="flex items-center space-x-3">
-                  <div className="text-xs text-slate-500">
-                    {headers.length} columns
-                  </div>
-                  {csvData.length > 5 && (
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      onClick={() => setShowFullOverlay(true)}
-                    >
-                      View All Data
-                    </Button>
-                  )}
+                <div className="text-xs text-slate-500">
+                  {headers.length} columns
                 </div>
               </div>
               
@@ -980,13 +956,17 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                             const isEmptyEmail = isEmailField(header) && isFieldEmpty(value)
                             const isEmptyPhone = isPhoneField(header) && isFieldEmpty(value)
                             const isEmptyRequired = isEmptyEmail || isEmptyPhone
+                            const mapping = columnMappings.find(m => m.csvColumnName === header)
+                            const isPhoneMissingCountryCode = isPhoneInvalid(header, value, mapping)
                             const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.header === header && editingCell?.isMapped === false
 
                             return (
                               <td 
                                 key={colIndex} 
                                 className={`px-3 py-2 border-r border-slate-200 ${
-                                  isEmptyRequired ? 'text-red-600 font-medium' : 'text-slate-900'
+                                  isEmptyRequired ? 'text-red-600 font-medium' : 
+                                  isPhoneMissingCountryCode ? 'border-2 border-red-500 bg-red-50' : 
+                                  'text-slate-900'
                                 }`}
                                 onClick={(e) => {
                                   if (!isEditing && !isEmptyRequired) {
@@ -1003,6 +983,12 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                     setShowCsvDataOverlay(true)
                                   }
                                 }}
+                                onDoubleClick={(e) => {
+                                  if (!isEditing) {
+                                    handleStartEdit(e, rowIndex, header, value === '-' ? '' : String(value), false)
+                                  }
+                                }}
+                                title={isPhoneMissingCountryCode ? 'Country Code Required - Double click to edit' : ''}
                               >
                                 {isEditing ? (
                                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -1019,7 +1005,7 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                       }}
                                       className="flex-1 px-2 py-1 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                       autoFocus
-                                      placeholder={isEmailField(header) ? 'Enter email' : 'Enter phone number'}
+                                      placeholder={isEmailField(header) ? 'Enter email' : 'Enter phone number with country code (e.g., +1234567890)'}
                                     />
                                     <button
                                       onClick={handleSaveEdit}
@@ -1035,9 +1021,16 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                     </button>
                                   </div>
                                 ) : (
-                                  <span className={isEmptyRequired ? 'text-red-600 font-medium' : ''}>
-                                    {value}
-                                  </span>
+                                  <div className="flex flex-col">
+                                    <span className={isEmptyRequired || isPhoneMissingCountryCode ? 'text-red-600 font-medium' : ''}>
+                                      {value}
+                                    </span>
+                                    {isPhoneMissingCountryCode && (
+                                      <span className="text-xs text-red-600 mt-1 font-medium">
+                                        ⚠️ Country Code Required
+                                      </span>
+                                    )}
+                                  </div>
                                 )}
                               </td>
                             )
@@ -1047,15 +1040,6 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                     </tbody>
                   </table>
                 </div>
-                
-                {csvData.length > 5 && (
-                  <button 
-                    onClick={() => setShowFullOverlay(true)}
-                    className="w-full bg-slate-50 hover:bg-slate-100 px-3 py-2 text-xs text-slate-500 hover:text-slate-700 text-center transition-colors cursor-pointer"
-                  >
-                    ... and {csvData.length - 5} more rows (click to view all)
-                  </button>
-                )}
               </div>
             </div>
           ) : (

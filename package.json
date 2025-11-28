@@ -11,9 +11,11 @@
   "dependencies": {
     "@headlessui/react": "^2.0.4",
     "@heroicons/react": "^2.0.18",
+    "@types/papaparse": "^5.5.0",
     "clsx": "^2.0.0",
     "libphonenumber-js": "^1.12.29",
     "next": "15.5.3",
+    "papaparse": "^5.5.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-hook-form": "^7.48.2",
