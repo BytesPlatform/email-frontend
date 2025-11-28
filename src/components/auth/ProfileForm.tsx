@@ -108,6 +108,7 @@ export function ProfileForm() {
   const [success, setSuccess] = useState('')
   const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'products'>('profile')
   const [productsServices, setProductsServices] = useState<ProductServiceInput[]>([])
+  const [businessName, setBusinessName] = useState('')
   const [isProductsEditMode, setIsProductsEditMode] = useState(false)
   const [pendingProductAction, setPendingProductAction] = useState<{ type: 'add' } | { type: 'remove'; index: number } | null>(null)
   const phoneInputRef = useRef<HTMLDivElement>(null)
@@ -193,7 +194,7 @@ export function ProfileForm() {
         setCity(profileData.city || '')
         setCountry(profileData.country || '')
         setAddress(profileData.address || '')
-        // Load products/services
+        // Load products/services and business name
         if (profileData.productsServices && profileData.productsServices.length > 0) {
           setProductsServices(profileData.productsServices.map(ps => ({
             id: ps.id,
@@ -201,8 +202,11 @@ export function ProfileForm() {
             description: ps.description || '',
             type: ps.type || '',
           })))
+          // Load business name from first product/service
+          setBusinessName(profileData.productsServices[0]?.businessName || '')
         } else {
           setProductsServices([])
+          setBusinessName('')
         }
       }
     } catch (error) {
@@ -300,16 +304,18 @@ export function ProfileForm() {
       setCity(profile.city || '')
       setCountry(profile.country || '')
       setAddress(profile.address || '')
-      // Reset products/services
+      // Reset products/services and business name
       if (profile.productsServices && profile.productsServices.length > 0) {
         setProductsServices(profile.productsServices.map(ps => ({
-          businessName: ps.businessName || '',
+          id: ps.id,
           name: ps.name || '',
           description: ps.description || '',
           type: ps.type || '',
         })))
+        setBusinessName(profile.productsServices[0]?.businessName || '')
       } else {
         setProductsServices([])
+        setBusinessName('')
       }
     }
   }
@@ -390,17 +396,26 @@ export function ProfileForm() {
       return false
     }
 
+    // Build the productsServices array
     const validProductsServices = list
       .filter(ps => ps.name?.trim() && ps.type?.trim())
-      .map(ps => ({
-        id: ps.id,
-        name: ps.name!.trim(),
-        description: ps.description?.trim() || null,
-        type: ps.type!.trim(),
-      }))
+      .map((ps, index) => {
+        const productService: ProductServiceInput = {
+          id: ps.id,
+          name: ps.name!.trim(),
+          description: ps.description?.trim() || null,
+          type: ps.type!.trim(),
+        }
+        // Include businessName in the first productService when it has a value
+        // The backend will now process and save this value
+        if (index === 0 && businessName && businessName.trim()) {
+          productService.businessName = businessName.trim()
+        }
+        return productService
+      })
 
     const response = await auth.updateProfile({
-      productsServices: validProductsServices,
+      productsServices: validProductsServices.length > 0 ? validProductsServices : undefined,
     })
 
     if (response.success && response.data) {
@@ -891,18 +906,30 @@ export function ProfileForm() {
             )}
           </div>
           <div className="p-6">
-            {/* Display Business Name (read-only) */}
-            {profile?.productsServices && profile.productsServices.length > 0 && profile.productsServices[0]?.businessName && (
-              <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm font-medium text-slate-600">Business Name:</span>
-                  <span className="text-sm font-semibold text-slate-900">{profile.productsServices[0].businessName}</span>
-                  <span className="text-xs text-slate-500 ml-2"></span>
-                </div>
-              </div>
-            )}
-            
             <form onSubmit={handleProductsUpdate} className="space-y-6">
+              {/* Business Name Field */}
+              {isProductsEditMode ? (
+                <div className="mb-6">
+                  <Input
+                    label="Business Name"
+                    type="text"
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                    error={errors.businessName}
+                    placeholder="Enter your business/company name"
+                    className={errors.businessName ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}
+                  />
+                </div>
+              ) : (
+                profile?.productsServices && profile.productsServices.length > 0 && profile.productsServices[0]?.businessName && (
+                  <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-medium text-slate-600">Business Name:</span>
+                      <span className="text-sm font-semibold text-slate-900">{profile.productsServices[0].businessName}</span>
+                    </div>
+                  </div>
+                )
+              )}
               {errors.general && (
                 <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded">
                   <div className="flex">
@@ -1028,8 +1055,10 @@ export function ProfileForm() {
                               description: ps.description || '',
                               type: ps.type || '',
                             })))
+                            setBusinessName(profile.productsServices[0]?.businessName || '')
                           } else {
                             setProductsServices([])
+                            setBusinessName('')
                           }
                           setErrors({})
                         }}
