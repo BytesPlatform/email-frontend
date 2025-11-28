@@ -99,13 +99,13 @@ export function Footer() {
               © 2024 Email Automation. All rights reserved.
             </p>
             <div className="flex space-x-6 mt-4 md:mt-0">
-              <Link href="/privacy" className="text-slate-400 hover:text-white text-sm transition-colors">
+              <Link href="/#privacy" className="text-slate-400 hover:text-white text-sm transition-colors">
                 Privacy Policy
               </Link>
-              <Link href="/terms" className="text-slate-400 hover:text-white text-sm transition-colors">
+              <Link href="/#terms" className="text-slate-400 hover:text-white text-sm transition-colors">
                 Terms of Service
               </Link>
-              <Link href="/cookies" className="text-slate-400 hover:text-white text-sm transition-colors">
+              <Link href="/#cookies" className="text-slate-400 hover:text-white text-sm transition-colors">
                 Cookie Policy
               </Link>
             </div>

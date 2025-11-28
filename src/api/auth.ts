@@ -212,10 +212,10 @@ export const auth = {
     }
   },
 
-  // Forgot password
-  async forgotPassword(email: string): Promise<ApiResponse> {
+  // Forgot password - sends OTP to email
+  async forgotPassword(email: string): Promise<ApiResponse<{ message: string; success: boolean; codeSent?: boolean; maskedEmail?: string; expiresAt?: Date }>> {
     try {
-      const response = await apiClient.post('/auth/forgot-password', { email })
+      const response = await apiClient.post<{ message: string; success: boolean; codeSent?: boolean; maskedEmail?: string; expiresAt?: Date }>('/auth/forgot-password', { email })
       return response
     } catch (error) {
       return {
@@ -225,12 +225,13 @@ export const auth = {
     }
   },
 
-  // Reset password
-  async resetPassword(token: string, newPassword: string): Promise<ApiResponse> {
+  // Reset password - verifies OTP and resets password
+  async resetPassword(email: string, otp: string, newPassword: string): Promise<ApiResponse<{ message: string; success: boolean }>> {
     try {
-      const response = await apiClient.post('/auth/reset-password', { 
-        token, 
-        password: newPassword 
+      const response = await apiClient.post<{ message: string; success: boolean }>('/auth/reset-password', { 
+        email,
+        otp,
+        newPassword
       })
       return response
     } catch (error) {

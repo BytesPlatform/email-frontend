@@ -51,6 +51,7 @@ export interface ProductServiceInput {
   name: string
   description?: string | null
   type?: string | null
+  businessName?: string | null
 }
 
 export interface RegisterData {
