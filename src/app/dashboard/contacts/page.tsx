@@ -312,14 +312,59 @@ export default function ContactsPage() {
     isOpen: false,
     type: null,
   })
+  
+  // CSV upload selection state
+  const [currentUploadId, setCurrentUploadId] = useState<number | null>(null)
+  const [availableUploads, setAvailableUploads] = useState<Array<{ id: number; fileName: string; totalRecords: number; successfulRecords: number }>>([])
+  const [isLoadingUploads, setIsLoadingUploads] = useState(false)
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [showAllContacts, setShowAllContacts] = useState(false)
 
   // Ensure component is mounted and client is available before rendering content
   useEffect(() => {
     // Only set mounted on client side
     if (typeof window !== 'undefined') {
       setIsMounted(true)
+      // Load last selected upload ID from localStorage
+      const lastUploadId = localStorage.getItem('lastUploadId')
+      if (lastUploadId) {
+        setCurrentUploadId(Number(lastUploadId))
+      }
     }
   }, [])
+
+  // Load uploads from DB for the authenticated client and auto-pick the latest
+  useEffect(() => {
+    const loadUploads = async () => {
+      if (!client?.id) return
+      setIsLoadingUploads(true)
+      const res = await ingestionApi.getClientUploads()
+      if (res.success && res.data) {
+        const uploads = res.data
+        // Store for optional UI selection later
+        setAvailableUploads(uploads.map(u => ({ id: u.id, fileName: u.fileName || `upload_${u.id}.csv`, totalRecords: u.totalRecords, successfulRecords: u.successfulRecords })))
+        const allowedIds = new Set(uploads.map(u => u.id))
+        // If current uploadId is not owned by this client, clear it
+        if (currentUploadId && !allowedIds.has(currentUploadId)) {
+          setCurrentUploadId(null)
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('lastUploadId')
+          }
+        }
+        // If no valid current uploadId, pick the most recent (first item)
+        if ((!currentUploadId || !allowedIds.has(currentUploadId)) && uploads.length > 0) {
+          const latest = uploads[0]
+          setCurrentUploadId(latest.id)
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('lastUploadId', String(latest.id))
+          }
+        }
+      }
+      setIsLoadingUploads(false)
+    }
+    loadUploads()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client?.id])
 
   // Use total valid/invalid counts from backend (across all pages, independent of filter)
   const totalValid = meta?.totalValid ?? 0
@@ -420,6 +465,27 @@ export default function ContactsPage() {
       return newQuery
     })
   }, [validityFilter])
+
+  // Handler to fetch contacts from selected CSV upload
+  const handleFetchByUpload = () => {
+    if (!currentUploadId) return
+    setShowAllContacts(false)
+    setQuery(prev => ({
+      ...prev,
+      page: 1,
+      csvUploadId: currentUploadId
+    }))
+  }
+
+  // Handler to fetch all contacts from all CSV uploads
+  const handleFetchAllContacts = () => {
+    setShowAllContacts(true)
+    setQuery(prev => {
+      const newQuery = { ...prev, page: 1 }
+      delete newQuery.csvUploadId
+      return newQuery
+    })
+  }
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -1448,6 +1514,160 @@ export default function ContactsPage() {
                 </div>
               </div>
             )}
+
+            {/* CSV Upload Selection */}
+            <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-100">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-gray-900">CSV Upload Selection</h3>
+              </div>
+              <div className="space-y-3">
+                <div className="text-sm text-gray-700">
+                  {currentUploadId ? (
+                    <>
+                      Active file: <span className="font-medium text-gray-900">
+                        {availableUploads.find(u => u.id === currentUploadId)?.fileName || `File #${currentUploadId}`}
+                      </span>
+                    </>
+                  ) : (
+                    <span>Select a CSV file to filter contacts</span>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select CSV File</label>
+                  <div className="relative">
+                    {isLoadingUploads ? (
+                      <div className="space-y-2 border border-gray-300 rounded-lg bg-white p-4">
+                        <div className="h-10 bg-gray-200 rounded-lg animate-pulse"></div>
+                        <div className="h-10 bg-gray-200 rounded-lg animate-pulse"></div>
+                        <div className="h-10 bg-gray-200 rounded-lg animate-pulse"></div>
+                      </div>
+                    ) : availableUploads.length === 0 ? (
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center bg-white">
+                        <p className="text-sm text-gray-500">No CSV files uploaded yet</p>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                          className="w-full flex items-center justify-between border border-gray-300 rounded-lg px-4 py-3 bg-white text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all hover:border-gray-400 cursor-pointer"
+                        >
+                          <div className="flex items-center space-x-2 flex-1 min-w-0">
+                            {currentUploadId ? (
+                              <>
+                                <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span className="truncate">
+                                  {availableUploads.find(u => u.id === currentUploadId)?.fileName || 'Select a file'}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-gray-500">Select a CSV file</span>
+                            )}
+                          </div>
+                          <svg
+                            className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isDropdownOpen ? 'transform rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        
+                        {isDropdownOpen && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-10"
+                              onClick={() => setIsDropdownOpen(false)}
+                            ></div>
+                            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-hidden">
+                              <div className="overflow-y-auto max-h-64">
+                                {availableUploads.map(u => {
+                                  const isSelected = currentUploadId === u.id
+                                  return (
+                                    <button
+                                      key={u.id}
+                                      type="button"
+                                      onClick={async () => {
+                                        setCurrentUploadId(u.id)
+                                        setIsDropdownOpen(false)
+                                        if (typeof window !== 'undefined') {
+                                          localStorage.setItem('lastUploadId', String(u.id))
+                                        }
+                                      }}
+                                      className={`w-full text-left px-4 py-3 flex items-center justify-between transition-colors cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-indigo-50 text-indigo-900'
+                                          : 'hover:bg-gray-50 text-gray-900'
+                                      } ${u.id !== availableUploads[availableUploads.length - 1].id ? 'border-b border-gray-100' : ''}`}
+                                    >
+                                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                                        <svg className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-indigo-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <div className="flex-1 min-w-0">
+                                          <p className={`text-sm font-medium truncate ${isSelected ? 'text-indigo-900' : 'text-gray-900'}`}>
+                                            {u.fileName}
+                                          </p>
+                                          <p className={`text-xs mt-0.5 ${isSelected ? 'text-indigo-700' : 'text-gray-500'}`}>
+                                            {u.totalRecords} records
+                                          </p>
+                                        </div>
+                                      </div>
+                                      {isSelected && (
+                                        <svg className="w-5 h-5 text-indigo-600 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center flex-wrap gap-3">
+                <button
+                  onClick={handleFetchByUpload}
+                  disabled={!currentUploadId}
+                  className="bg-indigo-700 text-white px-4 py-2.5 rounded-lg hover:bg-indigo-800 disabled:bg-gray-400 text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed"
+                >
+                  Fetch and show records
+                </button>
+                <button
+                  onClick={handleFetchAllContacts}
+                  className="bg-purple-700 text-white px-4 py-2.5 rounded-lg hover:bg-purple-800 disabled:bg-gray-400 text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Get All Contacts</span>
+                </button>
+                {showAllContacts && (
+                  <div className="text-sm text-gray-600 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+                    Showing all contacts from all CSV uploads
+                  </div>
+                )}
+                {query.csvUploadId && !showAllContacts && (
+                  <div className="text-sm text-gray-600 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
+                    Showing contacts from selected CSV upload
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="space-y-6">
               <Card variant="filled" hover>
