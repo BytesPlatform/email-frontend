@@ -10,7 +10,8 @@ import { scrapingApi } from '@/api/scraping'
 import { ingestionApi } from '@/api/ingestion'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { WebsitePreviewDialog } from '@/components/scraping/WebsitePreviewDialog'
-import type { ReadyContact, StatsResponse, ScrapeSingleResponseData } from '@/types/scraping'
+import { BatchWebsiteConfirmationDialog } from '@/components/scraping/BatchWebsiteConfirmationDialog'
+import type { ReadyContact, StatsResponse, ScrapeSingleResponseData, BatchDiscoveryResult } from '@/types/scraping'
 import type { ClientContact } from '@/types/ingestion'
 
  
@@ -52,6 +53,14 @@ export default function ScrapingPage() {
     searchQuery?: string
   } | null>(null)
   const [isDiscovering, setIsDiscovering] = useState<Record<number, boolean>>({})
+  
+  // Batch discovery state
+  const [batchDiscoveryDialog, setBatchDiscoveryDialog] = useState<{
+    isOpen: boolean
+    results: BatchDiscoveryResult[]
+    uploadId: number
+    limit: number
+  } | null>(null)
 
   // Tentatively read last uploadId (will be validated against the logged-in client's uploads)
   useEffect(() => {
@@ -357,6 +366,60 @@ export default function ScrapingPage() {
     }
   }
 
+  // Handle batch discovery confirmation
+  const handleBatchDiscoveryConfirm = async (confirmedWebsites: { [contactId: number]: string }) => {
+    if (!batchDiscoveryDialog) return
+    
+    setIsBatching(true)
+    setApiError(null)
+    setBatchDiscoveryDialog(null)
+    
+    try {
+      // Get all contact IDs from discovery results
+      const contactIds = batchDiscoveryDialog.results.map(r => r.contactId)
+      contactIds.forEach(id => {
+        setScrapingStatus(prev => ({ ...prev, [id]: 'scraping' }))
+      })
+      
+      // Scrape with confirmed websites
+      const res = await scrapingApi.scrapeBatch(batchDiscoveryDialog.uploadId, batchDiscoveryDialog.limit, confirmedWebsites)
+      if (res.success && res.data) {
+        res.data.results.forEach(item => {
+          const status = item.success ? 'scraped' : 'failed'
+          setScrapingStatus(prev => ({ ...prev, [item.contactId]: status }))
+          if (item.success && 'scrapedData' in item && item.scrapedData) {
+            setScrapedContactDetails(prev => ({ ...prev, [item.contactId]: item.scrapedData as ScrapeSingleResponseData }))
+          }
+        })
+      } else {
+        // Mark all contacts as failed on API error
+        contactIds.forEach(id => {
+          setScrapingStatus(prev => ({ ...prev, [id]: 'failed' }))
+        })
+        setApiError(res.error || 'Batch scrape failed')
+      }
+      
+      // Refresh stats
+      if (currentUploadId && !showAllContacts) {
+        await fetchStats()
+      }
+    } catch (error) {
+      const contactIds = batchDiscoveryDialog.results.map(r => r.contactId)
+      contactIds.forEach(id => {
+        setScrapingStatus(prev => ({ ...prev, [id]: 'failed' }))
+      })
+      setApiError(error instanceof Error ? error.message : 'Batch scrape failed')
+    } finally {
+      setIsBatching(false)
+    }
+  }
+
+  // Handle batch discovery cancel
+  const handleBatchDiscoveryCancel = () => {
+    setBatchDiscoveryDialog(null)
+    setIsBatching(false)
+  }
+
   const startBatchScraping = async (limit: number = 20) => {
     setIsBatching(true)
     setApiError(null)
@@ -408,8 +471,140 @@ export default function ScrapingPage() {
           }
         })
         
-        // Handle contacts that need preview (one at a time)
-        // Note: The preview dialog will handle the actual scraping after user confirms
+        // Handle contacts that need preview
+        // If multiple business_search contacts, use batch discovery or discover individually and show in batch dialog
+        if (contactsNeedingPreview.length > 1) {
+          // Get uploadId from first contact (all should have same uploadId)
+          const uploadId = contactsNeedingPreview[0].contact.csvUploadId
+          let discoveryResults: BatchDiscoveryResult[] = []
+          
+          if (uploadId) {
+            try {
+              // Try batch discovery API first
+              const discoveryRes = await scrapingApi.discoverBatchWebsites(uploadId, 100)
+              if (discoveryRes.success && discoveryRes.data) {
+                const batchResults = discoveryRes.data.results
+                // Filter to only include results for selected contacts
+                const selectedContactIds = new Set(contactsNeedingPreview.map(c => c.contactId))
+                const filteredResults = batchResults.filter(r => 
+                  selectedContactIds.has(r.contactId)
+                )
+                
+                // Check which selected contacts have results
+                const foundContactIds = new Set(filteredResults.map(r => r.contactId))
+                const missingContacts = contactsNeedingPreview.filter(c => !foundContactIds.has(c.contactId))
+                
+                // If we have results for all contacts, use batch results
+                if (missingContacts.length === 0 && filteredResults.length > 0) {
+                  discoveryResults = filteredResults
+                } else {
+                  // Some contacts are missing, discover them individually
+                  const individualResults = await Promise.allSettled(
+                    missingContacts.map(async ({ contactId, contact }) => {
+                      try {
+                        const res = await scrapingApi.discoverWebsite(contactId)
+                        if (res.success && res.data) {
+                          return {
+                            contactId,
+                            businessName: contact.businessName || '',
+                            success: true,
+                            data: {
+                              discoveredWebsite: res.data.discoveredWebsite,
+                              confidence: res.data.confidence,
+                              method: 'business_search' as const,
+                              searchQuery: res.data.searchQuery
+                            }
+                          } as BatchDiscoveryResult
+                        } else {
+                          return {
+                            contactId,
+                            businessName: contact.businessName || '',
+                            success: false,
+                            error: res.error || 'Discovery failed'
+                          } as BatchDiscoveryResult
+                        }
+                      } catch (error) {
+                        return {
+                          contactId,
+                          businessName: contact.businessName || '',
+                          success: false,
+                          error: error instanceof Error ? error.message : 'Discovery failed'
+                        } as BatchDiscoveryResult
+                      }
+                    })
+                  )
+                  
+                  // Combine batch and individual results
+                  discoveryResults = [
+                    ...filteredResults,
+                    ...individualResults
+                      .filter((r): r is PromiseFulfilledResult<BatchDiscoveryResult> => r.status === 'fulfilled')
+                      .map(r => r.value)
+                  ]
+                }
+              }
+            } catch (error) {
+              console.error('Batch discovery failed, discovering individually:', error)
+              // Discover all contacts individually
+              const individualResults = await Promise.allSettled(
+                contactsNeedingPreview.map(async ({ contactId, contact }) => {
+                  try {
+                    const res = await scrapingApi.discoverWebsite(contactId)
+                    if (res.success && res.data) {
+                      return {
+                        contactId,
+                        businessName: contact.businessName || '',
+                        success: true,
+                        data: {
+                          discoveredWebsite: res.data.discoveredWebsite,
+                          confidence: res.data.confidence,
+                          method: 'business_search' as const,
+                          searchQuery: res.data.searchQuery
+                        }
+                      } as BatchDiscoveryResult
+                    } else {
+                      return {
+                        contactId,
+                        businessName: contact.businessName || '',
+                        success: false,
+                        error: res.error || 'Discovery failed'
+                      } as BatchDiscoveryResult
+                    }
+                  } catch (error) {
+                    return {
+                      contactId,
+                      businessName: contact.businessName || '',
+                      success: false,
+                      error: error instanceof Error ? error.message : 'Discovery failed'
+                    } as BatchDiscoveryResult
+                  }
+                })
+              )
+              
+              discoveryResults = individualResults
+                .filter((r): r is PromiseFulfilledResult<BatchDiscoveryResult> => r.status === 'fulfilled')
+                .map(r => r.value)
+            }
+            
+            // Show batch confirmation dialog if we have any results
+            if (discoveryResults.length > 0 && discoveryResults.some(r => r.success && r.data)) {
+              setBatchDiscoveryDialog({
+                isOpen: true,
+                results: discoveryResults,
+                uploadId: uploadId,
+                limit: contactsNeedingPreview.length
+              })
+              // Don't scrape yet, wait for user confirmation
+              contactsToScrape.forEach(id => {
+                setScrapingStatus(prev => ({ ...prev, [id]: null }))
+              })
+              setIsBatching(false)
+              return
+            }
+          }
+        }
+        
+        // If single contact or batch discovery failed, handle one at a time
         for (const { contactId, contact } of contactsNeedingPreview) {
           await scrapeContactWithPreview(contactId, contact)
           // If preview dialog is shown, wait for user confirmation
@@ -420,7 +615,7 @@ export default function ScrapingPage() {
         }
         
         // Clear selection after scraping (only if no preview dialog is open)
-        if (!previewDialog) {
+        if (!previewDialog && !batchDiscoveryDialog) {
           setSelectedContactIds([])
         }
       } else {
@@ -433,21 +628,63 @@ export default function ScrapingPage() {
           return
         }
         
-        const res = await scrapingApi.scrapeBatch(currentUploadId, limit)
-        if (res.success && res.data) {
-          res.data.results.forEach(item => {
-            const status = item.success ? 'scraped' : 'failed'
-            setScrapingStatus(prev => ({ ...prev, [item.contactId]: status }))
-            if (item.success && 'scrapedData' in item && item.scrapedData) {
-              setScrapedContactDetails(prev => ({ ...prev, [item.contactId]: item.scrapedData as ScrapeSingleResponseData }))
+        // First, discover websites for business_search contacts
+        const discoveryRes = await scrapingApi.discoverBatchWebsites(currentUploadId, limit)
+        if (discoveryRes.success && discoveryRes.data) {
+          const discoveryResults = discoveryRes.data.results
+          // Check if there are any successful discoveries (business_search contacts)
+          const hasBusinessSearchContacts = discoveryResults.some(r => r.success && r.data)
+          
+          if (hasBusinessSearchContacts) {
+            // Show batch confirmation dialog
+            setBatchDiscoveryDialog({
+              isOpen: true,
+              results: discoveryResults,
+              uploadId: currentUploadId,
+              limit
+            })
+            // Don't scrape yet, wait for user confirmation
+            contactsToScrape.forEach(id => {
+              setScrapingStatus(prev => ({ ...prev, [id]: null }))
+            })
+            return
+          } else {
+            // No business_search contacts, proceed with normal batch scrape
+            const res = await scrapingApi.scrapeBatch(currentUploadId, limit)
+            if (res.success && res.data) {
+              res.data.results.forEach(item => {
+                const status = item.success ? 'scraped' : 'failed'
+                setScrapingStatus(prev => ({ ...prev, [item.contactId]: status }))
+                if (item.success && 'scrapedData' in item && item.scrapedData) {
+                  setScrapedContactDetails(prev => ({ ...prev, [item.contactId]: item.scrapedData as ScrapeSingleResponseData }))
+                }
+              })
+            } else {
+              // Mark all contacts as failed on API error
+              contactsToScrape.forEach(id => {
+                setScrapingStatus(prev => ({ ...prev, [id]: 'failed' }))
+              })
+              setApiError(res.error || 'Batch scrape failed')
             }
-          })
+          }
         } else {
-          // Mark all contacts as failed on API error
-          contactsToScrape.forEach(id => {
-            setScrapingStatus(prev => ({ ...prev, [id]: 'failed' }))
-          })
-          setApiError(res.error || 'Batch scrape failed')
+          // Discovery failed, proceed with normal batch scrape
+          const res = await scrapingApi.scrapeBatch(currentUploadId, limit)
+          if (res.success && res.data) {
+            res.data.results.forEach(item => {
+              const status = item.success ? 'scraped' : 'failed'
+              setScrapingStatus(prev => ({ ...prev, [item.contactId]: status }))
+              if (item.success && 'scrapedData' in item && item.scrapedData) {
+                setScrapedContactDetails(prev => ({ ...prev, [item.contactId]: item.scrapedData as ScrapeSingleResponseData }))
+              }
+            })
+          } else {
+            // Mark all contacts as failed on API error
+            contactsToScrape.forEach(id => {
+              setScrapingStatus(prev => ({ ...prev, [id]: 'failed' }))
+            })
+            setApiError(res.error || 'Batch scrape failed')
+          }
         }
       }
       
@@ -929,7 +1166,7 @@ export default function ScrapingPage() {
           await fetchStats(); 
           if (showAllContacts) {
             // Refresh all contacts if we're showing all contacts, preserve current filter
-            await fetchAllClientContacts(50, true);
+            await fetchAllClientContacts(readyContacts.length || undefined, true);
           } else {
             // Otherwise refresh ready contacts for the current upload
             await fetchReadyContacts(readyPageSize);
@@ -941,7 +1178,7 @@ export default function ScrapingPage() {
           if (filter === 'scraped' || filter === 'scrape_failed') {
             if (showAllContacts) {
               // Refresh all contacts if showing all contacts, preserve current filter
-              await fetchAllClientContacts(50, true);
+              await fetchAllClientContacts(readyContacts.length || undefined, true);
             } else if (currentUploadId) {
               // Otherwise refresh contacts for the current upload, preserve current filter
               await fetchStatsAndShowRecords(20, true);
@@ -961,6 +1198,17 @@ export default function ScrapingPage() {
           onConfirm={handlePreviewConfirm}
           onCancel={handlePreviewCancel}
           onVisitWebsite={handleVisitWebsite}
+          isLoading={isBatching}
+        />
+      )}
+
+      {/* Batch Website Confirmation Dialog */}
+      {batchDiscoveryDialog && (
+        <BatchWebsiteConfirmationDialog
+          isOpen={batchDiscoveryDialog.isOpen}
+          results={batchDiscoveryDialog.results}
+          onConfirm={handleBatchDiscoveryConfirm}
+          onCancel={handleBatchDiscoveryCancel}
           isLoading={isBatching}
         />
       )}

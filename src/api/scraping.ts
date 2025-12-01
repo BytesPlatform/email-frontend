@@ -4,6 +4,7 @@ import {
   ScrapeSingleResponse,
   BatchScrapeResponse,
   StatsResponse,
+  BatchDiscoveryResponse,
 } from '@/types/scraping'
 
 export const scrapingApi = {
@@ -17,13 +18,22 @@ export const scrapingApi = {
     return apiClient.post(`/scraping/discover-website/${contactId}`)
   },
 
+  async discoverBatchWebsites(uploadId: number, limit?: number): Promise<ApiResponse<BatchDiscoveryResponse>> {
+    const body = limit ? { uploadId, limit } : { uploadId }
+    return apiClient.post<BatchDiscoveryResponse>(`/scraping/discover-batch`, body)
+  },
+
   async scrapeSingle(contactId: number, confirmedWebsite?: string): Promise<ApiResponse<ScrapeSingleResponse>> {
     const body = confirmedWebsite ? { confirmedWebsite } : undefined
     return apiClient.post<ScrapeSingleResponse>(`/scraping/scrape/${contactId}`, body)
   },
 
-  async scrapeBatch(uploadId: number, limit: number = 20): Promise<ApiResponse<BatchScrapeResponse>> {
-    return apiClient.post<BatchScrapeResponse>(`/scraping/batch`, { uploadId, limit })
+  async scrapeBatch(uploadId: number, limit: number = 20, confirmedWebsites?: { [contactId: number]: string }): Promise<ApiResponse<BatchScrapeResponse>> {
+    const body: { uploadId: number; limit: number; confirmedWebsites?: { [contactId: number]: string } } = { uploadId, limit }
+    if (confirmedWebsites) {
+      body.confirmedWebsites = confirmedWebsites
+    }
+    return apiClient.post<BatchScrapeResponse>(`/scraping/batch`, body)
   },
 
   async getStats(uploadId: number): Promise<ApiResponse<StatsResponse>> {
