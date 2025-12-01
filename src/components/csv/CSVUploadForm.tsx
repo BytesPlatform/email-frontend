@@ -205,6 +205,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
     const convertedData: CSVRecord[] = []
     const validOriginalData: Record<string, string>[] = []
     const uncleanRows: Record<string, string>[] = []
+    // No longer tracking invalid phone rows separately - user can assign country code later
     const invalidPhoneRows: Record<string, string>[] = []
 
     // Check column count - allow more than 6 columns (extras will be ignored)
@@ -252,15 +253,10 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
             if (normalizedPhone && normalizedPhone.startsWith('+')) {
               // Store normalized phone number (E.164 format)
               convertedRow[mapping.mappedField] = normalizedPhone
-            } else if (normalizedPhone && !normalizedPhone.startsWith('+')) {
-              // Phone number exists but normalization failed (returned raw input without +)
-              // Store the raw input so UI can flag it as invalid
-              convertedRow[mapping.mappedField] = normalizedPhone
-              invalidPhoneRows.push(row)
             } else if (!isValueEmpty(rawPhoneValue)) {
-              // Phone number exists but is invalid - flag this row
-              convertedRow[mapping.mappedField] = rawPhoneValue // Keep original for reference
-              invalidPhoneRows.push(row)
+              // Phone number exists but normalization failed (no country code match)
+              // Store the raw input - user can assign country code later
+              convertedRow[mapping.mappedField] = rawPhoneValue
             } else {
               // Empty phone number
               convertedRow[mapping.mappedField] = ''
@@ -280,11 +276,9 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
       const phoneValue = phoneMapping ? row[phoneMapping.csvColumnName] : ''
       
       const hasEmail = !isValueEmpty(emailValue)
+      // Phone is considered "has" if there's a value, even if normalization failed
+      // (user can assign country code later)
       const hasPhone = !isValueEmpty(phoneValue)
-      
-      // Check if this row has an invalid phone number
-      const rawPhoneValue = phoneMapping ? row[phoneMapping.csvColumnName] : ''
-      const hasInvalidPhone = !isValueEmpty(rawPhoneValue) && normalizePhoneNumber(rawPhoneValue) === null
       
       // If missing both email and phone, add to uncleanRows
       if (!hasEmail && !hasPhone) {
@@ -293,11 +287,6 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
         // Valid row - has at least email or phone
         validOriginalData.push(row)
         convertedData.push(convertedRow)
-        
-        // If phone number is invalid, also add to invalidPhoneRows for tracking
-        if (hasInvalidPhone) {
-          invalidPhoneRows.push(row)
-        }
       }
     })
 
@@ -308,7 +297,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
       convertedData,
       validOriginalData,
       uncleanRows, // Invalid contacts (missing both email and phone)
-      invalidPhoneRows // Invalid contacts (invalid phone number format)
+      invalidPhoneRows: [] // No longer tracking invalid phone rows - user can assign country code later
     }
   }
 
@@ -452,6 +441,14 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
       setManualMappings({}) // Reset manual mappings
       setAutoMappedFields(new Set()) // Reset auto-mapped fields
       setFieldValidationErrors({}) // Reset field validation errors
+      setParsedData([]) // Reset parsed data
+      setUncleanRows([]) // Reset unclean rows - IMPORTANT: Clear stale data before new validation
+      setInvalidPhoneRows([]) // Reset invalid phone rows
+      
+      // Also notify parent to reset uncleanRows state
+      if (onMappedDataReady) {
+        onMappedDataReady([], [], [])
+      }
       
       // Parse the file immediately (CSV or Excel)
       try {
@@ -560,7 +557,16 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
         setUploadError(null)
         setUploadSuccess(null)
         setManualMappings({}) // Reset manual mappings
+        setAutoMappedFields(new Set()) // Reset auto-mapped fields
         setFieldValidationErrors({}) // Reset field validation errors
+        setParsedData([]) // Reset parsed data
+        setUncleanRows([]) // Reset unclean rows - IMPORTANT: Clear stale data before new validation
+        setInvalidPhoneRows([]) // Reset invalid phone rows
+        
+        // Also notify parent to reset uncleanRows state
+        if (onMappedDataReady) {
+          onMappedDataReady([], [], [])
+        }
         
         // Parse the file immediately (CSV or Excel)
         try {
@@ -948,7 +954,7 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
                   return (
                     <div key={requiredField} className="space-y-2">
                       <div 
-                        className={`flex items-center justify-between p-3 rounded border ${
+                        className={`flex items-center gap-3 p-3 rounded border ${
                           hasValidationError
                             ? 'bg-amber-50 border-amber-300'
                             : isMapped 
@@ -956,56 +962,54 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
                               : 'bg-white border-slate-300'
                         }`}
                       >
-                        <div className="flex items-center space-x-3 flex-1">
-                          <span className="text-sm font-medium text-slate-900 w-32">
-                            {fieldDisplayNames[requiredField]}
-                            <span className="text-red-500 ml-1">*</span>
+                        <span className="text-sm font-medium text-slate-900 w-32 flex-shrink-0">
+                          {fieldDisplayNames[requiredField]}
+                          <span className="text-red-500 ml-1">*</span>
+                        </span>
+                        <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                        <select
+                          value={selectedColumnIndex !== undefined ? selectedColumnIndex : ''}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            handleManualMappingChange(
+                              requiredField,
+                              value === '' ? null : parseInt(value, 10)
+                            )
+                          }}
+                          className={`flex-1 min-w-0 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                            hasValidationError
+                              ? 'border-amber-400 bg-white'
+                              : isMapped 
+                                ? 'border-green-300 bg-white' 
+                                : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          <option value="">Select Column...</option>
+                          {csvHeaders.map((header, index) => {
+                            // Check if this column is already mapped to another field
+                            const alreadyMapped = Object.entries(manualMappings).find(
+                              ([field, colIdx]) => colIdx === index && field !== requiredField
+                            )
+                            const isSelected = selectedColumnIndex === index
+                            
+                            return (
+                              <option 
+                                key={index} 
+                                value={index}
+                                disabled={!!alreadyMapped && !isSelected}
+                              >
+                                {header} {alreadyMapped && !isSelected ? '(already mapped)' : ''}
+                              </option>
+                            )
+                          })}
+                        </select>
+                        {isMapped && !hasValidationError && (
+                          <span className="text-xs text-green-600 font-medium flex-shrink-0 whitespace-nowrap">
+                            ✓ Mapped
                           </span>
-                          <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                          </svg>
-                          <select
-                            value={selectedColumnIndex !== undefined ? selectedColumnIndex : ''}
-                            onChange={(e) => {
-                              const value = e.target.value
-                              handleManualMappingChange(
-                                requiredField,
-                                value === '' ? null : parseInt(value, 10)
-                              )
-                            }}
-                            className={`flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                              hasValidationError
-                                ? 'border-amber-400 bg-white'
-                                : isMapped 
-                                  ? 'border-green-300 bg-white' 
-                                  : 'border-slate-300 bg-white'
-                            }`}
-                          >
-                            <option value="">Select Column...</option>
-                            {csvHeaders.map((header, index) => {
-                              // Check if this column is already mapped to another field
-                              const alreadyMapped = Object.entries(manualMappings).find(
-                                ([field, colIdx]) => colIdx === index && field !== requiredField
-                              )
-                              const isSelected = selectedColumnIndex === index
-                              
-                              return (
-                                <option 
-                                  key={index} 
-                                  value={index}
-                                  disabled={!!alreadyMapped && !isSelected}
-                                >
-                                  {header} {alreadyMapped && !isSelected ? '(already mapped)' : ''}
-                                </option>
-                              )
-                            })}
-                          </select>
-                          {isMapped && !hasValidationError && (
-                            <span className="text-xs text-green-600 font-medium ml-2">
-                              ✓ Mapped
-                            </span>
-                          )}
-                        </div>
+                        )}
                       </div>
                       {hasValidationError && (
                         <div className="ml-36 bg-amber-50 border border-amber-200 rounded-md p-2">

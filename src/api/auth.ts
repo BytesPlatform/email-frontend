@@ -1,5 +1,6 @@
 import { apiClient, ApiResponse } from './ApiClient'
 import { LoginCredentials, RegisterData, AuthResponse, Client, ProfileResponse, UpdateProfileDto, UpdateProfileResponse } from '@/types/auth'
+import { clearAllAnalyticsCache } from '@/utils/analyticsCache'
 
 // Helper function to safely access localStorage
 const safeLocalStorage = {
@@ -182,7 +183,11 @@ export const auth = {
           }
         }
         keysToRemove.forEach(key => localStorage.removeItem(key))
-        console.log('[Auth] Cleared all authentication data from localStorage')
+        
+        // Clear all analytics cache entries (user-specific data should not persist after logout)
+        clearAllAnalyticsCache()
+        
+        console.log('[Auth] Cleared all authentication data and analytics cache from localStorage')
       } catch (error) {
         console.error('[Auth] Error clearing localStorage:', error)
       }

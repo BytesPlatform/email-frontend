@@ -11,6 +11,7 @@ import {
   setCachedData,
   type AnalyticsEndpoint,
 } from '@/utils/analyticsCache'
+import { auth } from './auth'
 
 const buildQueryString = (params?: AnalyticsQueryParams) => {
   if (!params) return ''
@@ -40,10 +41,12 @@ export const sendgridAnalyticsApi = {
     const email = params?.fromEmail || ''
     const from = params?.from || ''
     const to = params?.to || ''
+    const client = auth.getCurrentUser()
+    const clientId = client?.id
 
     // Check cache first (unless bypassing)
-    if (!bypassCache && from && to) {
-      const cacheKey = generateCacheKey('overview', email, from, to)
+    if (!bypassCache && from && to && clientId) {
+      const cacheKey = generateCacheKey('overview', email, from, to, clientId)
       console.log(`[AnalyticsAPI] Checking cache for overview - key: ${cacheKey}`)
       const cached = getCachedData<EmailAnalyticsOverview>(cacheKey)
       if (cached) {
@@ -57,7 +60,7 @@ export const sendgridAnalyticsApi = {
     } else if (bypassCache) {
       console.log('[AnalyticsAPI] ⏭️ Bypassing cache - Fetching overview from API')
     } else {
-      console.log('[AnalyticsAPI] ⚠️ Missing date params - Fetching overview from API (from:', from, 'to:', to, ')')
+      console.log('[AnalyticsAPI] ⚠️ Missing date params or client ID - Fetching overview from API (from:', from, 'to:', to, 'clientId:', clientId, ')')
     }
 
     // Fetch from API
@@ -67,12 +70,12 @@ export const sendgridAnalyticsApi = {
     console.log(`[AnalyticsAPI] API call completed in ${fetchTime}ms`)
     
     // Cache successful responses
-    if (response.success && response.data && from && to) {
-      const cacheKey = generateCacheKey('overview', email, from, to)
+    if (response.success && response.data && from && to && clientId) {
+      const cacheKey = generateCacheKey('overview', email, from, to, clientId)
       setCachedData(cacheKey, response.data)
       console.log('[AnalyticsAPI] ✅ Cached overview data')
     } else {
-      console.log('[AnalyticsAPI] ⚠️ Not caching overview - success:', response.success, 'hasData:', !!response.data, 'hasDates:', !!(from && to))
+      console.log('[AnalyticsAPI] ⚠️ Not caching overview - success:', response.success, 'hasData:', !!response.data, 'hasDates:', !!(from && to), 'hasClientId:', !!clientId)
     }
 
     return response
@@ -86,10 +89,12 @@ export const sendgridAnalyticsApi = {
     const email = params?.fromEmail || ''
     const from = params?.from || ''
     const to = params?.to || ''
+    const client = auth.getCurrentUser()
+    const clientId = client?.id
 
     // Check cache first (unless bypassing)
-    if (!bypassCache && from && to) {
-      const cacheKey = generateCacheKey('timeline', email, from, to)
+    if (!bypassCache && from && to && clientId) {
+      const cacheKey = generateCacheKey('timeline', email, from, to, clientId)
       console.log(`[AnalyticsAPI] Checking cache for timeline - key: ${cacheKey}`)
       const cached = getCachedData<EmailAnalyticsTimelinePoint[]>(cacheKey)
       if (cached) {
@@ -111,8 +116,8 @@ export const sendgridAnalyticsApi = {
     console.log(`[AnalyticsAPI] Timeline API call completed in ${fetchTime}ms`)
     
     // Cache successful responses
-    if (response.success && response.data && from && to) {
-      const cacheKey = generateCacheKey('timeline', email, from, to)
+    if (response.success && response.data && from && to && clientId) {
+      const cacheKey = generateCacheKey('timeline', email, from, to, clientId)
       setCachedData(cacheKey, response.data)
       console.log('[AnalyticsAPI] ✅ Cached timeline data')
     }
@@ -128,10 +133,12 @@ export const sendgridAnalyticsApi = {
     const email = params?.fromEmail || ''
     const from = params?.from || ''
     const to = params?.to || ''
+    const client = auth.getCurrentUser()
+    const clientId = client?.id
 
     // Check cache first (unless bypassing)
-    if (!bypassCache && from && to) {
-      const cacheKey = generateCacheKey('events', email, from, to)
+    if (!bypassCache && from && to && clientId) {
+      const cacheKey = generateCacheKey('events', email, from, to, clientId)
       console.log(`[AnalyticsAPI] Checking cache for events - key: ${cacheKey}`)
       const cached = getCachedData<EmailAnalyticsEvent[]>(cacheKey)
       if (cached) {
@@ -153,8 +160,8 @@ export const sendgridAnalyticsApi = {
     console.log(`[AnalyticsAPI] Events API call completed in ${fetchTime}ms`)
     
     // Cache successful responses
-    if (response.success && response.data && from && to) {
-      const cacheKey = generateCacheKey('events', email, from, to)
+    if (response.success && response.data && from && to && clientId) {
+      const cacheKey = generateCacheKey('events', email, from, to, clientId)
       setCachedData(cacheKey, response.data)
       console.log('[AnalyticsAPI] ✅ Cached events data')
     }

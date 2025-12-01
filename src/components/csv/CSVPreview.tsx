@@ -331,12 +331,11 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   }
 
   // Check if a phone number is invalid (doesn't start with +, indicating failed normalization)
+  // Note: We no longer show country code errors - user can assign country code later
   const isPhoneInvalid = (header: string, value: string | undefined | null, mapping?: ColumnMapping): boolean => {
-    if (!isPhoneField(header, mapping)) return false // Not a phone field
-    if (isFieldEmpty(value)) return false // Empty is handled separately
-    const phoneValue = String(value || '').trim()
-    // Phone is invalid if it doesn't start with + (normalization failed)
-    return phoneValue.length > 0 && !phoneValue.startsWith('+')
+    // Always return false - don't show country code errors
+    // User can assign country code later if needed
+    return false
   }
 
   // Handle starting edit

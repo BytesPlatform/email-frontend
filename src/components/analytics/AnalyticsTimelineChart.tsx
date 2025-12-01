@@ -43,6 +43,10 @@ export function AnalyticsTimelineChart({ data, isLoading = false }: AnalyticsTim
     }))
   }, [data])
 
+  // Show dots when there's only one data point (e.g., 1-day filter)
+  // This makes the data visible since a line chart needs at least 2 points to draw lines
+  const showDots = chartData.length === 1
+
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col gap-6">
       <div>
@@ -74,7 +78,7 @@ export function AnalyticsTimelineChart({ data, isLoading = false }: AnalyticsTim
                 dataKey="requests"
                 stroke={COLORS.requests}
                 strokeWidth={2}
-                dot={false}
+                dot={showDots ? { r: 4 } : false}
                 activeDot={{ r: 6 }}
               />
               <Line
@@ -82,35 +86,40 @@ export function AnalyticsTimelineChart({ data, isLoading = false }: AnalyticsTim
                 dataKey="delivered"
                 stroke={COLORS.delivered}
                 strokeWidth={2}
-                dot={false}
+                dot={showDots ? { r: 4 } : false}
+                activeDot={{ r: 6 }}
               />
               <Line
                 type="monotone"
                 dataKey="opened"
                 stroke={COLORS.opened}
                 strokeWidth={2}
-                dot={false}
+                dot={showDots ? { r: 4 } : false}
+                activeDot={{ r: 6 }}
               />
               <Line
                 type="monotone"
                 dataKey="clicked"
                 stroke={COLORS.clicked}
                 strokeWidth={2}
-                dot={false}
+                dot={showDots ? { r: 4 } : false}
+                activeDot={{ r: 6 }}
               />
               <Line
                 type="monotone"
                 dataKey="bounced"
                 stroke={COLORS.bounced}
                 strokeWidth={2}
-                dot={false}
+                dot={showDots ? { r: 4 } : false}
+                activeDot={{ r: 6 }}
               />
               <Line
                 type="monotone"
                 dataKey="spamReports"
                 stroke={COLORS.spamReports}
                 strokeWidth={2}
-                dot={false}
+                dot={showDots ? { r: 4 } : false}
+                activeDot={{ r: 6 }}
               />
             </LineChart>
           </ResponsiveContainer>
