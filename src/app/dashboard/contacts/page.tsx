@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 
 import { AuthGuard } from '@/components/auth/AuthGuard'
@@ -38,77 +38,69 @@ const formatDateTime = (value?: string) => {
 }
 
 const deriveContactValidity = (contact: ClientContact) => {
-  // Priority 0: Check if website is invalid (force user to fix it)
-  // If website exists but is invalid, contact must be marked invalid
-  if (contact.website && contact.websiteValid === false) {
+  // Use backend computed validity if available (preferred)
+  if (typeof contact.computedValid === 'boolean' && contact.computedValidationReason) {
     return {
-      isValid: false,
-      reason: 'Website is unreachable - please update or remove the website URL'
+      isValid: contact.computedValid,
+      reason: contact.computedValidationReason
     }
   }
 
-  // Priority 1: Check email/phone presence first (most important for display)
-  // This ensures contacts with email/phone show as valid even if valid field is false
-  const hasEmail = Boolean(contact.email?.trim())
-  const hasPhone = Boolean(contact.phone?.trim())
-
-  if (hasEmail || hasPhone) {
-    if (hasEmail && hasPhone) {
-      return {
-        isValid: true,
-        reason: 'Email and phone number present'
-      }
-    }
-    if (hasEmail) {
-      // Check if email is validated (emailValid field)
-      if (contact.emailValid === true) {
-        return {
-          isValid: true,
-          reason: 'Valid email address present'
-        }
-      }
-      // Email exists but not yet validated (might be newly added)
-      return {
-        isValid: true,
-        reason: 'Email address present (validation pending)'
-      }
-    }
-    if (hasPhone) {
-      return {
-        isValid: true,
-        reason: 'Phone number present'
-      }
-    }
-  }
-
-  // Priority 2: If no email/phone, check computedValid (from backend computation)
+  // If backend computed validity exists but no reason, use it with default reason
   if (typeof contact.computedValid === 'boolean') {
     return {
       isValid: contact.computedValid,
-      reason:
-        contact.computedValidationReason ||
-        contact.validationReason ||
-        (contact.computedValid
-          ? 'Marked as valid by ingestion service'
-          : 'Marked as invalid by ingestion service')
+      reason: contact.computedValid
+        ? 'Valid contact (computed by backend)'
+        : 'Invalid contact (computed by backend)'
     }
   }
 
-  // Priority 3: Check valid field (used for scraping validation, not contact info completeness)
-  if (typeof contact.valid === 'boolean') {
+  // Fallback: Compute validity using the same logic as backend
+  // This matches the backend logic from getAllInvalidContacts and computeContactValidity
+
+  // 1. Check Email: must exist AND emailValid === true
+  const emailValid = contact.emailValid === true
+
+  // 2. Check Phone: must exist AND length 7-15 digits
+  const phone = contact.phone?.trim() ?? ''
+  const phoneDigits = phone.replace(/\D/g, '') // Remove non-digits
+  const hasValidPhone = phoneDigits.length >= 7 && phoneDigits.length <= 15
+
+  // 3. Check Website: if exists, must be valid (websiteValid === true)
+  const website = contact.website?.trim() ?? ''
+  const hasWebsite = website.length > 0
+  const websiteValid = contact.websiteValid === true
+
+  // Website blocker: If website exists but is invalid, contact is invalid
+  if (hasWebsite && contact.websiteValid === false) {
     return {
-      isValid: contact.valid,
-      reason:
-        contact.validationReason ||
-        (contact.valid ? 'Contact flagged as valid' : 'Contact flagged as invalid')
+      isValid: false,
+      reason: 'Website exists but is invalid (websiteValid = false)'
     }
   }
 
-  // If both email and phone are null/empty, contact is invalid
-  return {
-    isValid: false,
-    reason: contact.validationReason || 'Missing email address and phone number'
+  // Contact is valid if: (Valid email OR Valid phone) AND (No website OR website is valid)
+  // Check if we have valid email or phone
+  const hasValidEmailOrPhone = emailValid || hasValidPhone
+
+  // Check website condition: no website OR website is valid
+  const websiteConditionMet = !hasWebsite || websiteValid
+
+  // Contact is valid only if both conditions are met
+  if (hasValidEmailOrPhone && websiteConditionMet) {
+    if (emailValid && hasValidPhone) {
+      return { isValid: true, reason: 'Valid email and valid phone number (7-15 digits) present' }
+    }
+    if (emailValid) {
+      return { isValid: true, reason: 'Valid email address present' }
+    }
+    if (hasValidPhone) {
+      return { isValid: true, reason: 'Valid phone number (7-15 digits) present' }
+    }
   }
+
+  return { isValid: false, reason: 'Missing valid email or valid phone number (7-15 digits)' }
 }
 
 const getValidityDisplay = (contact: ClientContact) => {
@@ -269,6 +261,7 @@ export default function ContactsPage() {
   const [query, setQuery] = useState<ClientContactsQuery>({ page: 1, limit: 10 })
   const [validityFilter, setValidityFilter] = useState<ValidityFilter>('all')
   const [searchInput, setSearchInput] = useState('')
+  const [searchField, setSearchField] = useState<'all' | 'businessName' | 'email' | 'website'>('all')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
@@ -320,6 +313,26 @@ export default function ContactsPage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [showAllContacts, setShowAllContacts] = useState(false)
 
+  // Cache for search results - key is a stringified query, value is the response
+  const searchCache = useRef<Map<string, ClientContactsListResponse>>(new Map())
+
+  // Generate cache key from query object
+  const getCacheKey = (query: ClientContactsQuery): string => {
+    const keyParts = [
+      `page:${query.page || 1}`,
+      `limit:${query.limit || 10}`,
+      `search:${query.search || ''}`,
+      `searchField:${query.searchField || 'all'}`,
+      `validOnly:${query.validOnly ?? ''}`,
+      `invalidOnly:${query.invalidOnly ?? ''}`,
+      `csvUploadId:${query.csvUploadId ?? ''}`,
+      `status:${query.status || ''}`,
+      `sortBy:${query.sortBy || ''}`,
+      `sortOrder:${query.sortOrder || ''}`
+    ]
+    return keyParts.join('|')
+  }
+
   // Ensure component is mounted and client is available before rendering content
   useEffect(() => {
     // Only set mounted on client side
@@ -366,9 +379,39 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client?.id])
 
-  // Use total valid/invalid counts from backend (across all pages, independent of filter)
-  const totalValid = meta?.totalValid ?? 0
-  const totalInvalid = meta?.totalInvalid ?? 0
+  // Calculate stats: use backend meta when no search, otherwise calculate from current contacts
+  const stats = useMemo(() => {
+    // If there's a search query, calculate stats from current contacts array
+    if (query.search?.trim()) {
+      let validCount = 0
+      let invalidCount = 0
+      
+      contacts.forEach(contact => {
+        const validity = deriveContactValidity(contact)
+        if (validity.isValid === true) {
+          validCount++
+        } else if (validity.isValid === false) {
+          invalidCount++
+        }
+      })
+      
+      return {
+        total: meta?.total ?? contacts.length,
+        valid: validCount,
+        invalid: invalidCount
+      }
+    }
+    
+    // No search: use backend meta counts (across all pages)
+    return {
+      total: meta?.total ?? 0,
+      valid: meta?.totalValid ?? 0,
+      invalid: meta?.totalInvalid ?? 0
+    }
+  }, [contacts, meta, query.search])
+
+  const totalValid = stats.valid
+  const totalInvalid = stats.invalid
 
   const selectedContactValidity = useMemo(
     () => (selectedContact ? getValidityDisplay(selectedContact) : null),
@@ -523,13 +566,14 @@ export default function ContactsPage() {
       const nextSearch = normalizedSearch.length > 0 ? normalizedSearch : undefined
       
       setQuery(prev => {
-        if (prev.search === nextSearch && prev.page === 1) {
+        if (prev.search === nextSearch && prev.page === 1 && prev.searchField === (searchField !== 'all' ? searchField : undefined)) {
           return prev
         }
         return {
           ...prev,
           page: 1,
-          search: nextSearch
+          search: nextSearch,
+          searchField: searchField !== 'all' ? searchField : undefined
         }
       })
     }, 400)
@@ -537,7 +581,22 @@ export default function ContactsPage() {
     return () => {
       clearTimeout(handler)
     }
-  }, [searchInput])
+  }, [searchInput, searchField])
+
+  // Update query when searchField changes
+  useEffect(() => {
+    setQuery(prev => {
+      const newSearchField = searchField !== 'all' ? searchField : undefined
+      if (prev.searchField === newSearchField) {
+        return prev
+      }
+      return {
+        ...prev,
+        page: 1,
+        searchField: newSearchField
+      }
+    })
+  }, [searchField])
 
   useEffect(() => {
     // Don't fetch until component is mounted
@@ -546,6 +605,21 @@ export default function ContactsPage() {
     let ignore = false
 
     const fetchContacts = async () => {
+      // Generate cache key for current query
+      const cacheKey = getCacheKey(query)
+      
+      // Check if we have cached results for this query
+      const cachedResult = searchCache.current.get(cacheKey)
+      if (cachedResult) {
+        // Use cached data
+        setContacts(cachedResult.data)
+        setMeta(cachedResult.meta)
+        setIsLoading(false)
+        setError(null)
+        return
+      }
+
+      // No cache, fetch from API
       setIsLoading(true)
       setError(null)
 
@@ -556,6 +630,17 @@ export default function ContactsPage() {
             const payload = response.data as ClientContactsListResponse
             setContacts(payload.data)
             setMeta(payload.meta)
+            
+            // Store in cache
+            searchCache.current.set(cacheKey, payload)
+            
+            // Limit cache size to prevent memory issues (keep last 50 queries)
+            if (searchCache.current.size > 50) {
+              const firstKey = searchCache.current.keys().next().value
+              if (firstKey) {
+                searchCache.current.delete(firstKey)
+              }
+            }
           } else {
             setContacts([])
             setMeta(null)
@@ -795,6 +880,9 @@ export default function ContactsPage() {
       )
       setEditSuccess(response.data.message || 'Contact updated successfully.')
       setDetailsError(null)
+      
+      // Clear cache when contact is updated to ensure fresh data on next search
+      searchCache.current.clear()
     } catch (error) {
       setEditError(
         error instanceof Error ? error.message : 'Unable to update contact. Please try again.'
@@ -1497,20 +1585,33 @@ export default function ContactsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-white rounded-xl shadow-md border border-indigo-100 p-5">
                   <p className="text-sm text-slate-500">Total Contacts</p>
-                  <p className="text-2xl font-semibold text-indigo-700 mt-1">{meta.total.toLocaleString()}</p>
+                  <p className="text-2xl font-semibold text-indigo-700 mt-1">{stats.total.toLocaleString()}</p>
                   <p className="text-xs text-slate-400 mt-2">
-                    Across {meta.totalPages.toLocaleString()} page{meta.totalPages === 1 ? '' : 's'}
+                    {query.search?.trim() 
+                      ? `Showing search results`
+                      : `Across ${meta.totalPages.toLocaleString()} page${meta.totalPages === 1 ? '' : 's'}`
+                    }
                   </p>
                 </div>
                 <div className="bg-white rounded-xl shadow-md border border-emerald-100 p-5">
                   <p className="text-sm text-slate-500">Valid Contacts</p>
                   <p className="text-2xl font-semibold text-emerald-600 mt-1">{totalValid.toLocaleString()}</p>
-                  <p className="text-xs text-slate-400 mt-2">Contacts with email or phone number</p>
+                  <p className="text-xs text-slate-400 mt-2">
+                    {query.search?.trim() 
+                      ? `Valid in search results`
+                      : `Contacts with email or phone number`
+                    }
+                  </p>
                 </div>
                 <div className="bg-white rounded-xl shadow-md border border-rose-100 p-5">
                   <p className="text-sm text-slate-500">Invalid Contacts</p>
                   <p className="text-2xl font-semibold text-rose-600 mt-1">{totalInvalid.toLocaleString()}</p>
-                  <p className="text-xs text-slate-400 mt-2">Contacts missing both email and phone</p>
+                  <p className="text-xs text-slate-400 mt-2">
+                    {query.search?.trim() 
+                      ? `Invalid in search results`
+                      : `Contacts missing both email and phone`
+                    }
+                  </p>
                 </div>
               </div>
             )}
@@ -1680,6 +1781,8 @@ export default function ContactsPage() {
                     onValidityChange={setValidityFilter}
                     searchValue={searchInput}
                     onSearchChange={setSearchInput}
+                    searchField={searchField}
+                    onSearchFieldChange={setSearchField}
                     perPage={query.limit || 10}
                     onPerPageChange={handleLimitChange}
                     perPageOptions={limitOptions}
@@ -1705,6 +1808,8 @@ export default function ContactsPage() {
                       totalItems: meta.total,
                       limit: meta.limit
                     } : null}
+                    searchTerm={searchInput}
+                    searchField={searchField}
                     selectedContactIds={selectedContactIds}
                     onToggleContactSelection={handleToggleContactSelection}
                     showCheckboxes={true}

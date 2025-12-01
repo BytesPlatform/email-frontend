@@ -85,6 +85,7 @@ export interface ClientContactsQuery {
   validOnly?: boolean
   invalidOnly?: boolean
   search?: string
+  searchField?: 'all' | 'businessName' | 'email' | 'website'
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
 }

@@ -116,6 +116,9 @@ export const ingestionApi = {
       if (trimmedSearch) {
         params.append('search', trimmedSearch);
       }
+      if (query.searchField && query.searchField !== 'all') {
+        params.append('searchField', query.searchField);
+      }
       if (query.sortBy) {
         params.append('sortBy', query.sortBy);
       }

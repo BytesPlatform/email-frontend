@@ -30,6 +30,37 @@ interface ContactsTableProps {
   selectedContactIds?: Set<number>
   onToggleContactSelection?: (id: number) => void
   showCheckboxes?: boolean
+  searchTerm?: string
+  searchField?: 'all' | 'businessName' | 'email' | 'website'
+}
+
+// Helper function to highlight search term in text
+const highlightText = (text: string, searchTerm: string, shouldHighlight: boolean): ReactNode => {
+  if (!searchTerm || !text || !shouldHighlight) return text || '—'
+  
+  const searchLower = searchTerm.toLowerCase()
+  const textLower = text.toLowerCase()
+  
+  if (!textLower.includes(searchLower)) {
+    return text
+  }
+  
+  const escapedSearch = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const parts = text.split(new RegExp(`(${escapedSearch})`, 'gi'))
+  
+  return (
+    <>
+      {parts.map((part, index) => 
+        part.toLowerCase() === searchLower ? (
+          <mark key={index} className="bg-yellow-200 text-yellow-900 font-semibold px-0.5 rounded">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </>
+  )
 }
 
 export function ContactsTable({
@@ -45,7 +76,9 @@ export function ContactsTable({
   getValidityDisplay,
   selectedContactIds,
   onToggleContactSelection,
-  showCheckboxes = false
+  showCheckboxes = false,
+  searchTerm = '',
+  searchField = 'all'
 }: ContactsTableProps) {
   const handlePrev = () => {
     if (!pagination) return
@@ -206,7 +239,7 @@ export function ContactsTable({
                     >
                       <div className="flex items-center space-x-2 min-w-0">
                         <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
-                          {contact.businessName || '—'}
+                          {highlightText(contact.businessName || '', searchTerm, searchField === 'all' || searchField === 'businessName')}
                         </div>
                         {isSelected && (
                           <svg className="w-4 h-4 text-indigo-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -265,7 +298,7 @@ export function ContactsTable({
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                               </svg>
                               <span className="text-sm text-amber-700 truncate" title="Website is unreachable">
-                                {contact.website}
+                                {highlightText(contact.website, searchTerm, searchField === 'all' || searchField === 'website')}
                               </span>
                             </div>
                           ) : (
@@ -284,7 +317,9 @@ export function ContactsTable({
                               <svg className="w-3.5 h-3.5 text-indigo-400 group-hover:text-indigo-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                               </svg>
-                              <span className="text-sm truncate">{contact.website}</span>
+                              <span className="text-sm truncate">
+                                {highlightText(contact.website, searchTerm, searchField === 'all' || searchField === 'website')}
+                              </span>
                             </a>
                           )}
                         </div>
@@ -301,7 +336,9 @@ export function ContactsTable({
                           <svg className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                           </svg>
-                          <span className="text-sm truncate">{contact.email}</span>
+                          <span className="text-sm truncate">
+                            {highlightText(contact.email || '', searchTerm, searchField === 'all' || searchField === 'email')}
+                          </span>
                         </div>
                       ) : (
                         <span className="text-slate-400">—</span>
