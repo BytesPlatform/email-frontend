@@ -244,21 +244,11 @@ export default function ScrapingPage() {
           }
         })(),
         (async () => {
-          const res = await ingestionApi.getUploadDetails(currentUploadId)
+          // Use scraping API which includes error messages from ScrapedData
+          const res = await scrapingApi.getAllContacts(currentUploadId, limit)
           if (res.success && res.data) {
-            type UnknownContact = Record<string, unknown>
-            const upload = res.data as { contacts?: UnknownContact[] }
-            const mapped = (upload.contacts || []).map((c): ReadyContact => ({
-              id: Number(c.id as number),
-              csvUploadId: currentUploadId!,
-              businessName: (c.businessName as string) || undefined,
-              website: (c.website as string) || undefined,
-              email: (c.email as string) || undefined,
-              state: (c.state as string) || undefined,
-              zipCode: (c.zipCode as string) || undefined,
-              status: ((c.status as string | undefined) || 'ready_to_scrape') as ReadyContact['status'],
-            }))
-            setReadyContacts(mapped)
+            // The scraping API already returns ReadyContact[] with errorMessage included
+            setReadyContacts(res.data.contacts)
           } else {
             setApiError(res.error || 'Failed to fetch upload contacts')
           }

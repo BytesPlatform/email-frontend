@@ -560,7 +560,7 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium text-red-800 mb-1">Scraping Failed</div>
                           {c.errorMessage ? (
-                            <div className="text-xs text-red-700 leading-relaxed mb-2.5 line-clamp-2">{c.errorMessage} hello</div>
+                            <div className="text-xs text-red-700 leading-relaxed mb-2.5 line-clamp-2">{c.errorMessage}</div>
                           ) : (
                             <div className="text-xs text-red-600 mb-2.5">No error details available</div>
                           )}
