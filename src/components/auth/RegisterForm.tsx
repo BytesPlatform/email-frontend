@@ -80,6 +80,18 @@ const validateBusinessName = (name: string): string | null => {
   return null
 }
 
+const validateDescription = (description: string): string | null => {
+  if (!description.trim()) {
+    return 'Description is required'
+  }
+  
+  if (description.trim().length < 50) {
+    return `Description must be at least 50 characters (currently ${description.trim().length} characters)`
+  }
+  
+  return null
+}
+
 // New validation functions
 const validateFullName = (name: string): string | null => {
   if (!name.trim()) return 'Full name is required'
@@ -363,12 +375,25 @@ export function RegisterForm() {
       if (hasType && ps.type !== 'product' && ps.type !== 'service') {
         newErrors[`productService_${index}_type`] = 'Type must be either "product" or "service"'
       }
+      
+      // If name and type are filled, description is required with minimum 50 characters
+      if (hasName && hasType) {
+        const descriptionError = validateDescription(ps.description || '')
+        if (descriptionError) {
+          newErrors[`productService_${index}_description`] = descriptionError
+        }
+      }
     })
 
     // Validate products/services - at least one is required
-    const validProductsServices = productsServices.filter(ps => ps.name?.trim() && ps.type?.trim())
+    const validProductsServices = productsServices.filter(ps => 
+      ps.name?.trim() && 
+      ps.type?.trim() && 
+      ps.description?.trim() && 
+      ps.description.trim().length >= 50
+    )
     if (validProductsServices.length === 0) {
-      newErrors.productsServices = 'At least one product or service is required. Please add at least one product/service with name and type.'
+      newErrors.productsServices = 'At least one product or service is required. Please add at least one product/service with name, type, and description (minimum 50 characters).'
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -378,10 +403,10 @@ export function RegisterForm() {
 
     // Filter out empty products/services and format for submission
     const formattedProductsServices: ProductServiceInput[] = productsServices
-      .filter(ps => ps.name?.trim() && ps.type?.trim())
+      .filter(ps => ps.name?.trim() && ps.type?.trim() && ps.description?.trim() && ps.description.trim().length >= 50)
       .map(ps => ({
         name: ps.name.trim(),
-        description: ps.description?.trim() || null,
+        description: ps.description?.trim() || '',
         type: ps.type?.trim() || '',
       }))
 
@@ -761,19 +786,30 @@ export function RegisterForm() {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="Name"
-                    type="text"
-                    value={ps.name || ''}
-                    onChange={(e) => updateProductService(index, 'name', e.target.value)}
-                    error={errors[`productService_${index}_name`]}
-                    placeholder="Product/Service name"
-                    required={!!(ps.type || ps.description)}
-                  />
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={ps.name || ''}
+                      onChange={(e) => updateProductService(index, 'name', e.target.value)}
+                      placeholder="Product/Service name"
+                      required={!!(ps.type || ps.description)}
+                      className={`w-full px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 rounded-lg border ${
+                        errors[`productService_${index}_name`]
+                          ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                          : 'border-slate-300 focus:ring-indigo-500 focus:border-indigo-500'
+                      } focus:outline-none focus:ring-2 transition-all hover:border-slate-400`}
+                    />
+                    {errors[`productService_${index}_name`] && (
+                      <p className="mt-1.5 text-xs text-red-600 font-medium">{errors[`productService_${index}_name`]}</p>
+                    )}
+                  </div>
                   
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Type {ps.name?.trim() && <span className="text-red-500">*</span>}
+                      Type <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <select
@@ -799,18 +835,35 @@ export function RegisterForm() {
                   
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Description
+                      Description <span className="text-red-500">*</span>
                     </label>
                     <textarea
                       value={ps.description || ''}
                       onChange={(e) => updateProductService(index, 'description', e.target.value)}
-                      rows={2}
+                      rows={3}
                       data-gramm="false"
                       data-gramm_editor="false"
                       data-enable-grammarly="false"
-                      className="w-full px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none hover:border-slate-400"
-                      placeholder="Brief description..."
+                      className={`w-full px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 rounded-lg border ${
+                        errors[`productService_${index}_description`] 
+                          ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
+                          : 'border-slate-300 focus:ring-indigo-500 focus:border-indigo-500'
+                      } focus:outline-none focus:ring-2 transition-all resize-none hover:border-slate-400`}
+                      placeholder="Brief description (minimum 50 characters)..."
+                      required={!!(ps.name?.trim() && ps.type?.trim())}
                     />
+                    {errors[`productService_${index}_description`] && (
+                      <p className="mt-1.5 text-xs text-red-600 font-medium">{errors[`productService_${index}_description`]}</p>
+                    )}
+                    {ps.description && (
+                      <p className={`mt-1.5 text-xs font-medium ${
+                        ps.description.trim().length < 50 
+                          ? 'text-amber-600' 
+                          : 'text-emerald-600'
+                      }`}>
+                        {ps.description.trim().length} / 50 characters minimum
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

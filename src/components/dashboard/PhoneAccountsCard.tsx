@@ -37,10 +37,42 @@ export function PhoneAccountsCard() {
   const [otpVerifying, setOtpVerifying] = useState<Record<string, boolean>>({})
   const [otpSending, setOtpSending] = useState<Record<string, boolean>>({})
   const phoneInputRef = useRef<HTMLDivElement>(null)
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     loadPhoneNumbers()
   }, [])
+
+  // Auto-clear notice messages after 5 seconds
+  useEffect(() => {
+    if (!notice) {
+      // If notice is cleared, clean up any existing timer
+      if (noticeTimerRef.current) {
+        clearTimeout(noticeTimerRef.current)
+        noticeTimerRef.current = null
+      }
+      return
+    }
+
+    // Clear any existing timer before setting a new one
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current)
+    }
+
+    // Set a new timer to clear the notice after 5 seconds
+    noticeTimerRef.current = setTimeout(() => {
+      setNotice(null)
+      noticeTimerRef.current = null
+    }, 5000)
+
+    // Cleanup function - runs when notice changes or component unmounts
+    return () => {
+      if (noticeTimerRef.current) {
+        clearTimeout(noticeTimerRef.current)
+        noticeTimerRef.current = null
+      }
+    }
+  }, [notice])
 
   // Force dropdown to open downward and add overlay
   useEffect(() => {
@@ -115,7 +147,7 @@ export function PhoneAccountsCard() {
   const loadPhoneNumbers = async () => {
     setIsLoading(true)
     setError(null)
-    setNotice(null)
+    // Don't clear notice here - let the timer handle it
     try {
       const response = await clientAccountsApi.getClientSms()
       if (response.success && response.data) {

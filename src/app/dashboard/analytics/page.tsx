@@ -17,6 +17,7 @@ import {
   EmailAnalyticsTimelinePoint,
 } from '@/types/analytics'
 import { clearCacheForEmail, clearExpiredCache, getCacheStats } from '@/utils/analyticsCache'
+import { useAuthContext } from '@/contexts/AuthContext'
 
 const RANGE_OPTIONS = [
   { label: '1 day', value: 1 },
@@ -37,6 +38,7 @@ const makeRangeParams = (days: number): AnalyticsQueryParams => {
 }
 
 export default function AnalyticsPage() {
+  const { client } = useAuthContext()
   const [selectedRange, setSelectedRange] = useState<number>(14)
   const [selectedFromEmail, setSelectedFromEmail] = useState<string>('')
   const [availableEmails, setAvailableEmails] = useState<string[]>([])
@@ -48,6 +50,7 @@ export default function AnalyticsPage() {
   const [error, setError] = useState<string | null>(null)
   const [isEmailDropdownOpen, setIsEmailDropdownOpen] = useState<boolean>(false)
   const emailDropdownRef = useRef<HTMLDivElement>(null)
+  const isInitialLoad = useRef<boolean>(true)
 
   const rangeParams = useMemo(() => {
     const params = makeRangeParams(selectedRange)
@@ -70,7 +73,8 @@ export default function AnalyticsPage() {
       clearCacheForEmail(
         rangeParams.fromEmail || '',
         rangeParams.from,
-        rangeParams.to
+        rangeParams.to,
+        client?.id
       )
     }
 
@@ -137,7 +141,12 @@ export default function AnalyticsPage() {
   }, [])
 
   useEffect(() => {
-    void loadAnalytics()
+    // On initial page load/reload, force refresh to get fresh data (same behavior as refresh button)
+    const shouldForceRefresh = isInitialLoad.current
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false
+    }
+    void loadAnalytics(shouldForceRefresh)
   }, [loadAnalytics])
 
   // Close dropdown when clicking outside

@@ -18,16 +18,21 @@ const CACHE_PREFIX = 'analytics_cache:'
 const DEFAULT_TTL_MS = 30 * 60 * 1000 // 30 minutes (increased from 5 minutes for better caching)
 
 /**
- * Generate a cache key from email, time range, and endpoint
+ * Generate a cache key from client ID, email, time range, and endpoint
+ * Client ID is included to ensure cache is user-specific
  */
 export function generateCacheKey(
   endpoint: AnalyticsEndpoint,
   email: string,
   from: string,
-  to: string
+  to: string,
+  clientId?: number
 ): string {
   // Normalize email (empty string for "all emails")
   const normalizedEmail = email || 'all'
+  
+  // Normalize client ID (required for user-specific caching)
+  const normalizedClientId = clientId ? `client_${clientId}` : 'no_client'
   
   // Normalize dates - extract just the date part (YYYY-MM-DD) for consistency
   // This ensures cache keys match even if dates are generated at slightly different times
@@ -49,8 +54,8 @@ export function generateCacheKey(
   
   const normalizedFrom = normalizeDate(from)
   const normalizedTo = normalizeDate(to)
-  const cacheKey = `${CACHE_PREFIX}${endpoint}:${normalizedEmail}:${normalizedFrom}:${normalizedTo}`
-  console.log(`[AnalyticsCache] Generated cache key: ${cacheKey} from dates: ${from} -> ${to}`)
+  const cacheKey = `${CACHE_PREFIX}${endpoint}:${normalizedClientId}:${normalizedEmail}:${normalizedFrom}:${normalizedTo}`
+  console.log(`[AnalyticsCache] Generated cache key: ${cacheKey} from dates: ${from} -> ${to}, clientId: ${clientId}`)
   return cacheKey
 }
 
@@ -226,7 +231,8 @@ export function clearAllAnalyticsCache(): void {
 export function clearCacheForEmail(
   email: string,
   from: string,
-  to: string
+  to: string,
+  clientId?: number
 ): void {
   if (typeof window === 'undefined') {
     return
@@ -236,7 +242,7 @@ export function clearCacheForEmail(
   const normalizedEmail = email || 'all'
 
   endpoints.forEach(endpoint => {
-    const cacheKey = generateCacheKey(endpoint, normalizedEmail, from, to)
+    const cacheKey = generateCacheKey(endpoint, normalizedEmail, from, to, clientId)
     try {
       localStorage.removeItem(cacheKey)
     } catch {

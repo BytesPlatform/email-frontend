@@ -87,6 +87,18 @@ const validateCountry = (country: string): string | null => {
   return null
 }
 
+const validateDescription = (description: string): string | null => {
+  if (!description.trim()) {
+    return 'Description is required'
+  }
+  
+  if (description.trim().length < 50) {
+    return `Description must be at least 50 characters (currently ${description.trim().length} characters)`
+  }
+  
+  return null
+}
+
 export function ProfileForm() {
   const { user, updateProfile, isLoading } = useAuth()
   const [profile, setProfile] = useState<Client | null>(null)
@@ -375,6 +387,14 @@ export function ProfileForm() {
       if (hasType && ps.type !== 'product' && ps.type !== 'service') {
         newErrors[`productService_${index}_type`] = 'Type must be either "product" or "service"'
       }
+      
+      // If name and type are filled, description is required with minimum 50 characters
+      if (hasName && hasType) {
+        const descriptionError = validateDescription(ps.description || '')
+        if (descriptionError) {
+          newErrors[`productService_${index}_description`] = descriptionError
+        }
+      }
     })
 
     return newErrors
@@ -398,12 +418,12 @@ export function ProfileForm() {
 
     // Build the productsServices array
     const validProductsServices = list
-      .filter(ps => ps.name?.trim() && ps.type?.trim())
+      .filter(ps => ps.name?.trim() && ps.type?.trim() && ps.description?.trim() && ps.description.trim().length >= 50)
       .map((ps, index) => {
         const productService: ProductServiceInput = {
           id: ps.id,
           name: ps.name!.trim(),
-          description: ps.description?.trim() || null,
+          description: ps.description?.trim() || '',
           type: ps.type!.trim(),
         }
         // Include businessName in the first productService when it has a value
@@ -975,15 +995,24 @@ export function ProfileForm() {
                         
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
-                            <Input
-                              label="Name"
+                            <label className="block text-sm font-semibold text-slate-700 mb-2">
+                              Name <span className="text-red-500">*</span>
+                            </label>
+                            <input
                               type="text"
                               value={ps.name || ''}
                               onChange={(e) => updateProductService(index, 'name', e.target.value)}
-                              error={errors[`productService_${index}_name`]}
                               placeholder="Product/Service name"
                               required={!!(ps.type || ps.description)}
+                              className={`w-full px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 rounded-lg border ${
+                                errors[`productService_${index}_name`]
+                                  ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                                  : 'border-slate-300 focus:ring-indigo-500 focus:border-indigo-500'
+                              } focus:outline-none focus:ring-2 transition-all hover:border-slate-400`}
                             />
+                            {errors[`productService_${index}_name`] && (
+                              <p className="mt-1.5 text-xs text-red-600 font-medium">{errors[`productService_${index}_name`]}</p>
+                            )}
                           </div>
                           
                           <div>
@@ -1014,15 +1043,32 @@ export function ProfileForm() {
                           
                           <div>
                             <label className="block text-sm font-semibold text-slate-700 mb-2">
-                              Description
+                              Description <span className="text-red-500">*</span>
                             </label>
                             <textarea
                               value={ps.description || ''}
                               onChange={(e) => updateProductService(index, 'description', e.target.value)}
-                              rows={2}
-                              className="w-full px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none hover:border-slate-400"
-                              placeholder="Brief description..."
+                              rows={3}
+                              className={`w-full px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 rounded-lg border ${
+                                errors[`productService_${index}_description`] 
+                                  ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
+                                  : 'border-slate-300 focus:ring-indigo-500 focus:border-indigo-500'
+                              } focus:outline-none focus:ring-2 transition-all resize-none hover:border-slate-400`}
+                              placeholder="Brief description (minimum 50 characters)..."
+                              required={!!(ps.name?.trim() && ps.type?.trim())}
                             />
+                            {errors[`productService_${index}_description`] && (
+                              <p className="mt-1.5 text-xs text-red-600 font-medium">{errors[`productService_${index}_description`]}</p>
+                            )}
+                            {ps.description && (
+                              <p className={`mt-1.5 text-xs font-medium ${
+                                ps.description.trim().length < 50 
+                                  ? 'text-amber-600' 
+                                  : 'text-emerald-600'
+                              }`}>
+                                {ps.description.trim().length} / 50 characters minimum
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>

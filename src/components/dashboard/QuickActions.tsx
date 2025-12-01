@@ -47,7 +47,7 @@ export function QuickActions() {
               >
                 <div className="flex flex-col items-start">
                   <span className="font-semibold">Upload CSV File</span>
-                  <span className="text-sm font-normal opacity-75">Import contact data from CSV</span>
+                  <span className="text-sm font-normal opacity-75">Import contact data from CSV or Excel file</span>
                 </div>
               </Button>
             </Link>

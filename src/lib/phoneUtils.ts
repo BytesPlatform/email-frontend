@@ -2,25 +2,22 @@
  * Phone Number Normalization Utility
  * Uses libphonenumber-js for robust phone number parsing and normalization
  * 
- * Prioritizes accuracy - if a number is ambiguous, returns raw input instead of guessing
+ * Tries to detect country code automatically. If no match is found, returns null
+ * (user can assign country code later).
  */
 
-import { parsePhoneNumber, isValidPhoneNumber, CountryCode } from 'libphonenumber-js'
-
-// Default country to use when no country code is present
-const DEFAULT_COUNTRY: CountryCode = 'US'
+import { parsePhoneNumberFromString } from 'libphonenumber-js'
 
 /**
- * Normalizes a phone number to E.164 format using strict parsing logic
+ * Normalizes a phone number to E.164 format using automatic country detection
  * 
  * @param rawInput - Raw phone number string from CSV
- * @returns Normalized phone number in E.164 format (e.g., +1234567890) or raw input string if normalization fails
+ * @returns Normalized phone number in E.164 format (e.g., +1234567890) or null if no valid match found
  * 
  * Logic:
- * 1. If input starts with `+`, parse it. If valid, return E.164.
- * 2. If input does NOT start with `+`, try to parse it against ONLY ONE default country (US).
- *    If valid, return E.164.
- * 3. If both fail, return the rawInput string exactly as is (do not return null unless input was empty).
+ * 1. If input starts with `+`, try to parse it as international format (no country code needed)
+ * 2. If input does NOT start with `+`, try to parse it without specifying a country (library will try to detect)
+ * 3. If both fail, return null (user can assign country code later)
  */
 export function normalizePhoneNumber(rawInput: string | null | undefined): string | null {
   // Handle empty/null/undefined input
@@ -42,8 +39,8 @@ export function normalizePhoneNumber(rawInput: string | null | undefined): strin
       
       // Validate minimum length (at least 7 digits after +)
       if (cleaned.length > 1 && cleaned.slice(1).length >= 7) {
-        if (isValidPhoneNumber(cleaned)) {
-          const phoneNumber = parsePhoneNumber(cleaned)
+        const phoneNumber = parsePhoneNumberFromString(cleaned)
+        if (phoneNumber && phoneNumber.isValid()) {
           return phoneNumber.format('E.164')
         }
       }
@@ -52,7 +49,8 @@ export function normalizePhoneNumber(rawInput: string | null | undefined): strin
     }
   }
 
-  // Step 3: If input does NOT start with `+`, try parsing against default country (US)
+  // Step 3: If input does NOT start with `+`, try parsing without country code
+  // The library will attempt to detect the country automatically
   if (!trimmed.startsWith('+')) {
     try {
       // Clean: Remove all non-digit characters
@@ -60,8 +58,9 @@ export function normalizePhoneNumber(rawInput: string | null | undefined): strin
       
       // Validate minimum length (at least 7 digits)
       if (cleaned.length >= 7) {
-        if (isValidPhoneNumber(cleaned, DEFAULT_COUNTRY)) {
-          const phoneNumber = parsePhoneNumber(cleaned, DEFAULT_COUNTRY)
+        // Try parsing without country code - library will attempt auto-detection
+        const phoneNumber = parsePhoneNumberFromString(cleaned)
+        if (phoneNumber && phoneNumber.isValid()) {
           return phoneNumber.format('E.164')
         }
       }
@@ -70,9 +69,9 @@ export function normalizePhoneNumber(rawInput: string | null | undefined): strin
     }
   }
 
-  // Step 4: Fallback - return raw input string exactly as is
-  // This allows the UI to flag it as invalid (doesn't start with +)
-  return trimmed
+  // Step 4: No valid match found - return null
+  // User can assign country code later if needed
+  return null
 }
 
 /**

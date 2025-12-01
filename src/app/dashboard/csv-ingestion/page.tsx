@@ -26,6 +26,8 @@ export default function CSVIngestionPage() {
   const handleFileProcessed = (data: CSVRecord[], headers: string[]) => {
     setCsvData(data)
     setCsvHeaders(headers)
+    // Reset uncleanRows when a new file is processed
+    setUncleanRows([])
   }
 
   const handleMappedDataReady = (
