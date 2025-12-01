@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -31,15 +31,73 @@ export function EmailAccountsCard() {
   const [otpInputs, setOtpInputs] = useState<Record<string, string>>({}) // Use string key to support both id and verificationId
   const [otpVerifying, setOtpVerifying] = useState<Record<string, boolean>>({})
   const [otpSending, setOtpSending] = useState<Record<string, boolean>>({})
+  const [countdowns, setCountdowns] = useState<Record<string, number>>({})
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     loadEmails()
   }, [])
 
+  // Auto-clear notice messages after 5 seconds
+  useEffect(() => {
+    if (!notice) {
+      // If notice is cleared, clean up any existing timer
+      if (noticeTimerRef.current) {
+        clearTimeout(noticeTimerRef.current)
+        noticeTimerRef.current = null
+      }
+      return
+    }
+
+    // Clear any existing timer before setting a new one
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current)
+    }
+
+    // Set a new timer to clear the notice after 5 seconds
+    noticeTimerRef.current = setTimeout(() => {
+      setNotice(null)
+      noticeTimerRef.current = null
+    }, 5000)
+
+    // Cleanup function - runs when notice changes or component unmounts
+    return () => {
+      if (noticeTimerRef.current) {
+        clearTimeout(noticeTimerRef.current)
+        noticeTimerRef.current = null
+      }
+    }
+  }, [notice])
+
+  // Real-time countdown updates for all emails
+  useEffect(() => {
+    // Initialize countdowns for all emails
+    const initialCountdowns: Record<string, number> = {}
+    emails.forEach(email => {
+      const identifier = getEmailIdentifier(email)
+      initialCountdowns[identifier] = resendCountdown(email.lastOtpSentAt)
+    })
+    setCountdowns(initialCountdowns)
+
+    const interval = setInterval(() => {
+      setCountdowns(prev => {
+        const newCountdowns: Record<string, number> = {}
+        emails.forEach(email => {
+          const identifier = getEmailIdentifier(email)
+          const countdown = resendCountdown(email.lastOtpSentAt)
+          newCountdowns[identifier] = countdown
+        })
+        return newCountdowns
+      })
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [emails])
+
   const loadEmails = async () => {
     setIsLoading(true)
     setError(null)
-    setNotice(null)
+    // Don't clear notice here - let the timer handle it
     try {
       const response = await clientAccountsApi.getClientEmails()
       if (response.success && response.data) {
@@ -269,8 +327,8 @@ export function EmailAccountsCard() {
             <div className="space-y-2 max-h-72 overflow-y-auto">
               {emails.map((email) => {
                 const identifier = getEmailIdentifier(email)
-                const canResend = canResendOtp(email.lastOtpSentAt)
-                const countdown = resendCountdown(email.lastOtpSentAt)
+                const countdown = countdowns[identifier] ?? resendCountdown(email.lastOtpSentAt)
+                const canResend = countdown <= 0
                 const otpInput = otpInputs[identifier] || ''
                 return (
                   <div key={identifier} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">

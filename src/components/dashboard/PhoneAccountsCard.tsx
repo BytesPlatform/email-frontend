@@ -36,6 +36,7 @@ export function PhoneAccountsCard() {
   const [otpInputs, setOtpInputs] = useState<Record<string, string>>({}) // Use string key to support both id and verificationId
   const [otpVerifying, setOtpVerifying] = useState<Record<string, boolean>>({})
   const [otpSending, setOtpSending] = useState<Record<string, boolean>>({})
+  const [countdowns, setCountdowns] = useState<Record<string, number>>({})
   const phoneInputRef = useRef<HTMLDivElement>(null)
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -143,6 +144,31 @@ export function PhoneAccountsCard() {
       }
     }
   }, [])
+
+  // Real-time countdown updates for all phone numbers
+  useEffect(() => {
+    // Initialize countdowns for all phones
+    const initialCountdowns: Record<string, number> = {}
+    phoneNumbers.forEach(phone => {
+      const identifier = getPhoneIdentifier(phone)
+      initialCountdowns[identifier] = resendCountdown(phone.lastOtpSentAt)
+    })
+    setCountdowns(initialCountdowns)
+
+    const interval = setInterval(() => {
+      setCountdowns(prev => {
+        const newCountdowns: Record<string, number> = {}
+        phoneNumbers.forEach(phone => {
+          const identifier = getPhoneIdentifier(phone)
+          const countdown = resendCountdown(phone.lastOtpSentAt)
+          newCountdowns[identifier] = countdown
+        })
+        return newCountdowns
+      })
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [phoneNumbers])
 
   const loadPhoneNumbers = async () => {
     setIsLoading(true)
@@ -747,8 +773,8 @@ export function PhoneAccountsCard() {
             <div className="space-y-2 max-h-72 overflow-y-auto">
               {phoneNumbers.map((phone) => {
                 const identifier = getPhoneIdentifier(phone)
-                const canResend = canResendOtp(phone.lastOtpSentAt)
-                const countdown = resendCountdown(phone.lastOtpSentAt)
+                const countdown = countdowns[identifier] ?? resendCountdown(phone.lastOtpSentAt)
+                const canResend = countdown <= 0
                 const otpInput = otpInputs[identifier] || ''
                 return (
                   <div key={identifier} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
