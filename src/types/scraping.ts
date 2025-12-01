@@ -96,3 +96,28 @@ export interface StatsResponse {
     byStatus: Record<string, number>
   }
 }
+
+export interface BatchDiscoveryResult {
+  contactId: number
+  businessName: string
+  success: boolean
+  data?: {
+    discoveredWebsite: string
+    confidence: 'high' | 'medium' | 'low'
+    method: 'business_search'
+    searchQuery: string
+  }
+  error?: string
+}
+
+export interface BatchDiscoveryResponse {
+  message: string
+  uploadId: number
+  limit: number
+  summary: {
+    total: number
+    discovered: number
+    failed: number
+  }
+  results: BatchDiscoveryResult[]
+}

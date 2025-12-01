@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import { scrapingApi } from '@/api/scraping'
 import { WebsitePreviewDialog } from './WebsitePreviewDialog'
+import { BatchWebsiteConfirmationDialog } from './BatchWebsiteConfirmationDialog'
+import type { BatchDiscoveryResult } from '@/types/scraping'
 
 type Contact = {
   id: number
@@ -50,6 +52,13 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
     discoveredWebsite: string
     confidence: 'high' | 'medium' | 'low'
     searchQuery?: string
+  } | null>(null)
+  
+  // Batch discovery state
+  const [batchDiscoveryDialog, setBatchDiscoveryDialog] = useState<{
+    isOpen: boolean
+    results: BatchDiscoveryResult[]
+    uploadId: number
   } | null>(null)
   const [isDiscovering, setIsDiscovering] = useState<Record<number, boolean>>({})
 
@@ -218,10 +227,44 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
     }
   }
 
+  // Handle batch discovery confirmation
+  const handleBatchDiscoveryConfirm = async (confirmedWebsites: { [contactId: number]: string }) => {
+    if (!batchDiscoveryDialog) return
+    
+    setIsScraping(true)
+    setBatchDiscoveryDialog(null)
+    
+    try {
+      // Get all contact IDs from discovery results
+      const contactIds = batchDiscoveryDialog.results.map(r => r.contactId)
+      
+      // Scrape with confirmed websites using batch API
+      const res = await scrapingApi.scrapeBatch(batchDiscoveryDialog.uploadId, contactIds.length, confirmedWebsites)
+      if (res.success && res.data) {
+        // Results are handled by the parent component
+      }
+      
+      // Refresh after scraping
+      if (onAfterScrape) {
+        await onAfterScrape()
+      }
+    } catch (error) {
+      console.error('Batch scrape failed:', error)
+    } finally {
+      setIsScraping(false)
+    }
+  }
+
+  // Handle batch discovery cancel
+  const handleBatchDiscoveryCancel = () => {
+    setBatchDiscoveryDialog(null)
+    setIsScraping(false)
+  }
+
   const handleStartScrape = async () => {
     if (selectedIds.length === 0) return
     
-    // Get contacts that need preview
+    // Get contacts that need preview (business_search)
     const contactsNeedingPreview = selectedIds
       .map(id => {
         const contact = contacts.find(c => c.id === id)
@@ -245,11 +288,59 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
         })
       )
 
-      // Handle contacts that need preview (one at a time for user confirmation)
+      // Handle contacts that need preview
+      // If multiple business_search contacts, use batch discovery
+      if (contactsNeedingPreview.length > 1) {
+        // Get uploadId from first contact (all should have same uploadId)
+        const uploadId = contactsNeedingPreview[0].contact.csvUploadId
+        if (uploadId) {
+          try {
+            // Use batch discovery API - request enough to cover all selected contacts
+            // Request a larger limit to ensure we get the selected contacts
+            const discoveryRes = await scrapingApi.discoverBatchWebsites(uploadId, 100)
+            if (discoveryRes.success && discoveryRes.data) {
+              const discoveryResults = discoveryRes.data.results
+              // Filter to only include results for selected contacts
+              const selectedContactIds = new Set(contactsNeedingPreview.map(c => c.id))
+              const filteredResults = discoveryResults.filter(r => 
+                selectedContactIds.has(r.contactId)
+              )
+              
+              // Check if we have results for all selected contacts, or at least some
+              const hasResults = filteredResults.length > 0 && filteredResults.some(r => r.success && r.data)
+              
+              if (hasResults) {
+                // Show batch confirmation dialog with filtered results
+                setBatchDiscoveryDialog({
+                  isOpen: true,
+                  results: filteredResults,
+                  uploadId
+                })
+                // Don't scrape yet, wait for user confirmation
+                setIsScraping(false)
+                return
+              } else {
+                // Batch discovery didn't return results for selected contacts
+                // This can happen if selected contacts aren't in the first batch
+                // Fall through to individual discovery
+                console.log('Batch discovery did not return results for selected contacts, falling back to individual discovery')
+              }
+            }
+          } catch (error) {
+            console.error('Batch discovery failed, falling back to individual discovery:', error)
+            // Fall through to individual discovery
+          }
+        }
+      }
+      
+      // If single contact or batch discovery failed, handle one at a time
       for (const { id, contact } of contactsNeedingPreview) {
         await scrapeContactWithPreview(id, contact)
         // Wait for user confirmation before proceeding to next
         // The preview dialog will handle the actual scraping
+        if (previewDialog) {
+          break // Stop here, let user confirm before proceeding
+        }
       }
 
       // Refresh after all scraping is done
@@ -469,7 +560,7 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium text-red-800 mb-1">Scraping Failed</div>
                           {c.errorMessage ? (
-                            <div className="text-xs text-red-700 leading-relaxed mb-2.5 line-clamp-2">{c.errorMessage}</div>
+                            <div className="text-xs text-red-700 leading-relaxed mb-2.5 line-clamp-2">{c.errorMessage} hello</div>
                           ) : (
                             <div className="text-xs text-red-600 mb-2.5">No error details available</div>
                           )}
@@ -564,6 +655,17 @@ export function ScrapeStatusBrowser({ isOpen, onClose, contacts, initialFilter =
           onConfirm={handlePreviewConfirm}
           onCancel={handlePreviewCancel}
           onVisitWebsite={handleVisitWebsite}
+          isLoading={isScraping}
+        />
+      )}
+
+      {/* Batch Website Confirmation Dialog */}
+      {batchDiscoveryDialog && (
+        <BatchWebsiteConfirmationDialog
+          isOpen={batchDiscoveryDialog.isOpen}
+          results={batchDiscoveryDialog.results}
+          onConfirm={handleBatchDiscoveryConfirm}
+          onCancel={handleBatchDiscoveryCancel}
           isLoading={isScraping}
         />
       )}
