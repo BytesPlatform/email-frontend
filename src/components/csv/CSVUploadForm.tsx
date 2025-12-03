@@ -11,7 +11,7 @@ import { FILE_CONFIG } from '@/lib/constants'
 import * as XLSX from 'xlsx'
 import Papa from 'papaparse'
 import { autoMapColumns, validateColumnData } from '@/lib/csvValidation'
-import { normalizePhoneNumber } from '@/lib/phoneUtils'
+import { normalizePhoneNumber, normalizePhoneNumberWithValidation } from '@/lib/phoneUtils'
 
 interface UploadMetadata {
   uploadId: number
@@ -248,15 +248,30 @@ export function CSVUploadForm({ onFileProcessed, onUploadSuccess, onMappedDataRe
           // Normalize phone numbers when processing phone_number field
           if (mapping.mappedField === 'phone_number') {
             const rawPhoneValue = row[mapping.csvColumnName] || ''
-            const normalizedPhone = normalizePhoneNumber(rawPhoneValue)
+            const stateValue = row[columnMappings.find(m => m.mappedField === 'state')?.csvColumnName || ''] || ''
+            const zipValue = row[columnMappings.find(m => m.mappedField === 'zipcode')?.csvColumnName || ''] || ''
             
-            if (normalizedPhone && normalizedPhone.startsWith('+')) {
+            // Use enhanced validation
+            const normalizationResult = normalizePhoneNumberWithValidation(rawPhoneValue, {
+              state: stateValue,
+              zipCode: zipValue,
+              defaultCountry: 'US'
+            })
+            
+            if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
               // Store normalized phone number (E.164 format)
-              convertedRow[mapping.mappedField] = normalizedPhone
+              convertedRow[mapping.mappedField] = normalizationResult.normalized
+              // Store warning if any
+              if (normalizationResult.warning) {
+                convertedRow[`${mapping.mappedField}_warning`] = normalizationResult.warning
+                convertedRow[`${mapping.mappedField}_confidence`] = normalizationResult.confidence
+              }
             } else if (!isValueEmpty(rawPhoneValue)) {
-              // Phone number exists but normalization failed (no country code match)
-              // Store the raw input - user can assign country code later
+              // Phone number exists but normalization failed
               convertedRow[mapping.mappedField] = rawPhoneValue
+              convertedRow[`${mapping.mappedField}_warning`] = normalizationResult.warning || 'Could not normalize phone number'
+              convertedRow[`${mapping.mappedField}_confidence`] = normalizationResult.confidence
+              convertedRow[`${mapping.mappedField}_requiresManual`] = normalizationResult.requiresManualAssignment ? 'true' : 'false'
             } else {
               // Empty phone number
               convertedRow[mapping.mappedField] = ''
