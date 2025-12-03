@@ -436,6 +436,38 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
     setEditValue('')
   }
 
+  // Add function to get phone warning display
+  const getPhoneWarningDisplay = (row: CSVRecord, phoneField: string) => {
+    const warning = row[`${phoneField}_warning`] as string | undefined
+    const confidence = row[`${phoneField}_confidence`] as string | undefined
+    const requiresManual = row[`${phoneField}_requiresManual`] as boolean | undefined
+    
+    if (!warning) return null
+    
+    let iconColor = 'text-amber-500'
+    let bgColor = 'bg-amber-50'
+    let borderColor = 'border-amber-200'
+    
+    if (confidence === 'none' || requiresManual) {
+      iconColor = 'text-rose-500'
+      bgColor = 'bg-rose-50'
+      borderColor = 'border-rose-200'
+    } else if (confidence === 'low') {
+      iconColor = 'text-orange-500'
+      bgColor = 'bg-orange-50'
+      borderColor = 'border-orange-200'
+    }
+    
+    return (
+      <div className={`mt-1 flex items-start space-x-1 ${bgColor} ${borderColor} border rounded px-2 py-1`}>
+        <svg className={`w-3 h-3 ${iconColor} flex-shrink-0 mt-0.5`} fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+        </svg>
+        <span className={`text-xs ${iconColor.replace('text-', 'text-')}`}>{warning}</span>
+      </div>
+    )
+  }
+
   return (
     <>
       {/* Unclean Data Overlay - rows missing both email and phone */}

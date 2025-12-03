@@ -23,6 +23,7 @@ import { ContactsFilterBar } from '@/components/contacts/ContactsFilterBar'
 import { ContactsTable } from '@/components/contacts/ContactsTable'
 import { ContactModal } from '@/components/contacts/ContactModal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { normalizePhoneNumberWithValidation } from '@/lib/phoneUtils'
 
 type ValidityFilter = 'all' | 'valid' | 'invalid'
 
@@ -38,7 +39,55 @@ const formatDateTime = (value?: string) => {
 }
 
 const deriveContactValidity = (contact: ClientContact) => {
+  // First, check phone E.164 format requirement (frontend override)
+  // This must be checked BEFORE using backend computed validity
+  // because backend doesn't enforce E.164 format
+  const phone = contact.phone?.trim() ?? ''
+  const phoneExists = phone.length > 0
+  let hasValidPhone = false
+  
+  if (phoneExists) {
+    // Remove spaces, parentheses, hyphens for validation
+    const cleaned = phone.replace(/[\s\-\(\)\.]/g, '')
+    
+    // Must start with + for E.164 format (required for Twilio/Telnyx)
+    if (cleaned.startsWith('+')) {
+      try {
+        const parsed = parsePhoneNumberFromString(cleaned)
+        if (parsed) {
+          const nationalNumber = parsed.nationalNumber
+          
+          // Allow numbers that can be parsed, even if isValid() returns false
+          // This includes test numbers (like 555), invalid ranges, etc.
+          // They're still in E.164 format and can be used (with a warning)
+          // Only check length requirements
+          if (nationalNumber.length >= 7 && nationalNumber.length <= 15) {
+            hasValidPhone = true
+          }
+        }
+      } catch {
+        // Invalid phone number - hasValidPhone remains false
+      }
+    }
+    
+    // Phone blocker: If phone exists but is not in E.164 format, contact is invalid
+    // This overrides backend computed validity
+    if (!hasValidPhone) {
+      if (!cleaned.startsWith('+')) {
+        return {
+          isValid: false,
+          reason: 'Phone number exists but is not in E.164 format (must start with + and include country code)'
+        }
+      }
+      return {
+        isValid: false,
+        reason: 'Phone number exists but is invalid or not in E.164 format'
+      }
+    }
+  }
+
   // Use backend computed validity if available (preferred)
+  // But only if phone validation passed above
   if (typeof contact.computedValid === 'boolean' && contact.computedValidationReason) {
     return {
       isValid: contact.computedValid,
@@ -56,16 +105,9 @@ const deriveContactValidity = (contact: ClientContact) => {
     }
   }
 
-  // Fallback: Compute validity using the same logic as backend
-  // This matches the backend logic from getAllInvalidContacts and computeContactValidity
-
+  // Fallback: Compute validity using enhanced validation
   // 1. Check Email: must exist AND emailValid === true
   const emailValid = contact.emailValid === true
-
-  // 2. Check Phone: must exist AND length 7-15 digits
-  const phone = contact.phone?.trim() ?? ''
-  const phoneDigits = phone.replace(/\D/g, '') // Remove non-digits
-  const hasValidPhone = phoneDigits.length >= 7 && phoneDigits.length <= 15
 
   // 3. Check Website: if exists, must be valid (websiteValid === true)
   const website = contact.website?.trim() ?? ''
@@ -80,7 +122,7 @@ const deriveContactValidity = (contact: ClientContact) => {
     }
   }
 
-  // Contact is valid if: (Valid email OR Valid phone) AND (No website OR website is valid)
+  // Contact is valid if: (Valid email OR Valid phone in E.164 format) AND (No website OR website is valid)
   // Check if we have valid email or phone
   const hasValidEmailOrPhone = emailValid || hasValidPhone
 
@@ -90,17 +132,28 @@ const deriveContactValidity = (contact: ClientContact) => {
   // Contact is valid only if both conditions are met
   if (hasValidEmailOrPhone && websiteConditionMet) {
     if (emailValid && hasValidPhone) {
-      return { isValid: true, reason: 'Valid email and valid phone number (7-15 digits) present' }
+      return { isValid: true, reason: 'Valid email and valid phone number (E.164 format) present' }
     }
     if (emailValid) {
       return { isValid: true, reason: 'Valid email address present' }
     }
     if (hasValidPhone) {
-      return { isValid: true, reason: 'Valid phone number (7-15 digits) present' }
+      return { isValid: true, reason: 'Valid phone number (E.164 format) present' }
     }
   }
 
-  return { isValid: false, reason: 'Missing valid email or valid phone number (7-15 digits)' }
+  // Determine specific reason for invalidity
+  if (!emailValid && !hasValidPhone) {
+    if (phoneExists && !phone.replace(/[\s\-\(\)\.]/g, '').startsWith('+')) {
+      return { 
+        isValid: false, 
+        reason: 'Phone number must be in E.164 format (start with + and include country code). Email is also invalid or missing.' 
+      }
+    }
+    return { isValid: false, reason: 'Missing valid email or valid phone number (E.164 format)' }
+  }
+  
+  return { isValid: false, reason: 'Missing valid email or valid phone number (E.164 format)' }
 }
 
 const getValidityDisplay = (contact: ClientContact) => {
@@ -290,6 +343,7 @@ export default function ContactsPage() {
   const [bulkError, setBulkError] = useState<string | null>(null)
   const [bulkResult, setBulkResult] = useState<{ updated: number; failed: number } | null>(null)
   const [isLoadingInvalid, setIsLoadingInvalid] = useState(false)
+  const [isLoadingInvalidFromCSV, setIsLoadingInvalidFromCSV] = useState(false)
   const [isDeletingInvalid, setIsDeletingInvalid] = useState(false)
   const [isDeletingSingle, setIsDeletingSingle] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -379,36 +433,29 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client?.id])
 
-  // Calculate stats: use backend meta when no search, otherwise calculate from current contacts
+  // Calculate stats: always use deriveContactValidity to match table validation logic
+  // This ensures consistency between the summary counts and what's displayed in the table
   const stats = useMemo(() => {
-    // If there's a search query, calculate stats from current contacts array
-    if (query.search?.trim()) {
-      let validCount = 0
-      let invalidCount = 0
-      
-      contacts.forEach(contact => {
-        const validity = deriveContactValidity(contact)
-        if (validity.isValid === true) {
-          validCount++
-        } else if (validity.isValid === false) {
-          invalidCount++
-        }
-      })
-      
-      return {
-        total: meta?.total ?? contacts.length,
-        valid: validCount,
-        invalid: invalidCount
-      }
-    }
+    let validCount = 0
+    let invalidCount = 0
     
-    // No search: use backend meta counts (across all pages)
+    // Always calculate from current contacts array using deriveContactValidity
+    // This matches the logic used in getValidityDisplay for the table
+    contacts.forEach(contact => {
+      const validity = deriveContactValidity(contact)
+      if (validity.isValid === true) {
+        validCount++
+      } else if (validity.isValid === false) {
+        invalidCount++
+      }
+    })
+    
     return {
-      total: meta?.total ?? 0,
-      valid: meta?.totalValid ?? 0,
-      invalid: meta?.totalInvalid ?? 0
+      total: meta?.total ?? contacts.length,
+      valid: validCount,
+      invalid: invalidCount
     }
-  }, [contacts, meta, query.search])
+  }, [contacts, meta])
 
   const totalValid = stats.valid
   const totalInvalid = stats.invalid
@@ -719,8 +766,81 @@ export default function ContactsPage() {
             : null
         )
         setEditEmail(contact.email || '')
-        setEditPhone(contact.phone || '')
-        setEditError(null)
+        
+        // Normalize phone number with validation
+        const rawPhone = contact.phone || ''
+        let normalizedPhone = ''
+        let phoneWarning: string | null = null
+        
+        if (rawPhone.trim()) {
+          // Check if phone is already in valid E.164 format
+          const cleaned = rawPhone.trim().replace(/[\s\-\(\)\.]/g, '')
+          const isAlreadyE164 = cleaned.startsWith('+')
+          
+          if (isAlreadyE164) {
+            // Try to validate existing E.164 number
+            try {
+              const parsed = parsePhoneNumberFromString(cleaned)
+              if (parsed) {
+                // If number can be parsed but isValid() is false, allow it with a warning
+                // This handles test numbers, invalid ranges, etc.
+                if (parsed.isValid()) {
+                  normalizedPhone = parsed.format('E.164')
+                } else {
+                  // Number can be parsed but is invalid - preserve it and show warning
+                  normalizedPhone = parsed.format('E.164')
+                  phoneWarning = 'This phone number may not be valid or deliverable (e.g., test numbers, invalid ranges). Please verify before sending SMS.'
+                }
+              } else {
+                // Could not parse but has + - preserve it so user can fix it
+                normalizedPhone = cleaned
+                phoneWarning = 'Phone number format may be incorrect. Please verify and fix if needed.'
+              }
+            } catch {
+              // Invalid - preserve the cleaned value so user can fix it
+              normalizedPhone = cleaned
+              phoneWarning = 'Phone number format may be incorrect. Please verify and fix if needed.'
+            }
+          } else {
+            // Not in E.164 format - preserve the original digits so user can select country code
+            // Extract just the digits from the original phone number
+            const digitsOnly = cleaned.replace(/\D/g, '')
+            
+            if (digitsOnly.length >= 7) {
+              // Try to normalize with hints
+              const normalizationResult = normalizePhoneNumberWithValidation(rawPhone, {
+                state: contact.state,
+                zipCode: contact.zipCode ? String(contact.zipCode) : undefined,
+                defaultCountry: 'US'
+              })
+              
+              if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
+                normalizedPhone = normalizationResult.normalized
+                
+                // Show warning if confidence is low or manual assignment required
+                if (normalizationResult.requiresManualAssignment) {
+                  phoneWarning = normalizationResult.warning || 'Country code may be incorrect. Please verify and select correct country code from dropdown.'
+                } else if (normalizationResult.confidence === 'low') {
+                  phoneWarning = normalizationResult.warning || 'Country code was auto-detected. Please verify and select correct country code from dropdown if needed.'
+                } else if (normalizationResult.warning) {
+                  phoneWarning = normalizationResult.warning
+                }
+              } else {
+                // Normalization failed - preserve digits so user can select country code
+                // PhoneInput will accept digits without country code and let user select it
+                normalizedPhone = digitsOnly
+                phoneWarning = 'Country code missing. Please select the correct country code from the dropdown to complete the phone number.'
+              }
+            } else {
+              // Too short - preserve what we have so user can complete it
+              normalizedPhone = digitsOnly
+              phoneWarning = 'Phone number is too short. Please enter a complete phone number and select country code from dropdown.'
+            }
+          }
+        }
+        
+        setEditPhone(normalizedPhone)
+        setEditError(phoneWarning) // Show warning/error to user (null if no warning)
         setEditSuccess(null)
         setDetailsError(null)
         setDetailsSuccess(null)
@@ -823,9 +943,45 @@ export default function ContactsPage() {
     }
 
     try {
+      // Normalize phone to E.164 format if possible, otherwise preserve the value
+      let normalizedPhoneForSave: string | null = null
+      if (trimmedPhone) {
+        // If phone already starts with +, try to format it to E.164
+        if (trimmedPhone.startsWith('+')) {
+          try {
+            const parsed = parsePhoneNumberFromString(trimmedPhone.trim().replace(/[\s\-\(\)\.]/g, ''))
+            if (parsed) {
+              normalizedPhoneForSave = parsed.format('E.164')
+            } else {
+              // Can't parse but has +, preserve it
+              normalizedPhoneForSave = trimmedPhone
+            }
+          } catch {
+            // Can't parse, preserve original
+            normalizedPhoneForSave = trimmedPhone
+          }
+        } else {
+          // Phone doesn't have country code - try to normalize with hints
+          const normalizationResult = normalizePhoneNumberWithValidation(trimmedPhone, {
+            state: selectedContact?.state,
+            zipCode: selectedContact?.zipCode ? String(selectedContact.zipCode) : undefined,
+            defaultCountry: 'US'
+          })
+          
+          if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
+            normalizedPhoneForSave = normalizationResult.normalized
+          } else {
+            // Normalization failed - preserve the digits (user may need to add country code manually)
+            // But we should still save it, not set to null
+            const digitsOnly = trimmedPhone.replace(/\D/g, '')
+            normalizedPhoneForSave = digitsOnly.length >= 7 ? digitsOnly : trimmedPhone
+          }
+        }
+      }
+      
       const payload = {
         email: trimmedEmail || null,
-        phone: trimmedPhone || null,
+        phone: normalizedPhoneForSave,
         website: trimmedWebsite || null
       }
 
@@ -930,11 +1086,54 @@ export default function ContactsPage() {
       } else {
         next.add(contactId)
         // Initialize contact data with existing email/phone/website
+        // Normalize phone to E.164 format if possible, otherwise preserve digits
+        const rawPhone = contact.phone || ''
+        let normalizedPhone = ''
+        
+        if (rawPhone.trim()) {
+          const cleaned = rawPhone.trim().replace(/[\s\-\(\)\.]/g, '')
+          if (cleaned.startsWith('+')) {
+            try {
+              const parsed = parsePhoneNumberFromString(cleaned)
+              if (parsed) {
+                // Preserve even if invalid - user can fix it
+                normalizedPhone = parsed.format('E.164')
+              } else {
+                // Can't parse but has + - preserve it
+                normalizedPhone = cleaned
+              }
+            } catch {
+              // Invalid - preserve cleaned value
+              normalizedPhone = cleaned
+            }
+          } else {
+            // Not in E.164 format - preserve digits so user can select country code
+            const digitsOnly = cleaned.replace(/\D/g, '')
+            if (digitsOnly.length >= 7) {
+              // Try to normalize
+              const normalizationResult = normalizePhoneNumberWithValidation(rawPhone, {
+                state: contact.state,
+                zipCode: contact.zipCode ? String(contact.zipCode) : undefined,
+                defaultCountry: 'US'
+              })
+              if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
+                normalizedPhone = normalizationResult.normalized
+              } else {
+                // Normalization failed - preserve digits
+                normalizedPhone = digitsOnly
+              }
+            } else {
+              // Too short - preserve what we have
+              normalizedPhone = digitsOnly
+            }
+          }
+        }
+        
         setBulkContactData(prevData => {
           const nextData = new Map(prevData)
           nextData.set(contactId, {
             email: contact.email || '',
-            phone: contact.phone || '',
+            phone: normalizedPhone,
             website: contact.website || ''
           })
           return nextData
@@ -967,9 +1166,53 @@ export default function ContactsPage() {
       
       fetchedInvalidContacts.forEach((contact: ClientContact) => {
         invalidIds.add(contact.id)
+        
+        // Normalize phone to E.164 format if possible, otherwise preserve digits
+        const rawPhone = contact.phone || ''
+        let normalizedPhone = ''
+        
+        if (rawPhone.trim()) {
+          const cleaned = rawPhone.trim().replace(/[\s\-\(\)\.]/g, '')
+          if (cleaned.startsWith('+')) {
+            try {
+              const parsed = parsePhoneNumberFromString(cleaned)
+              if (parsed) {
+                // Preserve even if invalid - user can fix it
+                normalizedPhone = parsed.format('E.164')
+              } else {
+                // Can't parse but has + - preserve it
+                normalizedPhone = cleaned
+              }
+            } catch {
+              // Invalid - preserve cleaned value
+              normalizedPhone = cleaned
+            }
+          } else {
+            // Not in E.164 format - preserve digits so user can select country code
+            const digitsOnly = cleaned.replace(/\D/g, '')
+            if (digitsOnly.length >= 7) {
+              // Try to normalize
+              const normalizationResult = normalizePhoneNumberWithValidation(rawPhone, {
+                state: contact.state,
+                zipCode: contact.zipCode ? String(contact.zipCode) : undefined,
+                defaultCountry: 'US'
+              })
+              if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
+                normalizedPhone = normalizationResult.normalized
+              } else {
+                // Normalization failed - preserve digits
+                normalizedPhone = digitsOnly
+              }
+            } else {
+              // Too short - preserve what we have
+              normalizedPhone = digitsOnly
+            }
+          }
+        }
+        
         contactDataMap.set(contact.id, {
           email: contact.email || '',
-          phone: contact.phone || '',
+          phone: normalizedPhone,
           website: contact.website || ''
         })
       })
@@ -984,6 +1227,100 @@ export default function ContactsPage() {
       setBulkError(error instanceof Error ? error.message : 'Failed to fetch invalid contacts')
     } finally {
       setIsLoadingInvalid(false)
+    }
+  }
+
+  // Handler to fetch invalid contacts from a specific CSV upload
+  const handleSelectInvalidFromCSV = async () => {
+    if (!currentUploadId) {
+      setBulkError('Please select a CSV upload first.')
+      return
+    }
+    
+    setIsLoadingInvalidFromCSV(true)
+    setBulkError(null)
+    setDeleteError(null)
+    setDeleteSuccess(null)
+    
+    try {
+      // Backend now handles E.164 validation and CSV filtering
+      const response = await ingestionApi.getAllInvalidContacts(currentUploadId)
+      
+      if (!response.success || !response.data) {
+        setBulkError(response.error || 'Failed to fetch invalid contacts from CSV. Please try again.')
+        return
+      }
+      
+      const fetchedInvalidContacts = response.data.contacts || []
+      const invalidIds = new Set<number>()
+      const contactDataMap = new Map<number, { email: string; phone: string; website: string }>()
+      
+      // Store the fetched invalid contacts so we can render them
+      setInvalidContacts(fetchedInvalidContacts)
+      
+      fetchedInvalidContacts.forEach((contact: ClientContact) => {
+        invalidIds.add(contact.id)
+        
+        // Normalize phone to E.164 format if possible, otherwise preserve digits
+        const rawPhone = contact.phone || ''
+        let normalizedPhone = ''
+        
+        if (rawPhone.trim()) {
+          const cleaned = rawPhone.trim().replace(/[\s\-\(\)\.]/g, '')
+          if (cleaned.startsWith('+')) {
+            try {
+              const parsed = parsePhoneNumberFromString(cleaned)
+              if (parsed) {
+                // Preserve even if invalid - user can fix it
+                normalizedPhone = parsed.format('E.164')
+              } else {
+                // Can't parse but has + - preserve it
+                normalizedPhone = cleaned
+              }
+            } catch {
+              // Invalid - preserve cleaned value
+              normalizedPhone = cleaned
+            }
+          } else {
+            // Not in E.164 format - preserve digits so user can select country code
+            const digitsOnly = cleaned.replace(/\D/g, '')
+            if (digitsOnly.length >= 7) {
+              // Try to normalize
+              const normalizationResult = normalizePhoneNumberWithValidation(rawPhone, {
+                state: contact.state,
+                zipCode: contact.zipCode ? String(contact.zipCode) : undefined,
+                defaultCountry: 'US'
+              })
+              if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
+                normalizedPhone = normalizationResult.normalized
+              } else {
+                // Normalization failed - preserve digits
+                normalizedPhone = digitsOnly
+              }
+            } else {
+              // Too short - preserve what we have
+              normalizedPhone = digitsOnly
+            }
+          }
+        }
+        
+        contactDataMap.set(contact.id, {
+          email: contact.email || '',
+          phone: normalizedPhone,
+          website: contact.website || ''
+        })
+      })
+      
+      setSelectedContactIds(invalidIds)
+      setBulkContactData(contactDataMap)
+      
+      if (invalidIds.size === 0) {
+        setBulkError(`No invalid contacts found in the selected CSV upload.`)
+      }
+    } catch (error) {
+      setBulkError(error instanceof Error ? error.message : 'Failed to fetch invalid contacts from CSV')
+    } finally {
+      setIsLoadingInvalidFromCSV(false)
     }
   }
 
@@ -1137,11 +1474,54 @@ export default function ContactsPage() {
             // Update bulk contact data to include all remaining invalid contacts
             const updatedBulkData = new Map<number, { email: string; phone: string; website: string }>()
             fetchedInvalidContacts.forEach(contact => {
-              // Preserve any existing edits, or initialize with empty values
+              // Preserve any existing edits, or initialize with normalized values
               const existingData = bulkContactData.get(contact.id)
+              
+              // Normalize phone if not already edited
+              let normalizedPhone = existingData?.phone || ''
+              if (!normalizedPhone && contact.phone) {
+                const rawPhone = contact.phone
+                const cleaned = rawPhone.trim().replace(/[\s\-\(\)\.]/g, '')
+                if (cleaned.startsWith('+')) {
+                  try {
+                    const parsed = parsePhoneNumberFromString(cleaned)
+                    if (parsed) {
+                      // Preserve even if invalid - user can fix it
+                      normalizedPhone = parsed.format('E.164')
+                    } else {
+                      // Can't parse but has + - preserve it
+                      normalizedPhone = cleaned
+                    }
+                  } catch {
+                    // Invalid - preserve cleaned value
+                    normalizedPhone = cleaned
+                  }
+                } else {
+                  // Not in E.164 format - preserve digits so user can select country code
+                  const digitsOnly = cleaned.replace(/\D/g, '')
+                  if (digitsOnly.length >= 7) {
+                    // Try to normalize
+                    const normalizationResult = normalizePhoneNumberWithValidation(rawPhone, {
+                      state: contact.state,
+                      zipCode: contact.zipCode ? String(contact.zipCode) : undefined,
+                      defaultCountry: 'US'
+                    })
+                    if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
+                      normalizedPhone = normalizationResult.normalized
+                    } else {
+                      // Normalization failed - preserve digits
+                      normalizedPhone = digitsOnly
+                    }
+                  } else {
+                    // Too short - preserve what we have
+                    normalizedPhone = digitsOnly
+                  }
+                }
+              }
+              
               updatedBulkData.set(contact.id, {
                 email: existingData?.email || contact.email || '',
-                phone: existingData?.phone || contact.phone || '',
+                phone: normalizedPhone,
                 website: existingData?.website || contact.website || ''
               })
             })
@@ -1210,10 +1590,47 @@ export default function ContactsPage() {
       // Normalize website: add https:// if not present
       const normalizedWebsite = editWebsite.trim() ? normalizeWebsite(editWebsite) : null
       
+      // Normalize phone to E.164 format if possible, otherwise preserve the value
+      let normalizedPhoneForSave: string | null = null
+      const trimmedPhone = editPhone.trim()
+      if (trimmedPhone) {
+        // If phone already starts with +, try to format it to E.164
+        if (trimmedPhone.startsWith('+')) {
+          try {
+            const parsed = parsePhoneNumberFromString(trimmedPhone.replace(/[\s\-\(\)\.]/g, ''))
+            if (parsed) {
+              normalizedPhoneForSave = parsed.format('E.164')
+            } else {
+              // Can't parse but has +, preserve it
+              normalizedPhoneForSave = trimmedPhone
+            }
+          } catch {
+            // Can't parse, preserve original
+            normalizedPhoneForSave = trimmedPhone
+          }
+        } else {
+          // Phone doesn't have country code - try to normalize with hints
+          const normalizationResult = normalizePhoneNumberWithValidation(trimmedPhone, {
+            state: editStateValue,
+            zipCode: editZipCode ? String(editZipCode) : undefined,
+            defaultCountry: 'US'
+          })
+          
+          if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
+            normalizedPhoneForSave = normalizationResult.normalized
+          } else {
+            // Normalization failed - preserve the digits (user may need to add country code manually)
+            // But we should still save it, not set to null
+            const digitsOnly = trimmedPhone.replace(/\D/g, '')
+            normalizedPhoneForSave = digitsOnly.length >= 7 ? digitsOnly : trimmedPhone
+          }
+        }
+      }
+      
       const payload = {
         businessName: normalizeString(editBusinessName),
         email: normalizeNullable(editEmail),
-        phone: normalizeNullable(editPhone),
+        phone: normalizedPhoneForSave,
         website: normalizedWebsite,
         state: normalizeNullable(editStateValue),
         zipCode: editZipCode ? String(editZipCode).trim() || null : null,
@@ -1599,7 +2016,7 @@ export default function ContactsPage() {
                   <p className="text-xs text-slate-400 mt-2">
                     {query.search?.trim() 
                       ? `Valid in search results`
-                      : `Contacts with email or phone number`
+                      : `Contacts with valid email/email validation and phone/phone validation (E.164 format) or website reachable`
                     }
                   </p>
                 </div>
@@ -1609,7 +2026,7 @@ export default function ContactsPage() {
                   <p className="text-xs text-slate-400 mt-2">
                     {query.search?.trim() 
                       ? `Invalid in search results`
-                      : `Contacts missing both email and phone`
+                      : `Contacts missing both email/email validation and phone/phone validation (E.164 format) or website unreachable`
                     }
                   </p>
                 </div>
@@ -1863,6 +2280,26 @@ export default function ContactsPage() {
                       >
                         {isLoadingInvalid ? 'Loading...' : 'Select All Invalid'}
                       </Button>
+                      {currentUploadId && (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={handleSelectInvalidFromCSV}
+                          disabled={isLoadingInvalidFromCSV}
+                          className="text-xs h-7 px-3 border-purple-300 text-purple-700 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-400"
+                          leftIcon={
+                            isLoadingInvalidFromCSV ? (
+                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-purple-600"></div>
+                            ) : (
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                            )
+                          }
+                        >
+                          {isLoadingInvalidFromCSV ? 'Loading...' : 'Select Invalid from CSV'}
+                        </Button>
+                      )}
                       <Button 
                         variant="outline" 
                         size="sm" 
@@ -2078,7 +2515,7 @@ export default function ContactsPage() {
                                   <PhoneInput
                                     international
                                     defaultCountry="US"
-                                    value={contactData.phone as E164Number | undefined}
+                                    value={contactData.phone && contactData.phone.startsWith('+') ? (contactData.phone as E164Number) : undefined}
                                     onChange={(value) => {
                                       const phoneValue = value || ''
                                       
@@ -2377,4 +2814,5 @@ export default function ContactsPage() {
     </>
   )
 }
+
 

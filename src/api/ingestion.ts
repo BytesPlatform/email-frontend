@@ -291,12 +291,20 @@ export const ingestionApi = {
   },
 
   /**
-   * Get all invalid contacts (no email AND no phone) for the authenticated client
+   * Get all invalid contacts (no email AND no phone in E.164 format) for the authenticated client
    * No pagination - returns all invalid contacts
+   * @param csvUploadId Optional CSV upload ID to filter invalid contacts from a specific upload
    */
-  async getAllInvalidContacts(): Promise<ApiResponse<AllClientContactsResponse>> {
+  async getAllInvalidContacts(csvUploadId?: number): Promise<ApiResponse<AllClientContactsResponse>> {
     try {
-      const response = await apiClient.get<AllClientContactsResponse>(`/ingestion/contacts/invalid`);
+      let url = `/ingestion/contacts/invalid`;
+      
+      if (csvUploadId) {
+        // Use the new separate endpoint
+        url = `/ingestion/contacts/invalid/${csvUploadId}`;
+      }
+      
+      const response = await apiClient.get<AllClientContactsResponse>(url);
       
       if (response.success && response.data) {
         return { success: true, data: response.data };

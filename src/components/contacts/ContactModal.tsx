@@ -5,10 +5,11 @@ import type { ClientContact } from '@/types/ingestion'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
-import { parsePhoneNumberFromString } from 'libphonenumber-js'
+import { parsePhoneNumberFromString, getCountryCallingCode, type CountryCode } from 'libphonenumber-js'
 import PhoneInput from 'react-phone-number-input'
 import type { E164Number } from 'libphonenumber-js/core'
 import 'react-phone-number-input/style.css'
+import { normalizePhoneNumberWithValidation } from '@/lib/phoneUtils'
 
 // Add validation functions at the top of the file
 const validateWebsite = (website: string): string | null => {
@@ -120,18 +121,56 @@ const validateState = (state: string): string | null => {
   return null
 }
 
-const validatePhone = (phone: string): string | null => {
+const validatePhone = (phone: string, contactState?: string): string | null => {
   if (!phone.trim()) return null // Empty is allowed
   
-  // Use libphonenumber-js to validate (same approach as PhoneAccountsCard)
-  const parsed = parsePhoneNumberFromString(phone.trim())
+  // Remove spaces, parentheses, hyphens for validation
+  const cleaned = phone.trim().replace(/[\s\-\(\)\.]/g, '')
   
-  if (!parsed || !parsed.isValid()) {
-    return 'Please enter a valid phone number'
+  // Must start with + for E.164 format (required for Twilio/Telnyx)
+  if (!cleaned.startsWith('+')) {
+    return 'Phone number must include country code and start with + (E.164 format, e.g., +1234567890)'
+  }
+  
+  // Use libphonenumber-js to validate
+  const parsed = parsePhoneNumberFromString(cleaned)
+  
+  if (!parsed) {
+    return 'Please enter a valid phone number in E.164 format (e.g., +1234567890)'
+  }
+  
+  const nationalNumber = parsed.nationalNumber
+  
+  // If the number can be parsed but isValid() returns false, allow it with a warning
+  // This handles test numbers (like 555), invalid ranges, etc.
+  // The warning will be shown separately via phoneWarning state
+  // We only return errors for format issues, not validity issues
+  
+  // Ensure it's in E.164 format
+  const e164Format = parsed.format('E.164')
+  if (!e164Format.startsWith('+')) {
+    return 'Phone number must be in E.164 format with country code (e.g., +1234567890)'
+  }
+  
+  // Validate country code matches contact's state if available
+  if (contactState && parsed.country) {
+    const state = contactState.toUpperCase()
+    const usStates = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 
+      'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 
+      'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 
+      'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 
+      'WA', 'WV', 'WI', 'WY', 'DC']
+    const caProvinces = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT']
+    
+    if (usStates.includes(state) && parsed.country !== 'US') {
+      return `Warning: Contact is in ${state} (US) but phone number has country code ${parsed.country}. Please verify.`
+    }
+    if (caProvinces.includes(state) && parsed.country !== 'CA') {
+      return `Warning: Contact is in ${state} (CA) but phone number has country code ${parsed.country}. Please verify.`
+    }
   }
   
   // Check minimum length (at least 7 digits for national number)
-  const nationalNumber = parsed.nationalNumber
   if (nationalNumber.length < 7) {
     return 'Phone number is too short. Please enter a complete phone number.'
   }
@@ -221,6 +260,13 @@ export function ContactModal({
     state?: string | null
   }>({})
 
+  // Add state for phone warnings
+  const [phoneWarning, setPhoneWarning] = useState<string | null>(null)
+  const [phoneConfidence, setPhoneConfidence] = useState<'high' | 'medium' | 'low' | 'none'>('high')
+  
+  // Track manually selected country code to prevent auto-detection from overriding it
+  const [selectedCountry, setSelectedCountry] = useState<CountryCode | undefined>(undefined)
+
   // Block body scrolling when modal is open
   useEffect(() => {
     if (contact) {
@@ -244,6 +290,24 @@ export function ContactModal({
     return () => document.removeEventListener('keydown', handleEscape)
   }, [contact, onClose])
 
+  // Initialize selected country from current phone number
+  useEffect(() => {
+    if (editPhone && editPhone.trim() && editPhone.startsWith('+')) {
+      try {
+        const cleaned = editPhone.trim().replace(/[\s\-\(\)\.]/g, '')
+        const parsed = parsePhoneNumberFromString(cleaned)
+        if (parsed && parsed.country) {
+          setSelectedCountry(parsed.country)
+        }
+      } catch {
+        // If parsing fails, don't set country
+      }
+    } else if (!editPhone || !editPhone.trim()) {
+      // If phone is empty, reset selected country
+      setSelectedCountry(undefined)
+    }
+  }, [editPhone])
+
   // Phone input refs - must be declared before any conditional returns
   const phoneInputRef = useRef<HTMLDivElement>(null)
   const phoneInputRef2 = useRef<HTMLDivElement>(null)
@@ -254,7 +318,7 @@ export function ContactModal({
     const errors = {
       website: validateWebsite(editWebsite),
       email: validateEmail(editEmail),
-      phone: editPhone ? validatePhone(editPhone) : null,
+      phone: editPhone ? validatePhone(editPhone, contact?.state) : null,
       businessName: validateBusinessName(editBusinessName),
       zipCode: validateZipCode(editZipCode),
       state: validateState(editState),
@@ -281,7 +345,7 @@ export function ContactModal({
     const errors = {
       website: validateWebsite(editWebsite),
       email: validateEmail(editEmail),
-      phone: editPhone ? validatePhone(editPhone) : null,
+      phone: editPhone ? validatePhone(editPhone, contact?.state) : null,
       businessName: validateBusinessName(editBusinessName),
       zipCode: validateZipCode(editZipCode),
       state: validateState(editState),
@@ -380,10 +444,236 @@ export function ContactModal({
     setValidationErrors(prev => ({ ...prev, state: error }))
   }
 
-  const handlePhoneChange = (value: E164Number | undefined) => {
-    const phoneValue = value || ''
+  // Handler for country code changes - preserves phone number digits when switching countries
+  const handleCountryChange = (country: CountryCode | undefined) => {
+    if (country) {
+      setSelectedCountry(country)
+      
+      // If there's an existing phone number, preserve the digits and apply the new country code
+      if (editPhone && editPhone.trim()) {
+        try {
+          // Extract digits from current phone number (remove country code if present)
+          let digitsOnly = editPhone.replace(/\D/g, '')
+          
+          // If the phone starts with +, we need to remove the old country code digits
+          if (editPhone.startsWith('+')) {
+            try {
+              const oldParsed = parsePhoneNumberFromString(editPhone.trim().replace(/[\s\-\(\)\.]/g, ''))
+              if (oldParsed && oldParsed.nationalNumber) {
+                // Use only the national number (without country code)
+                digitsOnly = oldParsed.nationalNumber
+              }
+            } catch {
+              // If parsing fails, use all digits
+            }
+          }
+          
+          // If we have digits, try to format with the new country code
+          if (digitsOnly.length > 0) {
+            // Try parsing with the new country code
+            const parsed = parsePhoneNumberFromString(digitsOnly, country)
+            if (parsed) {
+              const newPhoneValue = parsed.format('E.164')
+              onEditPhoneChange(newPhoneValue)
+              return
+            }
+            // If parsing fails (e.g., number too short), the PhoneInput component
+            // will handle formatting as the user continues typing
+            // We don't need to manually construct E.164 here
+          }
+        } catch {
+          // If parsing fails, keep the current value
+          // The PhoneInput component will handle the formatting
+        }
+      }
+    } else {
+      setSelectedCountry(undefined)
+    }
+  }
+
+  // Update handlePhoneChange to check warnings and normalize to E.164 format
+  // CRITICAL: If a country is manually selected, we MUST preserve it and prevent auto-detection
+  const handlePhoneChange = (value: E164Number | string | undefined) => {
+    let phoneValue = value || ''
+    
+    // If we have a manually selected country, we MUST use it and prevent auto-detection
+    if (selectedCountry && phoneValue.trim()) {
+      try {
+        // Extract digits from the phone value
+        let digitsOnly = phoneValue.replace(/\D/g, '')
+        
+        // If phone starts with +, check if it matches our selected country
+        if (phoneValue.startsWith('+')) {
+          const cleaned = phoneValue.trim().replace(/[\s\-\(\)\.]/g, '')
+          const parsed = parsePhoneNumberFromString(cleaned)
+          
+          // CRITICAL: If the parsed country is different from selectedCountry, force it back
+          if (parsed && parsed.country && parsed.country !== selectedCountry) {
+            // Auto-detection tried to change the country - we MUST prevent this
+            // Extract the national number and re-parse with our selected country
+            if (parsed.nationalNumber) {
+              digitsOnly = parsed.nationalNumber
+            } else {
+              // Fallback: try parsing with selectedCountry
+              try {
+                const tempParsed = parsePhoneNumberFromString(cleaned, selectedCountry)
+                if (tempParsed && tempParsed.nationalNumber) {
+                  digitsOnly = tempParsed.nationalNumber
+                }
+              } catch {
+                // If that fails, try to extract digits after the country code
+                const selectedCallingCode = getCountryCallingCode(selectedCountry)
+                if (cleaned.startsWith(`+${selectedCallingCode}`)) {
+                  digitsOnly = cleaned.slice(`+${selectedCallingCode}`.length)
+                }
+              }
+            }
+          } else if (parsed && parsed.nationalNumber) {
+            // Country matches or couldn't be determined - use national number
+            digitsOnly = parsed.nationalNumber
+          }
+        }
+        
+        // Now parse with the manually selected country to ensure it stays locked
+        if (digitsOnly.length > 0) {
+          const parsed = parsePhoneNumberFromString(digitsOnly, selectedCountry)
+          if (parsed) {
+            // Force the country to be our selected country
+            phoneValue = parsed.format('E.164')
+            // CRITICAL: Ensure selectedCountry stays the same (don't let auto-detection change it)
+            // Don't update selectedCountry here - it's already set manually
+          } else {
+            // If parsing fails, construct E.164 manually with selected country
+            // Get the country calling code for the selected country
+            try {
+              const callingCode = getCountryCallingCode(selectedCountry)
+              if (callingCode && digitsOnly.length >= 7) {
+                phoneValue = `+${callingCode}${digitsOnly}`
+              }
+            } catch {
+              // If that fails, keep the value as is
+            }
+          }
+        }
+      } catch {
+        // If parsing fails, keep the original value
+      }
+    } else if (phoneValue.trim()) {
+      // No manually selected country - allow normal parsing
+      try {
+        // If phone starts with +, try to parse and format to E.164
+        if (phoneValue.startsWith('+')) {
+          const cleaned = phoneValue.trim().replace(/[\s\-\(\)\.]/g, '')
+          const parsed = parsePhoneNumberFromString(cleaned)
+          if (parsed) {
+            // Format to E.164 to ensure consistent format
+            phoneValue = parsed.format('E.164')
+            
+            // Update selected country from parsed phone number
+            // This tracks the country code that was detected/selected
+            if (parsed.country) {
+              setSelectedCountry(parsed.country)
+            }
+          }
+        } else {
+          // Phone doesn't have + prefix - try to normalize with hints
+          const normalizationResult = normalizePhoneNumberWithValidation(phoneValue, {
+            state: editState,
+            zipCode: editZipCode,
+            defaultCountry: 'US'
+          })
+          
+          // If normalization succeeded and produced E.164 format, use it
+          if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
+            phoneValue = normalizationResult.normalized
+            // Don't update selectedCountry here - let user manually select if needed
+          }
+          // Otherwise, keep the original value and let the user select country code
+        }
+      } catch {
+        // If parsing fails, keep the original value
+      }
+    } else {
+      // Phone value is empty - clear selected country only if it wasn't manually set
+      // Actually, keep it - user might want to keep the country selected
+    }
+    
+    // Store the normalized phone value
     onEditPhoneChange(phoneValue)
-    const error = phoneValue ? validatePhone(phoneValue) : null
+    
+    // Check for warnings using enhanced validation
+    if (phoneValue.trim()) {
+      // If phone doesn't start with +, try to normalize it
+      if (!phoneValue.startsWith('+') && phoneValue.trim()) {
+        // User is entering number without country code - that's okay, they can select it
+        // Just validate format
+        const digitsOnly = phoneValue.replace(/\D/g, '')
+        if (digitsOnly.length < 7) {
+          setPhoneWarning('Phone number is too short. Please enter complete number and select country code.')
+          setPhoneConfidence('none')
+        } else {
+          setPhoneWarning('Please select country code from dropdown to complete phone number.')
+          setPhoneConfidence('low')
+        }
+      } else {
+        // Phone has +, validate it
+        const cleaned = phoneValue.trim().replace(/[\s\-\(\)\.]/g, '')
+        if (cleaned.startsWith('+')) {
+          try {
+            const parsed = parsePhoneNumberFromString(cleaned)
+            if (parsed) {
+              // Check if the number is invalid according to libphonenumber
+              // If it can be parsed but isValid() is false, show a warning
+              if (!parsed.isValid()) {
+                setPhoneWarning('This phone number may not be valid or deliverable (e.g., test numbers, invalid ranges). Please verify before sending SMS.')
+                setPhoneConfidence('medium')
+              } else {
+                // Number is valid, check for other warnings via normalization
+                const normalizationResult = normalizePhoneNumberWithValidation(phoneValue, {
+                  state: editState,
+                  zipCode: editZipCode,
+                  defaultCountry: 'US'
+                })
+                
+                if (normalizationResult.warning) {
+                  setPhoneWarning(normalizationResult.warning)
+                  setPhoneConfidence(normalizationResult.confidence)
+                } else {
+                  setPhoneWarning(null)
+                  setPhoneConfidence('high')
+                }
+              }
+            } else {
+              setPhoneWarning('Could not parse phone number. Please check the format.')
+              setPhoneConfidence('none')
+            }
+          } catch {
+            setPhoneWarning('Could not parse phone number. Please check the format.')
+            setPhoneConfidence('none')
+          }
+        } else {
+          // Try normalization for numbers without +
+          const normalizationResult = normalizePhoneNumberWithValidation(phoneValue, {
+            state: editState,
+            zipCode: editZipCode,
+            defaultCountry: 'US'
+          })
+          
+          if (normalizationResult.warning) {
+            setPhoneWarning(normalizationResult.warning)
+            setPhoneConfidence(normalizationResult.confidence)
+          } else {
+            setPhoneWarning(null)
+            setPhoneConfidence('high')
+          }
+        }
+      }
+    } else {
+      setPhoneWarning(null)
+      setPhoneConfidence('high')
+    }
+    
+    const error = phoneValue ? validatePhone(phoneValue, contact?.state) : null
     setValidationErrors(prev => ({ ...prev, phone: error }))
   }
 
@@ -410,6 +700,14 @@ export function ContactModal({
         .phone-input-wrapper.phone-input-error .PhoneInput:focus-within {
           border-color: #ef4444;
           outline-color: rgba(239, 68, 68, 0.2);
+        }
+        .phone-input-wrapper.phone-input-warning .PhoneInput {
+          border-color: #f59e0b;
+          background-color: rgba(254, 243, 199, 0.5);
+        }
+        .phone-input-wrapper.phone-input-warning .PhoneInput:focus-within {
+          border-color: #f59e0b;
+          outline-color: rgba(245, 158, 11, 0.2);
         }
         .phone-input-wrapper .PhoneInputCountry {
           border-right: 1px solid #e2e8f0;
@@ -613,17 +911,27 @@ export function ContactModal({
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
                         Phone Number
                       </label>
-                      <div ref={phoneInputRef} className={`phone-input-wrapper ${validationErrors.phone ? 'phone-input-error' : ''}`}>
+                      <div ref={phoneInputRef} className={`phone-input-wrapper ${validationErrors.phone ? 'phone-input-error' : phoneWarning ? 'phone-input-warning' : ''}`}>
                         <PhoneInput
                           international
                           defaultCountry="US"
-                          value={editPhone as E164Number | undefined}
+                          country={selectedCountry}
+                          value={editPhone ? (editPhone.startsWith('+') ? (editPhone as E164Number) : editPhone as string) : undefined}
                           onChange={handlePhoneChange}
+                          onCountryChange={handleCountryChange}
                           placeholder="Enter phone number with country code"
                         />
                       </div>
                       {validationErrors.phone && (
                         <p className="text-xs text-rose-600 mt-1">{validationErrors.phone}</p>
+                      )}
+                      {!validationErrors.phone && phoneWarning && (
+                        <p className="text-xs text-amber-600 mt-1 flex items-center space-x-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
+                          <span>{phoneWarning}</span>
+                        </p>
                       )}
                     </div>
                   </div>
@@ -661,7 +969,14 @@ export function ContactModal({
                     >
                       Save Contact
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={onReset}>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        setValidationErrors({})
+                        onReset()
+                      }}
+                    >
                       Reset
                     </Button>
                   </div>
@@ -724,17 +1039,27 @@ export function ContactModal({
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
                         Phone Number
                       </label>
-                      <div ref={phoneInputRef2} className="phone-input-wrapper">
+                      <div ref={phoneInputRef2} className={`phone-input-wrapper ${validationErrors.phone ? 'phone-input-error' : phoneWarning ? 'phone-input-warning' : ''}`}>
                         <PhoneInput
                           international
                           defaultCountry="US"
-                          value={editPhone as E164Number | undefined}
+                          country={selectedCountry}
+                          value={editPhone ? (editPhone.startsWith('+') ? (editPhone as E164Number) : editPhone as string) : undefined}
                           onChange={handlePhoneChange}
+                          onCountryChange={handleCountryChange}
                           placeholder="Enter phone number with country code"
                         />
                       </div>
                       {validationErrors.phone && (
                         <p className="text-xs text-rose-600 mt-1">{validationErrors.phone}</p>
+                      )}
+                      {!validationErrors.phone && phoneWarning && (
+                        <p className="text-xs text-amber-600 mt-1 flex items-center space-x-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
+                          <span>{phoneWarning}</span>
+                        </p>
                       )}
                     </div>
                     <div>
@@ -787,7 +1112,14 @@ export function ContactModal({
                     >
                       Save Changes
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={onReset}>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        setValidationErrors({})
+                        onReset()
+                      }}
+                    >
                       Reset
                     </Button>
                   </div>
