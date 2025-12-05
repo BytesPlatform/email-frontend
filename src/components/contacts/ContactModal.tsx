@@ -314,11 +314,41 @@ export function ContactModal({
 
   // Save handlers
   const handleSave = async () => {
+    // Before validation, ensure phone is in E.164 format if a country is selected
+    let phoneToValidate = editPhone
+    if (editPhone && editPhone.trim() && !editPhone.startsWith('+') && selectedCountry) {
+      try {
+        const digitsOnly = editPhone.replace(/\D/g, '')
+        // Check if digits start with country code and strip it
+        const callingCode = getCountryCallingCode(selectedCountry)
+        let nationalDigits = digitsOnly
+        if (digitsOnly.startsWith(callingCode)) {
+          nationalDigits = digitsOnly.slice(callingCode.length)
+        }
+        
+        // Try to parse and format as E.164
+        if (nationalDigits.length >= 7) {
+          const parsed = parsePhoneNumberFromString(nationalDigits, selectedCountry)
+          if (parsed) {
+            phoneToValidate = parsed.format('E.164')
+            // Update the phone value
+            onEditPhoneChange(phoneToValidate)
+          } else {
+            // If parsing fails, construct E.164 manually
+            phoneToValidate = `+${callingCode}${nationalDigits}`
+            onEditPhoneChange(phoneToValidate)
+          }
+        }
+      } catch {
+        // If conversion fails, use original value
+      }
+    }
+    
     // Validate all fields before saving
     const errors = {
       website: validateWebsite(editWebsite),
       email: validateEmail(editEmail),
-      phone: editPhone ? validatePhone(editPhone, contact?.state) : null,
+      phone: phoneToValidate ? validatePhone(phoneToValidate, contact?.state) : null,
       businessName: validateBusinessName(editBusinessName),
       zipCode: validateZipCode(editZipCode),
       state: validateState(editState),
@@ -336,16 +366,46 @@ export function ContactModal({
       await onSave()
       onClose() // Close the modal after successful save
     } catch (error) {
-      console.error('Failed to save contact:', error)
+      // Error should be handled by parent component via error prop
     }
   }
 
   const handleSaveDetails = async () => {
+    // Before validation, ensure phone is in E.164 format if a country is selected
+    let phoneToValidate = editPhone
+    if (editPhone && editPhone.trim() && !editPhone.startsWith('+') && selectedCountry) {
+      try {
+        const digitsOnly = editPhone.replace(/\D/g, '')
+        // Check if digits start with country code and strip it
+        const callingCode = getCountryCallingCode(selectedCountry)
+        let nationalDigits = digitsOnly
+        if (digitsOnly.startsWith(callingCode)) {
+          nationalDigits = digitsOnly.slice(callingCode.length)
+        }
+        
+        // Try to parse and format as E.164
+        if (nationalDigits.length >= 7) {
+          const parsed = parsePhoneNumberFromString(nationalDigits, selectedCountry)
+          if (parsed) {
+            phoneToValidate = parsed.format('E.164')
+            // Update the phone value
+            onEditPhoneChange(phoneToValidate)
+          } else {
+            // If parsing fails, construct E.164 manually
+            phoneToValidate = `+${callingCode}${nationalDigits}`
+            onEditPhoneChange(phoneToValidate)
+          }
+        }
+      } catch {
+        // If conversion fails, use original value
+      }
+    }
+    
     // Validate all fields before saving
     const errors = {
       website: validateWebsite(editWebsite),
       email: validateEmail(editEmail),
-      phone: editPhone ? validatePhone(editPhone, contact?.state) : null,
+      phone: phoneToValidate ? validatePhone(phoneToValidate, contact?.state) : null,
       businessName: validateBusinessName(editBusinessName),
       zipCode: validateZipCode(editZipCode),
       state: validateState(editState),
@@ -363,7 +423,10 @@ export function ContactModal({
       await onSaveDetails()
       onClose() // Close the modal after successful save
     } catch (error) {
-      console.error('Failed to save contact details:', error)
+      // Error should be handled by parent component via detailsError prop
+      // But we can also set a local error state if needed
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save contact details. Please try again.'
+      setValidationErrors(prev => ({ ...prev, _general: errorMessage }))
     }
   }
 
@@ -455,6 +518,9 @@ export function ContactModal({
           // Extract digits from current phone number (remove country code if present)
           let digitsOnly = editPhone.replace(/\D/g, '')
           
+          // Get the country calling code for the new country
+          const callingCode = getCountryCallingCode(country)
+          
           // If the phone starts with +, we need to remove the old country code digits
           if (editPhone.startsWith('+')) {
             try {
@@ -462,9 +528,21 @@ export function ContactModal({
               if (oldParsed && oldParsed.nationalNumber) {
                 // Use only the national number (without country code)
                 digitsOnly = oldParsed.nationalNumber
+              } else if (editPhone.startsWith(`+${callingCode}`)) {
+                // If parsing failed but we can see the country code, strip it
+                digitsOnly = editPhone.replace(/\D/g, '').slice(callingCode.length)
               }
             } catch {
-              // If parsing fails, use all digits
+              // If parsing fails, try to strip the calling code if it matches
+              if (editPhone.startsWith(`+${callingCode}`)) {
+                digitsOnly = editPhone.replace(/\D/g, '').slice(callingCode.length)
+              }
+            }
+          } else {
+            // Phone doesn't start with + - check if digits start with the new country code
+            if (digitsOnly.startsWith(callingCode)) {
+              // Strip the country code to prevent duplication
+              digitsOnly = digitsOnly.slice(callingCode.length)
             }
           }
           
@@ -476,10 +554,15 @@ export function ContactModal({
               const newPhoneValue = parsed.format('E.164')
               onEditPhoneChange(newPhoneValue)
               return
+            } else {
+              // If parsing fails (e.g., number too short), construct E.164 manually
+              // This ensures the phone always has the + prefix when a country is selected
+              if (digitsOnly.length >= 7) {
+                const newPhoneValue = `+${callingCode}${digitsOnly}`
+                onEditPhoneChange(newPhoneValue)
+                return
+              }
             }
-            // If parsing fails (e.g., number too short), the PhoneInput component
-            // will handle formatting as the user continues typing
-            // We don't need to manually construct E.164 here
           }
         } catch {
           // If parsing fails, keep the current value
@@ -502,8 +585,19 @@ export function ContactModal({
         // Extract digits from the phone value
         let digitsOnly = phoneValue.replace(/\D/g, '')
         
-        // If phone starts with +, check if it matches our selected country
-        if (phoneValue.startsWith('+')) {
+        // Get the country calling code for the selected country
+        const selectedCallingCode = getCountryCallingCode(selectedCountry)
+        
+        // CRITICAL FIX: If phone doesn't start with +, check if digits start with country code
+        // If they do, strip the country code to prevent duplication
+        if (!phoneValue.startsWith('+')) {
+          // Check if the digits start with the country calling code
+          if (digitsOnly.startsWith(selectedCallingCode)) {
+            // Strip the country code from the beginning
+            digitsOnly = digitsOnly.slice(selectedCallingCode.length)
+          }
+        } else {
+          // Phone starts with +, check if it matches our selected country
           const cleaned = phoneValue.trim().replace(/[\s\-\(\)\.]/g, '')
           const parsed = parsePhoneNumberFromString(cleaned)
           
@@ -522,7 +616,6 @@ export function ContactModal({
                 }
               } catch {
                 // If that fails, try to extract digits after the country code
-                const selectedCallingCode = getCountryCallingCode(selectedCountry)
                 if (cleaned.startsWith(`+${selectedCallingCode}`)) {
                   digitsOnly = cleaned.slice(`+${selectedCallingCode}`.length)
                 }
@@ -531,6 +624,9 @@ export function ContactModal({
           } else if (parsed && parsed.nationalNumber) {
             // Country matches or couldn't be determined - use national number
             digitsOnly = parsed.nationalNumber
+          } else if (cleaned.startsWith(`+${selectedCallingCode}`)) {
+            // If parsing failed but we can see the country code, strip it
+            digitsOnly = cleaned.slice(`+${selectedCallingCode}`.length)
           }
         }
         
@@ -546,9 +642,8 @@ export function ContactModal({
             // If parsing fails, construct E.164 manually with selected country
             // Get the country calling code for the selected country
             try {
-              const callingCode = getCountryCallingCode(selectedCountry)
-              if (callingCode && digitsOnly.length >= 7) {
-                phoneValue = `+${callingCode}${digitsOnly}`
+              if (selectedCallingCode && digitsOnly.length >= 7) {
+                phoneValue = `+${selectedCallingCode}${digitsOnly}`
               }
             } catch {
               // If that fails, keep the value as is
@@ -916,7 +1011,7 @@ export function ContactModal({
                           international
                           defaultCountry="US"
                           country={selectedCountry}
-                          value={editPhone ? (editPhone.startsWith('+') ? (editPhone as E164Number) : editPhone as string) : undefined}
+                          value={editPhone && editPhone.trim() && editPhone.startsWith('+') ? (editPhone as E164Number) : undefined}
                           onChange={handlePhoneChange}
                           onCountryChange={handleCountryChange}
                           placeholder="Enter phone number with country code"
@@ -1044,7 +1139,7 @@ export function ContactModal({
                           international
                           defaultCountry="US"
                           country={selectedCountry}
-                          value={editPhone ? (editPhone.startsWith('+') ? (editPhone as E164Number) : editPhone as string) : undefined}
+                          value={editPhone && editPhone.trim() && editPhone.startsWith('+') ? (editPhone as E164Number) : undefined}
                           onChange={handlePhoneChange}
                           onCountryChange={handleCountryChange}
                           placeholder="Enter phone number with country code"
