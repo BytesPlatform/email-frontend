@@ -69,26 +69,27 @@ const deriveContactValidity = (contact: ClientContact) => {
         // Invalid phone number - hasValidPhone remains false
       }
     }
-    
-    // Phone blocker: If phone exists but is not in E.164 format, contact is invalid
-    // This overrides backend computed validity
-    if (!hasValidPhone) {
-      if (!cleaned.startsWith('+')) {
+  }
+
+  // Check email validity first
+  const emailValid = contact.emailValid === true
+
+  // Use backend computed validity if available (preferred)
+  // But only if phone validation passed OR email is valid
+  if (typeof contact.computedValid === 'boolean' && contact.computedValidationReason) {
+    // Only override backend validity if phone exists but is invalid AND email is also invalid
+    if (!hasValidPhone && phoneExists && !emailValid) {
+      if (!phone.replace(/[\s\-\(\)\.]/g, '').startsWith('+')) {
         return {
           isValid: false,
-          reason: 'Phone number exists but is not in E.164 format (must start with + and include country code)'
+          reason: 'Phone number exists but is not in E.164 format (must start with + and include country code). Email is also invalid or missing.'
         }
       }
       return {
         isValid: false,
-        reason: 'Phone number exists but is invalid or not in E.164 format'
+        reason: 'Phone number exists but is invalid or not in E.164 format. Email is also invalid or missing.'
       }
     }
-  }
-
-  // Use backend computed validity if available (preferred)
-  // But only if phone validation passed above
-  if (typeof contact.computedValid === 'boolean' && contact.computedValidationReason) {
     return {
       isValid: contact.computedValid,
       reason: contact.computedValidationReason
@@ -97,6 +98,19 @@ const deriveContactValidity = (contact: ClientContact) => {
 
   // If backend computed validity exists but no reason, use it with default reason
   if (typeof contact.computedValid === 'boolean') {
+    // Only override backend validity if phone exists but is invalid AND email is also invalid
+    if (!hasValidPhone && phoneExists && !emailValid) {
+      if (!phone.replace(/[\s\-\(\)\.]/g, '').startsWith('+')) {
+        return {
+          isValid: false,
+          reason: 'Phone number exists but is not in E.164 format (must start with + and include country code). Email is also invalid or missing.'
+        }
+      }
+      return {
+        isValid: false,
+        reason: 'Phone number exists but is invalid or not in E.164 format. Email is also invalid or missing.'
+      }
+    }
     return {
       isValid: contact.computedValid,
       reason: contact.computedValid
@@ -107,7 +121,7 @@ const deriveContactValidity = (contact: ClientContact) => {
 
   // Fallback: Compute validity using enhanced validation
   // 1. Check Email: must exist AND emailValid === true
-  const emailValid = contact.emailValid === true
+  // (emailValid already checked above)
 
   // 3. Check Website: if exists, must be valid (websiteValid === true)
   const website = contact.website?.trim() ?? ''
@@ -119,6 +133,21 @@ const deriveContactValidity = (contact: ClientContact) => {
     return {
       isValid: false,
       reason: 'Website exists but is invalid (websiteValid = false)'
+    }
+  }
+
+  // Phone blocker: Only apply if email is also invalid
+  // If email is valid, contact can still be valid even with invalid phone
+  if (phoneExists && !hasValidPhone && !emailValid) {
+    if (!phone.replace(/[\s\-\(\)\.]/g, '').startsWith('+')) {
+      return {
+        isValid: false,
+        reason: 'Phone number must be in E.164 format (start with + and include country code). Email is also invalid or missing.'
+      }
+    }
+    return {
+      isValid: false,
+      reason: 'Phone number exists but is invalid or not in E.164 format. Email is also invalid or missing.'
     }
   }
 
