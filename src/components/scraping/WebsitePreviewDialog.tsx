@@ -58,7 +58,7 @@ export function WebsitePreviewDialog({
           <button
             onClick={onCancel}
             className="text-slate-400 hover:text-slate-600 transition-colors"
-            disabled={isLoading}
+            title={isLoading ? "Close (scraping will continue in background)" : "Close"}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -134,9 +134,9 @@ export function WebsitePreviewDialog({
             variant="ghost"
             size="sm"
             onClick={onCancel}
-            disabled={isLoading}
+            title={isLoading ? "Close (scraping will continue in background)" : "Cancel"}
           >
-            Cancel
+            {isLoading ? "Close" : "Cancel"}
           </Button>
           <Button
             variant="primary"

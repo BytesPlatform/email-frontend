@@ -292,12 +292,50 @@ export function ContactModal({
 
   // Initialize selected country from current phone number
   useEffect(() => {
-    if (editPhone && editPhone.trim() && editPhone.startsWith('+')) {
+    if (editPhone && editPhone.trim()) {
+      // Try to parse even if it doesn't start with +
       try {
         const cleaned = editPhone.trim().replace(/[\s\-\(\)\.]/g, '')
-        const parsed = parsePhoneNumberFromString(cleaned)
-        if (parsed && parsed.country) {
-          setSelectedCountry(parsed.country)
+        
+        // If it doesn't start with +, try to detect country code
+        if (!cleaned.startsWith('+')) {
+          // Try common country codes by checking if number starts with known codes
+          // This helps detect country for invalid phone numbers
+          const digitsOnly = cleaned.replace(/\D/g, '')
+          
+          // Try parsing with + prefix (libphonenumber will try to detect country)
+          const withPlus = `+${digitsOnly}`
+          const parsed = parsePhoneNumberFromString(withPlus)
+          
+          if (parsed && parsed.country) {
+            setSelectedCountry(parsed.country)
+          } else {
+            // If that fails, try with common country codes
+            // Pakistan: +92, India: +91, etc.
+            const commonCodes = [
+              { code: '92', country: 'PK' }, // Pakistan
+              { code: '91', country: 'IN' }, // India
+              { code: '1', country: 'US' }, // US/Canada
+              { code: '44', country: 'GB' }, // UK
+            ]
+            
+            for (const { code, country } of commonCodes) {
+              if (digitsOnly.startsWith(code) && digitsOnly.length >= code.length + 7) {
+                const testNumber = `+${digitsOnly}`
+                const testParsed = parsePhoneNumberFromString(testNumber)
+                if (testParsed && testParsed.country === country) {
+                  setSelectedCountry(country as CountryCode)
+                  break
+                }
+              }
+            }
+          }
+        } else {
+          // Phone starts with +, parse normally
+          const parsed = parsePhoneNumberFromString(cleaned)
+          if (parsed && parsed.country) {
+            setSelectedCountry(parsed.country)
+          }
         }
       } catch {
         // If parsing fails, don't set country
@@ -365,7 +403,7 @@ export function ContactModal({
     try {
       await onSave()
       onClose() // Close the modal after successful save
-    } catch (error) {
+    } catch {
       // Error should be handled by parent component via error prop
     }
   }
@@ -1011,7 +1049,7 @@ export function ContactModal({
                           international
                           defaultCountry="US"
                           country={selectedCountry}
-                          value={editPhone && editPhone.trim() && editPhone.startsWith('+') ? (editPhone as E164Number) : undefined}
+                          value={editPhone && editPhone.trim() ? (editPhone.startsWith('+') ? (editPhone as E164Number) : editPhone) : undefined}
                           onChange={handlePhoneChange}
                           onCountryChange={handleCountryChange}
                           placeholder="Enter phone number with country code"
@@ -1139,7 +1177,7 @@ export function ContactModal({
                           international
                           defaultCountry="US"
                           country={selectedCountry}
-                          value={editPhone && editPhone.trim() && editPhone.startsWith('+') ? (editPhone as E164Number) : undefined}
+                          value={editPhone && editPhone.trim() ? (editPhone.startsWith('+') ? (editPhone as E164Number) : editPhone) : undefined}
                           onChange={handlePhoneChange}
                           onCountryChange={handleCountryChange}
                           placeholder="Enter phone number with country code"

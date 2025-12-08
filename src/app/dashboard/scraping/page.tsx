@@ -307,16 +307,23 @@ export default function ScrapingPage() {
     }
   }
 
-  // Handle preview confirmation
+  // Handle preview confirmation - start scraping and close dialog immediately
   const handlePreviewConfirm = async () => {
     if (!previewDialog) return
     
     const contactId = previewDialog.contactId
+    const discoveredWebsite = previewDialog.discoveredWebsite
+    
+    // Set scraping status
     setScrapingStatus(prev => ({ ...prev, [contactId]: 'scraping' }))
     
+    // Close dialog immediately so user can continue working
+    setPreviewDialog(null)
+    
+    // Scrape in background (non-blocking)
     try {
       // Scrape with confirmed website
-      const res = await scrapingApi.scrapeSingle(contactId, previewDialog.discoveredWebsite)
+      const res = await scrapingApi.scrapeSingle(contactId, discoveredWebsite)
       
       // Update status
       if (res.success && res.data) {
@@ -329,24 +336,27 @@ export default function ScrapingPage() {
         setScrapingStatus(prev => ({ ...prev, [contactId]: 'failed' }))
       }
       
-      // Close preview dialog
-      setPreviewDialog(null)
-      
       // Refresh data
       await fetchStatsAndShowRecords()
     } catch (error) {
       console.error('Scraping failed:', error)
       setScrapingStatus(prev => ({ ...prev, [contactId]: 'failed' }))
-      setPreviewDialog(null)
     }
   }
 
-  // Handle preview cancel
+  // Handle preview cancel - allow closing even during scraping
   const handlePreviewCancel = () => {
     if (previewDialog) {
-      setScrapingStatus(prev => ({ ...prev, [previewDialog.contactId]: null }))
+      const contactId = previewDialog.contactId
+      // Only reset status if scraping hasn't started yet
+      // If scraping is in progress, keep the status and just close the dialog
+      const currentStatus = scrapingStatus[contactId]
+      if (currentStatus !== 'scraping') {
+        setScrapingStatus(prev => ({ ...prev, [contactId]: null }))
+      }
+      // Always close the dialog - scraping will continue in background if already started
+      setPreviewDialog(null)
     }
-    setPreviewDialog(null)
   }
 
   // Handle visit website
