@@ -72,7 +72,11 @@ export function HistoryList({
               ? "You haven't sent any SMS messages yet."
               : activeView === 'email-sent'
               ? "You haven't sent any emails yet."
-              : "No email unsubscribes found."
+              : activeView === 'email-unsubscribed'
+              ? "No email unsubscribes found."
+              : activeView === 'not-delivered'
+              ? "No undelivered emails found."
+              : "No history found."
             }
           </p>
         </div>

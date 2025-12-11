@@ -89,6 +89,10 @@ const validateDescription = (description: string): string | null => {
     return `Description must be at least 50 characters (currently ${description.trim().length} characters)`
   }
   
+  if (description.trim().length > 300) {
+    return `Description cannot exceed 300 characters (currently ${description.trim().length} characters)`
+  }
+  
   return null
 }
 
@@ -840,6 +844,7 @@ export function RegisterForm() {
                     <textarea
                       value={ps.description || ''}
                       onChange={(e) => updateProductService(index, 'description', e.target.value)}
+                      maxLength={300}
                       rows={3}
                       data-gramm="false"
                       data-gramm_editor="false"
@@ -849,7 +854,7 @@ export function RegisterForm() {
                           ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
                           : 'border-slate-300 focus:ring-indigo-500 focus:border-indigo-500'
                       } focus:outline-none focus:ring-2 transition-all resize-none hover:border-slate-400`}
-                      placeholder="Brief description (minimum 50 characters)..."
+                      placeholder="Brief description (50-300 characters)..."
                       required={!!(ps.name?.trim() && ps.type?.trim())}
                     />
                     {errors[`productService_${index}_description`] && (
@@ -857,11 +862,11 @@ export function RegisterForm() {
                     )}
                     {ps.description && (
                       <p className={`mt-1.5 text-xs font-medium ${
-                        ps.description.trim().length < 50 
+                        ps.description.trim().length < 50 || ps.description.trim().length > 300
                           ? 'text-amber-600' 
                           : 'text-emerald-600'
                       }`}>
-                        {ps.description.trim().length} / 50 characters minimum
+                        {ps.description.length} / 300 characters (minimum 50 required)
                       </p>
                     )}
                   </div>
