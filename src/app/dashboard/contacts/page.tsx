@@ -463,15 +463,36 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client?.id])
 
+  // Compute visible contacts by applying the frontend validity rules
+  // when the user has selected the validity filter. This prevents
+  // unnecessary backend calls and ensures the UI reflects the
+  // frontend-derived status. Always use deriveContactValidity for consistency
+  // with the table display logic.
+  const visibleContacts = useMemo(() => {
+    if (validityFilter === 'all') return contacts
+    
+    if (validityFilter === 'valid') {
+      return contacts.filter(c => {
+        const v = deriveContactValidity(c)
+        return v.isValid === true
+      })
+    }
+
+    // 'invalid'
+    return contacts.filter(c => {
+      const v = deriveContactValidity(c)
+      return v.isValid === false
+    })
+  }, [contacts, validityFilter])
+
   // Calculate stats: always use deriveContactValidity to match table validation logic
-  // This ensures consistency between the summary counts and what's displayed in the table
+  // Calculate from visibleContacts so stats match what's displayed in the table
   const stats = useMemo(() => {
     let validCount = 0
     let invalidCount = 0
     
-    // Always calculate from current contacts array using deriveContactValidity
-    // This matches the logic used in getValidityDisplay for the table
-    contacts.forEach(contact => {
+    // Calculate from visibleContacts to match the filtered table display
+    visibleContacts.forEach(contact => {
       const validity = deriveContactValidity(contact)
       if (validity.isValid === true) {
         validCount++
@@ -481,11 +502,11 @@ export default function ContactsPage() {
     })
     
     return {
-      total: meta?.total ?? contacts.length,
+      total: meta?.total ?? visibleContacts.length,
       valid: validCount,
       invalid: invalidCount
     }
-  }, [contacts, meta])
+  }, [visibleContacts, meta])
 
   const totalValid = stats.valid
   const totalInvalid = stats.invalid
@@ -539,50 +560,13 @@ export default function ContactsPage() {
   }, [contacts])
 
   useEffect(() => {
+    // When user changes the validity filter, we don't call the backend
+    // to fetch a separate invalid/valid list — instead we keep the current
+    // query intact and reset to the first page so the client-side
+    // contacts can be filtered locally.
     setQuery(prev => {
-      let nextValidOnly: boolean | undefined
-      let nextInvalidOnly: boolean | undefined
-
-      if (validityFilter === 'valid') {
-        nextValidOnly = true
-        nextInvalidOnly = undefined
-      } else if (validityFilter === 'invalid') {
-        nextValidOnly = undefined
-        nextInvalidOnly = true
-      } else {
-        // 'all' - remove both filters
-        nextValidOnly = undefined
-        nextInvalidOnly = undefined
-      }
-
-      // Check if the values actually changed
-      if (
-        prev.validOnly === nextValidOnly &&
-        prev.invalidOnly === nextInvalidOnly
-      ) {
-        return prev
-      }
-
-      // Create new query object, preserving all existing properties
-      const newQuery: ClientContactsQuery = {
-        ...prev,
-        page: 1
-      }
-
-      // Set or remove validOnly/invalidOnly
-      if (nextValidOnly !== undefined) {
-        newQuery.validOnly = nextValidOnly
-      } else {
-        delete newQuery.validOnly
-      }
-
-      if (nextInvalidOnly !== undefined) {
-        newQuery.invalidOnly = nextInvalidOnly
-      } else {
-        delete newQuery.invalidOnly
-      }
-
-      return newQuery
+      if (prev.page === 1) return prev
+      return { ...prev, page: 1 }
     })
   }, [validityFilter])
 
@@ -1262,13 +1246,24 @@ export default function ContactsPage() {
       }
       
       const fetchedInvalidContacts = response.data.contacts || []
+
+      // Filter to only include contacts that the frontend considers invalid
+      const filteredInvalidContacts = fetchedInvalidContacts.filter((contact: ClientContact) => {
+        const validity = deriveContactValidity(contact)
+        if (validity.isValid === false) return true
+        if (contact.status === 'invalid') return true
+        if (contact.valid === false) return true
+        if (typeof contact.computedValid === 'boolean' && contact.computedValid === false) return true
+        return false
+      })
+
       const invalidIds = new Set<number>()
       const contactDataMap = new Map<number, { email: string; phone: string; website: string }>()
-      
-      // Store the fetched invalid contacts so we can render them
-      setInvalidContacts(fetchedInvalidContacts)
-      
-      fetchedInvalidContacts.forEach((contact: ClientContact) => {
+
+      // Store the filtered invalid contacts so we can render them
+      setInvalidContacts(filteredInvalidContacts)
+
+      filteredInvalidContacts.forEach((contact: ClientContact) => {
         invalidIds.add(contact.id)
         
         // Normalize phone to E.164 format if possible, otherwise preserve digits
@@ -1356,13 +1351,24 @@ export default function ContactsPage() {
       }
       
       const fetchedInvalidContacts = response.data.contacts || []
+
+      // Filter to only include contacts that the frontend considers invalid
+      const filteredInvalidContacts = fetchedInvalidContacts.filter((contact: ClientContact) => {
+        const validity = deriveContactValidity(contact)
+        if (validity.isValid === false) return true
+        if (contact.status === 'invalid') return true
+        if (contact.valid === false) return true
+        if (typeof contact.computedValid === 'boolean' && contact.computedValid === false) return true
+        return false
+      })
+
       const invalidIds = new Set<number>()
       const contactDataMap = new Map<number, { email: string; phone: string; website: string }>()
-      
-      // Store the fetched invalid contacts so we can render them
-      setInvalidContacts(fetchedInvalidContacts)
-      
-      fetchedInvalidContacts.forEach((contact: ClientContact) => {
+
+      // Store the filtered invalid contacts so we can render them
+      setInvalidContacts(filteredInvalidContacts)
+
+      filteredInvalidContacts.forEach((contact: ClientContact) => {
         invalidIds.add(contact.id)
         
         // Normalize phone to E.164 format if possible, otherwise preserve digits
@@ -1566,74 +1572,102 @@ export default function ContactsPage() {
         const invalidResponse = await ingestionApi.getAllInvalidContacts()
         if (invalidResponse.success && invalidResponse.data) {
           const fetchedInvalidContacts = invalidResponse.data.contacts || []
-          setInvalidContacts(fetchedInvalidContacts)
-          
-          // If we have invalid contacts in state (meaning "Select All Invalid" was used),
-          // auto-select all remaining invalid contacts so they're all displayed
-          if (fetchedInvalidContacts.length > 0) {
-            // Auto-select all remaining invalid contacts
-            const allInvalidIds = new Set(fetchedInvalidContacts.map(c => c.id))
-            setSelectedContactIds(allInvalidIds)
-            
-            // Update bulk contact data to include all remaining invalid contacts
-            const updatedBulkData = new Map<number, { email: string; phone: string; website: string }>()
-            fetchedInvalidContacts.forEach(contact => {
-              // Preserve any existing edits, or initialize with normalized values
-              const existingData = bulkContactData.get(contact.id)
-              
-              // Normalize phone if not already edited
-              let normalizedPhone = existingData?.phone || ''
-              if (!normalizedPhone && contact.phone) {
-                const rawPhone = contact.phone
-                const cleaned = rawPhone.trim().replace(/[\s\-\(\)\.]/g, '')
-                if (cleaned.startsWith('+')) {
-                  try {
-                    const parsed = parsePhoneNumberFromString(cleaned)
-                    if (parsed) {
-                      // Preserve even if invalid - user can fix it
-                      normalizedPhone = parsed.format('E.164')
-                    } else {
-                      // Can't parse but has + - preserve it
+
+          // Filter to only include contacts that the frontend considers invalid
+          const filteredInvalidContacts = fetchedInvalidContacts.filter((contact: ClientContact) => {
+            const validity = deriveContactValidity(contact)
+            if (validity.isValid === false) return true
+            if (contact.status === 'invalid') return true
+            if (contact.valid === false) return true
+            if (typeof contact.computedValid === 'boolean' && contact.computedValid === false) return true
+            return false
+          })
+
+          setInvalidContacts(filteredInvalidContacts)
+
+          // Only auto-select and replace bulk contact data when the user
+          // explicitly performed a bulk action. For single-contact deletions
+          // we should not automatically select all remaining invalid contacts.
+          if (confirmDialog.type === 'bulk') {
+            if (filteredInvalidContacts.length > 0) {
+              // Auto-select all remaining invalid contacts
+              const allInvalidIds = new Set(filteredInvalidContacts.map(c => c.id))
+              setSelectedContactIds(allInvalidIds)
+
+              // Update bulk contact data to include all remaining invalid contacts
+              const updatedBulkData = new Map<number, { email: string; phone: string; website: string }>()
+              filteredInvalidContacts.forEach(contact => {
+                // Preserve any existing edits, or initialize with normalized values
+                const existingData = bulkContactData.get(contact.id)
+
+                // Normalize phone if not already edited
+                let normalizedPhone = existingData?.phone || ''
+                if (!normalizedPhone && contact.phone) {
+                  const rawPhone = contact.phone
+                  const cleaned = rawPhone.trim().replace(/[\s\-\(\)\.]/g, '')
+                  if (cleaned.startsWith('+')) {
+                    try {
+                      const parsed = parsePhoneNumberFromString(cleaned)
+                      if (parsed) {
+                        // Preserve even if invalid - user can fix it
+                        normalizedPhone = parsed.format('E.164')
+                      } else {
+                        // Can't parse but has + - preserve it
+                        normalizedPhone = cleaned
+                      }
+                    } catch {
+                      // Invalid - preserve cleaned value
                       normalizedPhone = cleaned
                     }
-                  } catch {
-                    // Invalid - preserve cleaned value
-                    normalizedPhone = cleaned
-                  }
-                } else {
-                  // Not in E.164 format - preserve digits so user can select country code
-                  const digitsOnly = cleaned.replace(/\D/g, '')
-                  if (digitsOnly.length >= 7) {
-                    // Try to normalize
-                    const normalizationResult = normalizePhoneNumberWithValidation(rawPhone, {
-                      state: contact.state,
-                      zipCode: contact.zipCode ? String(contact.zipCode) : undefined,
-                      defaultCountry: 'US'
-                    })
-                    if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
-                      normalizedPhone = normalizationResult.normalized
+                  } else {
+                    // Not in E.164 format - preserve digits so user can select country code
+                    const digitsOnly = cleaned.replace(/\D/g, '')
+                    if (digitsOnly.length >= 7) {
+                      // Try to normalize
+                      const normalizationResult = normalizePhoneNumberWithValidation(rawPhone, {
+                        state: contact.state,
+                        zipCode: contact.zipCode ? String(contact.zipCode) : undefined,
+                        defaultCountry: 'US'
+                      })
+                      if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
+                        normalizedPhone = normalizationResult.normalized
+                      } else {
+                        // Normalization failed - preserve digits
+                        normalizedPhone = digitsOnly
+                      }
                     } else {
-                      // Normalization failed - preserve digits
+                      // Too short - preserve what we have
                       normalizedPhone = digitsOnly
                     }
-                  } else {
-                    // Too short - preserve what we have
-                    normalizedPhone = digitsOnly
                   }
                 }
-              }
-              
-              updatedBulkData.set(contact.id, {
-                email: existingData?.email || contact.email || '',
-                phone: normalizedPhone,
-                website: existingData?.website || contact.website || ''
+
+                updatedBulkData.set(contact.id, {
+                  email: existingData?.email || contact.email || '',
+                  phone: normalizedPhone,
+                  website: existingData?.website || contact.website || ''
+                })
               })
-            })
-            setBulkContactData(updatedBulkData)
+              setBulkContactData(updatedBulkData)
+            } else {
+              // No invalid contacts remaining, clear selection
+              setSelectedContactIds(new Set())
+              setBulkContactData(new Map())
+            }
           } else {
-            // No invalid contacts remaining, clear selection
-            setSelectedContactIds(new Set())
-            setBulkContactData(new Map())
+            // Single-contact delete: remove the deleted id from bulk data and selection
+            if (typeof contactId === 'number') {
+              setBulkContactData(prev => {
+                const next = new Map(prev)
+                next.delete(contactId)
+                return next
+              })
+              setSelectedContactIds(prev => {
+                const next = new Set(prev)
+                next.delete(contactId)
+                return next
+              })
+            }
           }
         }
       } catch (refreshError) {
@@ -1992,6 +2026,120 @@ export default function ContactsPage() {
       )
     } finally {
       setIsBulkSaving(false)
+    }
+  }
+
+  // Update a single selected contact (used by per-contact "tick" button)
+  const [updatingContactIds, setUpdatingContactIds] = useState<Set<number>>(new Set())
+
+  const handleUpdateSingleContact = async (contactId: number) => {
+    // Prevent concurrent updates for the same contact
+    setBulkError(null)
+    if (updatingContactIds.has(contactId)) return
+
+    const data = bulkContactData.get(contactId)
+    if (!data) {
+      setBulkError('No data to update for selected contact.')
+      return
+    }
+
+    const trimmedEmail = data.email.trim()
+    const trimmedPhone = data.phone.trim()
+    const trimmedWebsite = data.website.trim()
+
+    // Basic format validation
+    const emailError = trimmedEmail ? validateEmail(trimmedEmail) : null
+    const phoneError = trimmedPhone ? validatePhone(trimmedPhone) : null
+    const websiteError = trimmedWebsite ? validateWebsite(trimmedWebsite) : null
+
+    if (emailError || phoneError || websiteError) {
+      setBulkValidationErrors(prev => {
+        const next = new Map(prev)
+        next.set(contactId, { email: emailError || null, phone: phoneError || null, website: websiteError || null })
+        return next
+      })
+      setBulkError('Please fix validation errors before updating this contact.')
+      return
+    }
+
+    setUpdatingContactIds(prev => {
+      const next = new Set(prev)
+      next.add(contactId)
+      return next
+    })
+
+    try {
+      // Normalize phone to E.164 format if possible
+      let normalizedPhoneForSave: string | null = null
+      if (trimmedPhone) {
+        if (trimmedPhone.startsWith('+')) {
+          try {
+            const parsed = parsePhoneNumberFromString(trimmedPhone.replace(/[\s\-\(\)\.]/g, ''))
+            if (parsed) {
+              normalizedPhoneForSave = parsed.format('E.164')
+            } else {
+              normalizedPhoneForSave = trimmedPhone
+            }
+          } catch {
+            normalizedPhoneForSave = trimmedPhone
+          }
+        } else {
+          const normalizationResult = normalizePhoneNumberWithValidation(trimmedPhone, {
+            defaultCountry: 'US'
+          })
+          if (normalizationResult.normalized && normalizationResult.normalized.startsWith('+')) {
+            normalizedPhoneForSave = normalizationResult.normalized
+          } else {
+            const digitsOnly = trimmedPhone.replace(/\D/g, '')
+            normalizedPhoneForSave = digitsOnly.length >= 7 ? digitsOnly : trimmedPhone
+          }
+        }
+      }
+
+      const payload = {
+        email: trimmedEmail || null,
+        phone: normalizedPhoneForSave,
+        website: trimmedWebsite || null
+      }
+
+      const response = await ingestionApi.updateContact(contactId, payload)
+      if (!response.success || !response.data || !response.data.contact) {
+        setBulkError(response.error || 'Failed to update contact. Please try again.')
+        return
+      }
+
+      const updated = response.data.contact
+
+      // Update local state
+      setContacts(prev => prev.map(c => (c.id === updated.id ? updated : c)))
+      setInvalidContacts(prev => prev.filter(c => c.id !== updated.id))
+      setSelectedContactIds(prev => {
+        const next = new Set(prev)
+        next.delete(updated.id)
+        return next
+      })
+      setBulkContactData(prev => {
+        const next = new Map(prev)
+        next.delete(updated.id)
+        return next
+      })
+      setBulkValidationErrors(prev => {
+        const next = new Map(prev)
+        next.delete(updated.id)
+        return next
+      })
+
+      // Show brief result feedback
+      setBulkResult({ updated: 1, failed: 0 })
+      setTimeout(() => setBulkResult(null), 2500)
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : 'Failed to update contact')
+    } finally {
+      setUpdatingContactIds(prev => {
+        const next = new Set(prev)
+        next.delete(contactId)
+        return next
+      })
     }
   }
 
@@ -2368,7 +2516,7 @@ export default function ContactsPage() {
                     </div>
                   ) : (
                     <ContactsTable
-                      contacts={contacts}
+                      contacts={visibleContacts}
                       isLoading={isLoading}
                       error={error}
                       selectedContactId={selectedContactId}
@@ -2567,7 +2715,7 @@ export default function ContactsPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleDeleteSingleContact(contactId)}
+                                    onClick={() => handleDeleteSingleContact(contactId)}
                                   className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50"
                                   leftIcon={
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2576,6 +2724,24 @@ export default function ContactsPage() {
                                   }
                                 >
                                   Delete
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleUpdateSingleContact(contactId)}
+                                  disabled={!isReady || updatingContactIds.has(contactId)}
+                                  className="text-xs text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50"
+                                  leftIcon={
+                                    updatingContactIds.has(contactId) ? (
+                                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-emerald-600"></div>
+                                    ) : (
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )
+                                  }
+                                >
+                                  Update
                                 </Button>
                               </div>
                             </div>

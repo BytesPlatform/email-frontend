@@ -1727,7 +1727,14 @@ function DraftsPageContent() {
   )
 
   // isEmailView is now determined above
-
+  // Ensure final display ordering: for most views (including 'all', 'email', 'sms')
+  // we want the newest drafts first. The 'starred' view intentionally groups
+  // drafts by contact and type, so we don't override that ordering.
+  if (activeView !== 'starred' && activeView !== 'queued') {
+    displayDrafts = displayDrafts.sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+  }
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
   }
