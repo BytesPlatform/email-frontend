@@ -388,6 +388,27 @@ export const ingestionApi = {
         error: error instanceof Error ? error.message : 'Failed to validate website'
       };
     }
+  },
+
+  /**
+   * Delete a CSV upload and all associated records
+   */
+  async deleteCsvUpload(csvId: number): Promise<ApiResponse<{ success: boolean; message: string; csvId: number; deletedStats: Record<string, number> }>> {
+    try {
+      const response = await apiClient.delete<{ success: boolean; message: string; csvId: number; deletedStats: Record<string, number> }>(
+        `/ingestion/csv/${csvId}`
+      );
+
+      if (response.success && response.data) {
+        return { success: true, data: response.data };
+      }
+      return { success: false, error: response.error || 'Failed to delete CSV upload' };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete CSV upload'
+      };
+    }
   }
 };
 
