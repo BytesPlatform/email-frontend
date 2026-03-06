@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useData } from '@/contexts/DataContext'
 import { CSVRecord, CsvUpload } from '@/types/ingestion'
 import { ColumnMapping } from '@/components/csv/CSVUploadForm'
@@ -73,6 +74,9 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
   const [editingCell, setEditingCell] = useState<{ rowIndex: number; header: string; isMapped?: boolean } | null>(null)
   const [editValue, setEditValue] = useState<string>('')
   const [localCsvData, setLocalCsvData] = useState<Record<string, string>[]>([])
+  const [deleteTarget, setDeleteTarget] = useState<CsvUpload | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteSuccess, setDeleteSuccess] = useState<string | null>(null)
   
   // Initialize local CSV data from csvData prop
   useEffect(() => {
@@ -155,6 +159,28 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
       console.error('Error fetching upload details:', error)
     } finally {
       setIsLoadingUploadDetails(false)
+    }
+  }
+
+  // Handle CSV upload deletion
+  const handleDeleteCsv = async () => {
+    if (!deleteTarget) return
+    const fileName = deleteTarget.fileName || `Upload #${deleteTarget.id}`
+    setIsDeleting(true)
+    try {
+      const res = await ingestionApi.deleteCsvUpload(deleteTarget.id)
+      if (res.success) {
+        setUploadedFiles(prev => prev.filter(f => f.id !== deleteTarget.id))
+        setDeleteSuccess(`"${fileName}" deleted successfully`)
+        setTimeout(() => setDeleteSuccess(null), 3000)
+      } else {
+        console.error('Failed to delete CSV upload:', res.error)
+      }
+    } catch (error) {
+      console.error('Error deleting CSV upload:', error)
+    } finally {
+      setIsDeleting(false)
+      setDeleteTarget(null)
     }
   }
 
@@ -1093,10 +1119,11 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                       <table className="w-full text-sm">
                         <thead className="bg-slate-50">
                           <tr>
-                            <th className="px-4 py-3 text-left font-medium text-slate-700">File Name</th>
-                            <th className="px-4 py-3 text-left font-medium text-slate-700">Records</th>
-                            <th className="px-4 py-3 text-left font-medium text-slate-700">Upload Date</th>
-                            <th className="px-4 py-3 text-left font-medium text-slate-700">Status</th>
+                            <th className="px-3 py-3 text-left font-medium text-slate-700">File Name</th>
+                            <th className="px-3 py-3 text-left font-medium text-slate-700">Records</th>
+                            <th className="px-3 py-3 text-left font-medium text-slate-700">Upload Date</th>
+                            <th className="px-3 py-3 text-left font-medium text-slate-700">Status</th>
+                            <th className="px-2 py-3 text-left font-medium text-slate-700"></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
@@ -1111,16 +1138,19 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                 handleUploadClick(upload)
                               }}
                             >
-                              <td className="px-4 py-3 text-slate-900 font-medium">
-                                {upload.fileName || `Upload #${upload.id}`}
+                              <td className="px-3 py-3 text-slate-900 font-medium max-w-[120px] truncate" title={upload.fileName || `Upload #${upload.id}`}>
+                                {(() => {
+                                  const name = upload.fileName || `Upload #${upload.id}`
+                                  return name.length > 12 ? name.slice(0, 10) + '...' : name
+                                })()}
                               </td>
-                              <td className="px-4 py-3 text-slate-600">
+                              <td className="px-3 py-3 text-slate-600">
                                 {upload.successfulRecords}/{upload.totalRecords}
                               </td>
-                              <td className="px-4 py-3 text-slate-600">
+                              <td className="px-3 py-3 text-slate-600">
                                 {upload.createdAt ? new Date(upload.createdAt).toLocaleDateString() : '-'}
                               </td>
-                              <td className="px-4 py-3">
+                              <td className="px-3 py-3">
                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                                   upload.status === 'success' 
                                     ? 'bg-green-100 text-green-800' 
@@ -1130,6 +1160,20 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
                                 }`}>
                                   {upload.status || 'unknown'}
                                 </span>
+                              </td>
+                              <td className="px-2 py-3">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setDeleteTarget(upload)
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="Delete CSV upload"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1169,6 +1213,28 @@ export function CSVPreview({ headers = [], mappedCsvData = [], columnMappings = 
         </div>
       </CardContent>
       </Card>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Delete CSV Upload"
+        message={`Are you sure you want to delete "${deleteTarget?.fileName || `Upload #${deleteTarget?.id}`}"?\n\nThis will permanently delete the CSV upload and ALL associated records (contacts, emails, SMS, scraped data, etc.). This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteCsv}
+        onCancel={() => setDeleteTarget(null)}
+        isLoading={isDeleting}
+      />
+
+      {/* Delete success toast */}
+      {deleteSuccess && (
+        <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in slide-in-from-right">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span>{deleteSuccess}</span>
+        </div>
+      )}
     </>
   )
 }
