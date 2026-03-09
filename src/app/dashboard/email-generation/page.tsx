@@ -20,6 +20,7 @@ import { useEmailGenerationAPI } from '@/hooks/useEmailGenerationAPI'
 import { copyToClipboard } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { BulkProgressModal, type BulkProgressState } from '@/components/ui/BulkProgressModal'
 
 export default function EmailGenerationPage() {
   const { client } = useAuthContext()
@@ -54,6 +55,13 @@ export default function EmailGenerationPage() {
   // Bulk selection state
   const [selectedRecordIds, setSelectedRecordIds] = useState<Set<number>>(new Set())
   const [bulkGeneratingType, setBulkGeneratingType] = useState<'summary' | 'email' | 'sms' | null>(null)
+
+  // Bulk progress modal state
+  const [bulkProgress, setBulkProgress] = useState<BulkProgressState>({
+    isOpen: false,
+    type: 'summary',
+    totalItems: 0,
+  })
   
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -1267,11 +1275,20 @@ export default function EmailGenerationPage() {
       return
     }
 
+    // Open progress modal
+    setBulkProgress({ isOpen: true, type: 'summary', totalItems: contactIdsToProcess.length, result: undefined })
+
     try {
       const res = await emailGenerationApi.bulkSummarizeContacts(contactIdsToProcess)
       
       if (res.success && res.data) {
         const { totalProcessed, successful, failed, totalTimeSeconds, estimatedTimeSeconds, results } = res.data
+
+        // Update progress modal with real result
+        setBulkProgress(prev => ({
+          ...prev,
+          result: { successful, failed, totalTimeSeconds },
+        }))
 
         const prefetchedSummaries = new Map<number, BusinessSummary>()
         results.forEach(result => {
@@ -1284,22 +1301,14 @@ export default function EmailGenerationPage() {
         const processedRecords = state.scrapedRecords.filter(record => processedRecordSet.has(record.contactId))
 
         await hydrateSummariesForRecords(processedRecords, prefetchedSummaries, { force: true })
-
-        const timeInfo = totalTimeSeconds > 0 
-          ? `\n\nTime: ${Math.round(totalTimeSeconds)}s (estimated: ${Math.round(estimatedTimeSeconds)}s)`
-          : ''
-        
-        showDialog(
-          'Bulk Summary Generation Completed',
-          `Bulk summary generation completed: ${successful} succeeded, ${failed} failed out of ${totalProcessed} total${timeInfo}`,
-          'info'
-        )
         setSelectedRecordIds(new Set())
       } else {
+        setBulkProgress(prev => ({ ...prev, isOpen: false }))
         showDialog('Generation Failed', 'Failed to generate summaries: ' + (res.error || 'Unknown error'), 'danger')
       }
     } catch (error) {
       console.error('Error in bulk summary generation:', error)
+      setBulkProgress(prev => ({ ...prev, isOpen: false }))
       showDialog('Error', 'Error generating summaries: ' + (error instanceof Error ? error.message : 'Unknown error'), 'danger')
     } finally {
       setBulkGeneratingType(null)
@@ -1347,11 +1356,20 @@ export default function EmailGenerationPage() {
       return
     }
 
+    // Open progress modal
+    setBulkProgress({ isOpen: true, type: 'email', totalItems: requests.length, result: undefined })
+
     try {
       const res = await emailGenerationApi.bulkGenerateEmailDrafts(requests)
       
       if (res.success && res.data) {
         const { totalProcessed, successful, failed, totalTimeSeconds, estimatedTimeSeconds, results } = res.data
+
+        // Update progress modal with real result
+        setBulkProgress(prev => ({
+          ...prev,
+          result: { successful, failed, totalTimeSeconds },
+        }))
         
         // Update records with generated email drafts
         const draftMap = new Map<number, number>()
@@ -1377,21 +1395,14 @@ export default function EmailGenerationPage() {
           })
         }))
 
-        const timeInfo = totalTimeSeconds > 0 
-          ? `\n\nTime: ${Math.round(totalTimeSeconds)}s (estimated: ${Math.round(estimatedTimeSeconds)}s)`
-          : ''
-
-        showDialog(
-          'Bulk Email Generation Completed',
-          `Bulk email generation completed: ${successful} succeeded, ${failed} failed out of ${totalProcessed} total${timeInfo}`,
-          'info'
-        )
         setSelectedRecordIds(new Set())
       } else {
+        setBulkProgress(prev => ({ ...prev, isOpen: false }))
         showDialog('Generation Failed', 'Failed to generate emails: ' + (res.error || 'Unknown error'), 'danger')
       }
     } catch (error) {
       console.error('Error in bulk email generation:', error)
+      setBulkProgress(prev => ({ ...prev, isOpen: false }))
       showDialog('Error', 'Error generating emails: ' + (error instanceof Error ? error.message : 'Unknown error'), 'danger')
     } finally {
       setBulkGeneratingType(null)
@@ -1438,12 +1449,21 @@ export default function EmailGenerationPage() {
       return
     }
 
+    // Open progress modal
+    setBulkProgress({ isOpen: true, type: 'sms', totalItems: requests.length, result: undefined })
+
     try {
       const res = await smsGenerationApi.bulkGenerateSmsDrafts(requests)
       
       if (res.success && res.data) {
         const { totalProcessed, successful, failed, results } = res.data
         
+        // Update progress modal with real result
+        setBulkProgress(prev => ({
+          ...prev,
+          result: { successful, failed, totalTimeSeconds: 0 },
+        }))
+
         // Update records with generated SMS drafts
         const draftMap = new Map<number, number>()
         results.forEach(result => {
@@ -1468,17 +1488,14 @@ export default function EmailGenerationPage() {
           })
         }))
 
-        showDialog(
-          'Bulk SMS Generation Completed',
-          `Bulk SMS generation completed: ${successful} succeeded, ${failed} failed out of ${totalProcessed} total`,
-          'info'
-        )
         setSelectedRecordIds(new Set())
       } else {
+        setBulkProgress(prev => ({ ...prev, isOpen: false }))
         showDialog('Generation Failed', 'Failed to generate SMS drafts: ' + (res.error || 'Unknown error'), 'danger')
       }
     } catch (error) {
       console.error('Error in bulk SMS generation:', error)
+      setBulkProgress(prev => ({ ...prev, isOpen: false }))
       showDialog('Error', 'Error generating SMS drafts: ' + (error instanceof Error ? error.message : 'Unknown error'), 'danger')
     } finally {
       setBulkGeneratingType(null)
@@ -1648,6 +1665,12 @@ export default function EmailGenerationPage() {
         summary={summaryModal.summary}
         businessName={summaryModal.businessName}
         onClose={() => setSummaryModal({ isOpen: false, summary: null, businessName: undefined })}
+      />
+
+      {/* Bulk Progress Modal */}
+      <BulkProgressModal
+        progress={bulkProgress}
+        onClose={() => setBulkProgress(prev => ({ ...prev, isOpen: false }))}
       />
 
       {/* Confirmation Dialog */}
