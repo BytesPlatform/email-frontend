@@ -119,16 +119,7 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
       </td>
       <td className="px-2 py-2 whitespace-nowrap text-sm font-medium min-w-[140px]">
         <div className="flex space-x-1 cursor-pointer" onClick={(e) => e.stopPropagation()}>
-          {(!record.hasSummary && !record.generatedSummary) ? (
-            <Button
-              onClick={() => onGenerateSummary(record.id)}
-              disabled={record.isGeneratingSummary}
-              isLoading={record.isGeneratingSummary}
-              size="sm"
-            >
-              {record.isGeneratingSummary ? 'AI Processing...' : 'Generate Summary'}
-            </Button>
-          ) : mode === 'email' ? (
+          {mode === 'email' ? (
             !record.generatedEmail && !record.emailDraftId && !record.hasEmailDraft ? (
               <Button
                 onClick={() => onGenerateEmail(record.id)}
@@ -137,13 +128,12 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
                 size="sm"
                 variant="success"
               >
-                {record.isGeneratingEmail ? 'Generating...' : 'Generate Email'}
+                {record.isGeneratingEmail ? 'Generating...' : 'Generate Draft'}
               </Button>
             ) : (
               <Button
                 onClick={(e) => {
                   e.stopPropagation()
-                  // Navigate to drafts page with email draft ID
                   router.push(`/dashboard/draft?emailDraftId=${record.emailDraftId}`)
                 }}
                 size="sm"
@@ -167,7 +157,6 @@ const RecordTableRowComponent: React.FC<RecordTableRowProps> = ({
               <Button
                 onClick={(e) => {
                   e.stopPropagation()
-                  // Navigate to drafts page with SMS draft ID
                   router.push(`/dashboard/draft?smsDraftId=${record.smsDraftId}`)
                 }}
                 size="sm"

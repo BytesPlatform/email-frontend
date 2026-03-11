@@ -160,20 +160,20 @@ export const emailGenerationApi = {
   async generateEmailDraft(
     params: {
       contactId: number
-      summaryId: number
       clientId: number
+      summaryId?: number
       clientEmailId?: number
       tone?: string // backend expects values like 'pro_friendly'
     }
   ): Promise<ApiResponse<EmailDraft>> {
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         contactId: params.contactId,
-        summaryId: params.summaryId,
         clientId: params.clientId,
-        clientEmailId: params.clientEmailId,
         tone: params.tone || 'pro_friendly',
       }
+      if (params.summaryId) payload.summaryId = params.summaryId
+      if (params.clientEmailId) payload.clientEmailId = params.clientEmailId
       return await apiClient.post<EmailDraft>('/emails/generation/generate', payload)
     } catch (error) {
       console.error('Error generating email draft:', error)
@@ -188,8 +188,8 @@ export const emailGenerationApi = {
    */
   async bulkGenerateEmailDrafts(requests: Array<{
     contactId: number
-    summaryId: number
     clientId: number
+    summaryId?: number
     clientEmailId?: number
     tone?: string
   }>): Promise<ApiResponse<{

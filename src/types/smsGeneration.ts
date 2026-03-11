@@ -43,8 +43,8 @@ export interface SMSGenerationResponse {
 
 export interface SMSGenerationRequest {
   contactId: number
-  summaryId: number
   clientId: number
+  summaryId?: number
   clientSmsId?: number
 }
 
