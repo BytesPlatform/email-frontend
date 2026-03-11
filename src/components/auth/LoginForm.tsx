@@ -157,43 +157,7 @@ export function LoginForm() {
           </div>
         </div>
 
-        {/* Demo Credentials */}
-        <div className="mt-6 pt-4 border-t border-slate-200">
-          <div className="text-center">
-            <p className="text-xs text-slate-600 mb-3 font-medium">Try Demo Account</p>
-            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-              <div className="space-y-1 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Email:</span>
-                  <button
-                    onClick={() => setEmail('bytes@gmail.com')}
-                    className="font-mono text-slate-900 bg-white px-2 py-1 rounded border text-xs hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 transition-colors cursor-pointer"
-                  >
-                    bytes@gmail.com
-                  </button>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Password:</span>
-                  <button
-                    onClick={() => setPassword('Aq123456')}
-                    className="font-mono text-slate-900 bg-white px-2 py-1 rounded border text-xs hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 transition-colors cursor-pointer"
-                  >
-                    Aq123456
-                  </button>
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                setEmail('bytes@gmail.com')
-                setPassword('Aq123456')
-              }}
-              className="mt-3 text-xs text-indigo-600 hover:text-indigo-500 font-medium transition-colors"
-            >
-              Click to fill both fields
-            </button>
-          </div>
-        </div>
+
     </div>
   )
 }

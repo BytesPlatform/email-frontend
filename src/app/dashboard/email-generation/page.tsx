@@ -400,35 +400,6 @@ export default function EmailGenerationPage() {
     const record = state.scrapedRecords.find(r => r.id === recordId)
     if (!record) return
 
-    // Hydrate summary if it exists in backend but not in state
-    let summaryToUse = record.generatedSummary
-    if (!summaryToUse && record.hasSummary) {
-      const summaryMap = await hydrateSummariesForRecords([record], undefined, { force: true })
-      summaryToUse = summaryMap.get(record.contactId)
-      if (!summaryToUse) {
-        setState(prev => ({
-          ...prev,
-          scrapedRecords: prev.scrapedRecords.map(r => 
-            r.id === recordId ? { ...r, isGeneratingEmail: false } : r
-          ),
-          error: 'Summary not found. Please generate a summary first.'
-        }))
-        return
-      }
-    }
-
-    // Final check - ensure we have a summary
-    if (!summaryToUse) {
-      setState(prev => ({
-        ...prev,
-        scrapedRecords: prev.scrapedRecords.map(r => 
-          r.id === recordId ? { ...r, isGeneratingEmail: false } : r
-        ),
-        error: 'Summary is required to generate email. Please generate a summary first.'
-      }))
-      return
-    }
-
     setState(prev => ({
       ...prev,
       scrapedRecords: prev.scrapedRecords.map(r => 
@@ -441,7 +412,6 @@ export default function EmailGenerationPage() {
       if (!client?.id) throw new Error('Missing client id')
       const res = await emailGenerationApi.generateEmailDraft({
         contactId: record.contactId,
-        summaryId: summaryToUse.id,
         clientId: client.id,
         tone: 'pro_friendly'
       })
@@ -463,6 +433,7 @@ export default function EmailGenerationPage() {
                     ...r, 
                     emailDraftId: emailDraftId,
                     hasEmailDraft: true,
+                    hasSummary: true,
                     isGeneratingEmail: false,
                     // isCheckingSpam: true  // Start spam check loading - COMMENTED OUT
                   } 
@@ -549,35 +520,6 @@ export default function EmailGenerationPage() {
     const record = state.scrapedRecords.find(r => r.id === recordId)
     if (!record) return
 
-    // Hydrate summary if it exists in backend but not in state
-    let summaryToUse = record.generatedSummary
-    if (!summaryToUse && record.hasSummary) {
-      const summaryMap = await hydrateSummariesForRecords([record], undefined, { force: true })
-      summaryToUse = summaryMap.get(record.contactId)
-      if (!summaryToUse) {
-        setState(prev => ({
-          ...prev,
-          scrapedRecords: prev.scrapedRecords.map(r => 
-            r.id === recordId ? { ...r, isGeneratingSMS: false } : r
-          ),
-          error: 'Summary not found. Please generate a summary first.'
-        }))
-        return
-      }
-    }
-
-    // Final check - ensure we have a summary
-    if (!summaryToUse) {
-      setState(prev => ({
-        ...prev,
-        scrapedRecords: prev.scrapedRecords.map(r => 
-          r.id === recordId ? { ...r, isGeneratingSMS: false } : r
-        ),
-        error: 'Summary is required to generate SMS. Please generate a summary first.'
-      }))
-      return
-    }
-
     setState(prev => ({
       ...prev,
       scrapedRecords: prev.scrapedRecords.map(r => 
@@ -588,11 +530,10 @@ export default function EmailGenerationPage() {
     
     try {
       if (!client?.id) throw new Error('Missing client id')
-      const res = await smsGenerationApi.generateSmsDraft(
-        record.contactId, 
-        summaryToUse.id,
-        client.id  // Use client.id as clientId
-      )
+      const res = await smsGenerationApi.generateSmsDraft({
+        contactId: record.contactId,
+        clientId: client.id,
+      })
       
       console.log('SMS generation response:', res)
       
@@ -626,6 +567,7 @@ export default function EmailGenerationPage() {
                     smsDraftId: smsDraftId,
                     smsStatus: status,
                     hasSMSDraft: true,
+                    hasSummary: true,
                     isGeneratingSMS: false 
                   } 
                 : r
@@ -1330,28 +1272,17 @@ export default function EmailGenerationPage() {
       return
     }
 
-    const summaryMap = await hydrateSummariesForRecords(selectedRecords)
-
-    // Build requests array for contacts that have summaries but no email drafts
+    // Build requests array for contacts that don't have email drafts yet
     const requests = selectedRecords
       .filter(r => !r.hasEmailDraft && !r.emailDraftId)
-      .map(r => {
-        const summary = summaryMap.get(r.contactId)
-        if (!summary) {
-          return null
-        }
-
-        return {
-          contactId: r.contactId,
-          summaryId: summary.id,
-          clientId: client.id,
-          tone: 'pro_friendly' as const
-        }
-      })
-      .filter((request): request is { contactId: number; summaryId: number; clientId: number; tone: 'pro_friendly' } => request !== null)
+      .map(r => ({
+        contactId: r.contactId,
+        clientId: client.id,
+        tone: 'pro_friendly' as const
+      }))
 
     if (requests.length === 0) {
-      showDialog('No Action Needed', 'All selected contacts already have email drafts or are missing summaries', 'info')
+      showDialog('No Action Needed', 'All selected contacts already have email drafts', 'info')
       setBulkGeneratingType(null)
       return
     }
@@ -1388,6 +1319,7 @@ export default function EmailGenerationPage() {
                 ...record,
                 emailDraftId: emailDraftId,
                 hasEmailDraft: true,
+                hasSummary: true,
                 isGeneratingEmail: false
               }
             }
@@ -1424,27 +1356,16 @@ export default function EmailGenerationPage() {
       return
     }
 
-    const summaryMap = await hydrateSummariesForRecords(selectedRecords)
-
-    // Build requests array for contacts that have summaries but no SMS drafts
+    // Build requests array for contacts that don't have SMS drafts yet
     const requests = selectedRecords
       .filter(r => !r.hasSMSDraft && !r.smsDraftId)
-      .map(r => {
-        const summary = summaryMap.get(r.contactId)
-        if (!summary) {
-          return null
-        }
-
-        return {
-          contactId: r.contactId,
-          summaryId: summary.id,
-          clientId: client.id
-        }
-      })
-      .filter((request): request is { contactId: number; summaryId: number; clientId: number } => request !== null)
+      .map(r => ({
+        contactId: r.contactId,
+        clientId: client.id,
+      }))
 
     if (requests.length === 0) {
-      showDialog('No Action Needed', 'All selected contacts already have SMS drafts or are missing summaries', 'info')
+      showDialog('No Action Needed', 'All selected contacts already have SMS drafts', 'info')
       setBulkGeneratingType(null)
       return
     }
@@ -1481,6 +1402,7 @@ export default function EmailGenerationPage() {
                 ...record,
                 smsDraftId: smsDraftId,
                 hasSMSDraft: true,
+                hasSummary: true,
                 isGeneratingSMS: false
               }
             }
@@ -1519,15 +1441,6 @@ export default function EmailGenerationPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    onClick={handleBulkGenerateSummary}
-                    disabled={bulkGeneratingType !== null}
-                    variant="outline"
-                    size="sm"
-                    className="bg-white hover:bg-gray-50"
-                  >
-                    {bulkGeneratingType === 'summary' ? 'Generating...' : 'Generate Summaries'}
-                  </Button>
                   {mode === 'email' ? (
                     <Button
                       onClick={handleBulkGenerateEmail}
@@ -1535,7 +1448,7 @@ export default function EmailGenerationPage() {
                       variant="primary"
                       size="sm"
                     >
-                      {bulkGeneratingType === 'email' ? 'Generating...' : 'Generate Emails'}
+                      {bulkGeneratingType === 'email' ? 'Generating...' : 'Generate Drafts'}
                     </Button>
                   ) : (
                     <Button

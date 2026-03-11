@@ -3,21 +3,21 @@ import { SMSDraft, SMSGenerationResult, SmsBulkStatusEntry } from '@/types/smsGe
 
 export const smsGenerationApi = {
   /**
-   * Generate SMS draft based on business summary
+   * Generate SMS draft (one-click: backend auto-detects/creates summary)
    * POST /sms/generation/generate
-   * @param contactId - The contact ID
-   * @param summaryId - The summary ID
-   * @param clientId - The client ID (required)
-   * @param clientSmsId - The client SMS template ID (optional)
+   * @param params.contactId - The contact ID
+   * @param params.clientId - The client ID (required)
+   * @param params.summaryId - Optional summary ID (auto-detected if not provided)
+   * @param params.clientSmsId - The client SMS template ID (optional)
    */
-  async generateSmsDraft(contactId: number, summaryId: number, clientId: number, clientSmsId?: number): Promise<ApiResponse<SMSDraft>> {
+  async generateSmsDraft(params: { contactId: number; clientId: number; summaryId?: number; clientSmsId?: number }): Promise<ApiResponse<SMSDraft>> {
     try {
-      const requestBody = {
-        contactId,
-        summaryId,
-        clientId,
-        clientSmsId,
+      const requestBody: Record<string, unknown> = {
+        contactId: params.contactId,
+        clientId: params.clientId,
       }
+      if (params.summaryId) requestBody.summaryId = params.summaryId
+      if (params.clientSmsId) requestBody.clientSmsId = params.clientSmsId
       
       console.log(`Calling SMS API: /sms/generation/generate with`, requestBody, '(120s timeout)')
       const response = await apiClient.post<SMSGenerationResult>(
@@ -77,8 +77,8 @@ export const smsGenerationApi = {
    */
   async bulkGenerateSmsDrafts(requests: Array<{
     contactId: number
-    summaryId: number
     clientId: number
+    summaryId?: number
     clientSmsId?: number
   }>): Promise<ApiResponse<{
     totalProcessed: number

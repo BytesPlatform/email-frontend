@@ -116,8 +116,8 @@ export interface BulkSummarizationResponse {
 
 export interface GenerateEmailDto {
   contactId: number
-  summaryId: number
   clientId: number
+  summaryId?: number
   clientEmailId?: number
   tone?: string
 }
